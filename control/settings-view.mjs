@@ -273,7 +273,7 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     );
 
     if (saved) {
-      onGlobalStatus('設定已儲存；尚未套用到電視畫面。');
+      onGlobalStatus('設定已儲存並即時套用到顯示畫面。');
       closeDialog();
     }
   }

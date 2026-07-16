@@ -151,7 +151,7 @@ export function createSettingsController({ api, view }) {
 
           view.renderSettingsSnapshot(result.snapshot);
           view.renderSettingsStatus(
-            '設定已儲存；第 8 步才會套用到電視畫面。',
+            '設定已儲存並即時套用到顯示畫面。',
           );
           return true;
         },
@@ -187,4 +187,3 @@ export function createSettingsController({ api, view }) {
     },
   });
 }
-

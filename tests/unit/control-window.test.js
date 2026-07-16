@@ -132,7 +132,7 @@ test('555 與 888 使用獨立按鈕及原生確認對話框防止誤觸', async
   assert.match(html, /id="inspection-cancel-button"[^>]+autofocus/);
 });
 
-test('第 7 步提供獨立系統設定對話框與完整可存取欄位', async () => {
+test('第 8 步提供可即時套用的獨立系統設定對話框與完整可存取欄位', async () => {
   const html = await readControlFile('index.html');
 
   assert.match(html, /<section[^>]+id="settings-launch"/);
@@ -177,7 +177,8 @@ test('第 7 步提供獨立系統設定對話框與完整可存取欄位', async
   assert.match(html, /<button[^>]+id="load-defaults-button"[^>]+type="button"/);
   assert.match(html, /<button[^>]+id="settings-close-button"[^>]+type="button"/);
   assert.match(html, /<button[^>]+id="save-settings-button"[^>]+type="submit"/);
-  assert.match(html, /第 8 步[^<]*套用/);
+  assert.match(html, /儲存後[^<]*即時套用/);
+  assert.doesNotMatch(html, /第 8 步[^<]*才會套用/);
 });
 
 test('尚未進入的 HDMI 與實體螢幕功能明確標示第 9 步且不可操作', async () => {

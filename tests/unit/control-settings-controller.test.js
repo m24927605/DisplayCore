@@ -111,7 +111,7 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   assert.equal(await first, true);
   assert.equal(harness.calls.snapshots.at(-1).revision, 5);
   assert.deepEqual(harness.calls.statuses, [
-    '設定已儲存；第 8 步才會套用到電視畫面。',
+    '設定已儲存並即時套用到顯示畫面。',
   ]);
 });
 
