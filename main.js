@@ -96,10 +96,12 @@ async function bootstrap() {
     },
     configureDisplayWindow: isMainProcessSmokeTest
       ? null
-      : (displayWindow) => {
+      : async (displayWindow) => {
         if (
           !displayPlacementController ||
-          !displayPlacementController.applyToWindow(displayWindow)
+          !(await displayPlacementController.applyToWindowWithRetry(
+            displayWindow,
+          ))
         ) {
           throw new Error('Display Window 無法套用目前輸出位置。');
         }

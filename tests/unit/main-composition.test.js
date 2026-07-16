@@ -24,7 +24,7 @@ test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務',
   assert.match(source, /new DisplayPlacementController\(/);
   assert.match(
     source,
-    /configureDisplayWindow:[\s\S]*displayPlacementController\.applyToWindow/,
+    /configureDisplayWindow:[\s\S]*displayPlacementController\.applyToWindowWithRetry/,
   );
   assert.match(
     source,

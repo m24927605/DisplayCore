@@ -9,6 +9,10 @@ const DISPLAY_PLACEMENT_STATUSES = Object.freeze({
 const WINDOWED_AREA_RATIO = 0.8;
 const DISPLAY_ASPECT_RATIO = 16 / 9;
 
+function waitForDelay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
 function isRectangle(value) {
   return (
     value !== null &&
@@ -72,14 +76,30 @@ class DisplayPlacementController {
     topologyService,
     getDisplayWindow = () => null,
     logger = console,
+    placementRetryAttempts = 3,
+    placementRetryDelayMilliseconds = 150,
+    waitForRetry = waitForDelay,
   }) {
-    if (!topologyService || typeof getDisplayWindow !== 'function') {
+    if (
+      !topologyService ||
+      typeof getDisplayWindow !== 'function' ||
+      !Number.isSafeInteger(placementRetryAttempts) ||
+      placementRetryAttempts < 1 ||
+      placementRetryAttempts > 10 ||
+      !Number.isSafeInteger(placementRetryDelayMilliseconds) ||
+      placementRetryDelayMilliseconds < 0 ||
+      placementRetryDelayMilliseconds > 5000 ||
+      typeof waitForRetry !== 'function'
+    ) {
       throw new TypeError('Display 定位控制器缺少必要相依物件。');
     }
 
     this.topologyService = topologyService;
     this.getDisplayWindow = getDisplayWindow;
     this.logger = logger;
+    this.placementRetryAttempts = placementRetryAttempts;
+    this.placementRetryDelayMilliseconds = placementRetryDelayMilliseconds;
+    this.waitForRetry = waitForRetry;
     this.status = null;
     this.listeners = new Set();
     this.lastPlacementByWindow = new WeakMap();
@@ -211,6 +231,39 @@ class DisplayPlacementController {
       });
       return false;
     }
+  }
+
+  /**
+   * 新 BrowserWindow 初次建立時，Windows 可能短暫拒絕跨螢幕 bounds／fullscreen
+   * 切換。只在載入頁面前進行有限次重試；達上限仍失敗時由 WindowManager
+   * 原子銷毀雙視窗，絕不在錯誤螢幕上顯示內容。
+   */
+  async applyToWindowWithRetry(displayWindow) {
+    for (let attempt = 1; attempt <= this.placementRetryAttempts; attempt += 1) {
+      if (this.applyToWindow(displayWindow)) {
+        return true;
+      }
+
+      if (
+        this.disposed ||
+        !this.topologyService.getTargetDisplay() ||
+        attempt === this.placementRetryAttempts
+      ) {
+        return false;
+      }
+
+      try {
+        if (displayWindow.isDestroyed()) {
+          return false;
+        }
+      } catch {
+        return false;
+      }
+
+      await this.waitForRetry(this.placementRetryDelayMilliseconds);
+    }
+
+    return false;
   }
 
   setStatus(nextStatus, { force = false } = {}) {

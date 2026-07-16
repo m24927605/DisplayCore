@@ -97,12 +97,22 @@ class FakeWindow {
   }
 }
 
-function createController({ topologyService, getDisplayWindow, logger } = {}) {
+function createController({
+  topologyService,
+  getDisplayWindow,
+  logger,
+  placementRetryAttempts,
+  placementRetryDelayMilliseconds,
+  waitForRetry,
+} = {}) {
   const topology = topologyService || new FakeTopologyService();
   const controller = new DisplayPlacementController({
     topologyService: topology,
     getDisplayWindow: getDisplayWindow || (() => null),
     logger,
+    placementRetryAttempts,
+    placementRetryDelayMilliseconds,
+    waitForRetry,
   });
 
   return { controller, topology };
@@ -260,6 +270,53 @@ test('已銷毀視窗不呼叫 API，套用錯誤發布固定失敗狀態且不�
     revision: 1,
   });
   assert.deepEqual(warnings, ['[DisplayCore] Display Window 輸出位置套用失敗。']);
+});
+
+test('初始化定位遇到暫時性原生錯誤時有限重試，成功後回到 applied', async () => {
+  const window = new FakeWindow();
+  let remainingFailures = 2;
+  const originalSetBounds = window.setBounds.bind(window);
+  window.setBounds = (bounds, animate) => {
+    window.throwOnBounds = remainingFailures > 0;
+    remainingFailures -= 1;
+    originalSetBounds(bounds, animate);
+  };
+  const waits = [];
+  const { controller } = createController({
+    logger: { warn() {} },
+    placementRetryAttempts: 3,
+    placementRetryDelayMilliseconds: 125,
+    waitForRetry: async (milliseconds) => waits.push(milliseconds),
+  });
+  controller.initialize();
+
+  assert.equal(await controller.applyToWindowWithRetry(window), true);
+  assert.equal(
+    window.calls.filter(({ method }) => method === 'setBounds').length,
+    3,
+  );
+  assert.deepEqual(waits, [125, 125]);
+  assert.equal(controller.getStatus().status, DISPLAY_PLACEMENT_STATUSES.APPLIED);
+});
+
+test('定位重試達上限後保留 error，不會無限循環', async () => {
+  const window = new FakeWindow();
+  window.throwOnBounds = true;
+  const waits = [];
+  const { controller } = createController({
+    logger: { warn() {} },
+    placementRetryAttempts: 2,
+    waitForRetry: async (milliseconds) => waits.push(milliseconds),
+  });
+  controller.initialize();
+
+  assert.equal(await controller.applyToWindowWithRetry(window), false);
+  assert.equal(
+    window.calls.filter(({ method }) => method === 'setBounds').length,
+    2,
+  );
+  assert.equal(waits.length, 1);
+  assert.equal(controller.getStatus().status, DISPLAY_PLACEMENT_STATUSES.ERROR);
 });
 
 test('沒有有效目標時保持 pending，dispose 後不再回應拓樸事件', () => {
