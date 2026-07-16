@@ -148,6 +148,8 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /scale\(0\.96\)/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /\.operation-footer\s*{[^}]*position:\s*fixed/s);
+  assert.match(css, /\.message-preview\s*,\s*\.current-message\.is-single-line\s*{[^}]*white-space:\s*nowrap/s);
+  assert.match(css, /\.current-message\.is-fill-screen\s*{[^}]*white-space:\s*pre-wrap/s);
   assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
   assert.doesNotMatch(css, /will-change:\s*all\b/);
 

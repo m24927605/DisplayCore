@@ -469,7 +469,17 @@ textarea:disabled {
   font-weight: 750;
   line-height: 1.4;
   scrollbar-width: thin;
-  white-space: pre;
+}
+
+.message-preview,
+.current-message.is-single-line {
+  overflow-y: hidden;
+  white-space: nowrap;
+}
+
+.current-message.is-fill-screen {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
 }
 
 .message-preview {

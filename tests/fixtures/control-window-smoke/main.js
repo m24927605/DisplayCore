@@ -242,11 +242,15 @@ async function runWorkflow(presentationStore) {
   const previewState = await execute(`(() => ({
     text: document.getElementById('message-preview').textContent,
     childCount: document.getElementById('message-preview').children.length,
+    whiteSpace: getComputedStyle(
+      document.getElementById('message-preview')
+    ).whiteSpace,
     pwnedType: typeof globalThis.displayCorePwned,
   }))()`);
   assert.deepEqual(previewState, {
     text: literalHtml,
     childCount: 0,
+    whiteSpace: 'nowrap',
     pwnedType: 'undefined',
   });
   await click('show-message-button');
@@ -264,6 +268,17 @@ async function runWorkflow(presentationStore) {
     revision: '#3',
     childCount: 0,
   });
+  assert.deepEqual(
+    await execute(`(() => {
+      const element = document.getElementById('current-message');
+      return {
+        whiteSpace: getComputedStyle(element).whiteSpace,
+        singleLine: element.classList.contains('is-single-line'),
+        fillScreen: element.classList.contains('is-fill-screen'),
+      };
+    })()`),
+    { whiteSpace: 'nowrap', singleLine: true, fillScreen: false },
+  );
 
   // 555 開啟 dialog 時尚未送出；確認後一次原子切換為滿屏。
   await click('inspection-555-button');
@@ -299,7 +314,8 @@ async function runWorkflow(presentationStore) {
     {
       dialogOpen: true,
       errorText: '操作失敗，請稍後再試。',
-      dialogError: '代碼尚未顯示，原畫面未變更。請確認後重試。',
+      dialogError:
+        '無法確認代碼是否已顯示。請先查看目前顯示狀態或電視畫面，再決定是否重試。',
       confirmText: '確認顯示 555',
     },
   );
@@ -318,6 +334,17 @@ async function runWorkflow(presentationStore) {
     layout: 'fill-screen',
     revision: 4,
   });
+  assert.deepEqual(
+    await execute(`(() => {
+      const element = document.getElementById('current-message');
+      return {
+        whiteSpace: getComputedStyle(element).whiteSpace,
+        singleLine: element.classList.contains('is-single-line'),
+        fillScreen: element.classList.contains('is-fill-screen'),
+      };
+    })()`),
+    { whiteSpace: 'pre-wrap', singleLine: false, fillScreen: true },
+  );
 
   // 888 的取消流程不改狀態；再次確認才送出。
   await click('inspection-888-button');

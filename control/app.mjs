@@ -169,13 +169,15 @@ function renderError(message) {
 
 function renderPresentation(snapshot) {
   const isEmpty = snapshot.message.length === 0;
+  const isFillScreen = snapshot.layout === 'fill-screen';
 
   elements.currentMessage.textContent = isEmpty
     ? '目前為空白畫面'
     : snapshot.message;
   elements.currentMessage.classList.toggle('is-placeholder', isEmpty);
-  elements.currentLayout.textContent =
-    snapshot.layout === 'fill-screen' ? '滿屏' : '單行';
+  elements.currentMessage.classList.toggle('is-single-line', !isFillScreen);
+  elements.currentMessage.classList.toggle('is-fill-screen', isFillScreen);
+  elements.currentLayout.textContent = isFillScreen ? '滿屏' : '單行';
   elements.currentRevision.textContent = `#${snapshot.revision}`;
 }
 
@@ -289,7 +291,7 @@ async function confirmEmergency() {
 
   if (!succeeded) {
     elements.dialogError.textContent =
-      '代碼尚未顯示，原畫面未變更。請確認後重試。';
+      '無法確認代碼是否已顯示。請先查看目前顯示狀態或電視畫面，再決定是否重試。';
     elements.dialogError.hidden = false;
     return;
   }
