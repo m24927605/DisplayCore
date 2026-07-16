@@ -20,7 +20,7 @@ module.exports = {
       /^\/tests(?:\/|$)/,
       /^\/coverage(?:\/|$)/,
       /^\/node_modules\/.*\/(?:test|tests|coverage)(?:\/|$)/,
-      /^\/(?:.*\/)?\.ait(?:\/|$)/i,
+      /^\/(?:.*\/)?\.?ait(?:\/|$)/i,
       /\.ait$/i,
     ],
   },

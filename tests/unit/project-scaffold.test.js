@@ -130,6 +130,9 @@ test('Electron 封裝排除專案與相依套件的測試、覆蓋率與 AIT 資
     true,
   );
   assert.equal(isIgnored('/.ait/settings.json'), true);
+  assert.equal(isIgnored('/ait/settings.json'), true);
+  assert.equal(isIgnored('/assets/ait/config.json'), true);
+  assert.equal(isIgnored('/assets/wait/config.json'), false);
   assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
   assert.equal(isIgnored('/node_modules/example/index.js'), false);
   assert.equal(typeof forgeConfig.hooks.packageAfterCopy, 'function');
