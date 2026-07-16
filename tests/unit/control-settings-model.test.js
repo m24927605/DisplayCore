@@ -64,7 +64,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿可修改輸出模式、指定螢幕與全螢幕，並保留 locale', async () => {
+test('設定草稿只修改顯示內容，原樣保留相容用輸出欄位與 locale', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -84,9 +84,6 @@ test('設定草稿可修改輸出模式、指定螢幕與全螢幕，並保留 l
     dateTimeEnabled: true,
     hour12: true,
     marqueeEnabled: false,
-    displaySelectionMode: 'manual',
-    defaultDisplayId: '42',
-    displayFullscreen: false,
   });
 
   assert.equal(result.ok, true);
@@ -126,9 +123,6 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     dateTimeEnabled: false,
     hour12: false,
     marqueeEnabled: true,
-    displaySelectionMode: 'auto',
-    defaultDisplayId: '',
-    displayFullscreen: true,
   };
   const invalidPartials = [
     { logoEnabled: true, logoPath: null },
@@ -144,13 +138,6 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { dateTimeEnabled: 'true' },
     { hour12: 0 },
     { marqueeEnabled: 1 },
-    { displaySelectionMode: 'automatic' },
-    { displaySelectionMode: 'manual', defaultDisplayId: '' },
-    { displaySelectionMode: 'manual', defaultDisplayId: '-1' },
-    { displaySelectionMode: 'manual', defaultDisplayId: '01' },
-    { displaySelectionMode: 'manual', defaultDisplayId: '1.5' },
-    { displaySelectionMode: 'manual', defaultDisplayId: '9007199254740992' },
-    { displayFullscreen: 'true' },
   ];
 
   for (const partial of invalidPartials) {
@@ -160,7 +147,7 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
   }
 });
 
-test('自動輸出模式固定保存 null，不會夾帶先前指定螢幕 ID', async () => {
+test('已移除的輸出草稿參數無法改變 baseline 相容欄位', async () => {
   const { buildSettingsDraft } = await loadModule();
   const result = buildSettingsDraft({
     baseline: defaultConfig,
@@ -173,7 +160,7 @@ test('自動輸出模式固定保存 null，不會夾帶先前指定螢幕 ID', 
     dateTimeEnabled: false,
     hour12: false,
     marqueeEnabled: true,
-    displaySelectionMode: 'auto',
+    displaySelectionMode: 'manual',
     defaultDisplayId: '42',
     displayFullscreen: false,
   });
@@ -182,7 +169,7 @@ test('自動輸出模式固定保存 null，不會夾帶先前指定螢幕 ID', 
   assert.deepEqual(result.config.display, {
     selectionMode: 'auto',
     defaultDisplayId: null,
-    fullscreen: false,
+    fullscreen: true,
   });
 });
 

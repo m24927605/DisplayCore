@@ -12,7 +12,7 @@ const fixtureRoot = path.resolve(
   'ipc-bridge-smoke',
 );
 
-test('真實 Electron 完成 Control → Main → Display IPC round-trip', () => {
+test('真實 Electron 以 contentRevision 完成分流 snapshot IPC round-trip', () => {
   const electronBinary = require('electron');
   const result = spawnSync(electronBinary, [fixtureRoot], {
     encoding: 'utf8',

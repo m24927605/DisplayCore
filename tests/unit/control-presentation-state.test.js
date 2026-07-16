@@ -23,10 +23,11 @@ function createPageSnapshot(revision = 3) {
     layout: 'single-line',
     pageDurationSeconds: 3,
     pageNumber: 1,
-    pageCount: 2,
+    pageCount: 1,
     roundNumber: 1,
     totalRounds: 10,
     revision,
+    contentRevision: 2,
   };
 }
 
@@ -56,6 +57,7 @@ test('Control 接受 blank／emergency discriminated shape', async () => {
     roundNumber: null,
     totalRounds: null,
     revision: 0,
+    contentRevision: 0,
   };
   const emergency = {
     mode: 'emergency',
@@ -67,6 +69,7 @@ test('Control 接受 blank／emergency discriminated shape', async () => {
     roundNumber: null,
     totalRounds: null,
     revision: 1,
+    contentRevision: 1,
   };
 
   assert.equal(acceptPresentationSnapshot(-1, blank).accepted, true);
@@ -81,7 +84,7 @@ test('相同 revision 一律視為已處理，不允許衝突內容重畫', asyn
   });
 });
 
-test('Control 拒絕未知欄位、超過三則、錯誤 metadata 與不安全 revision', async () => {
+test('Control 接受完整 active 清單，並拒絕超量、頁數不一致與不安全版本', async () => {
   const { acceptPresentationSnapshot } = await loadPresentationState();
   const valid = createPageSnapshot();
   const invalidSnapshots = [
@@ -92,15 +95,20 @@ test('Control 拒絕未知欄位、超過三則、錯誤 metadata 與不安全 r
     { ...valid, messages: [] },
     {
       ...valid,
-      messages: Array.from({ length: 4 }, () => ({ message: '超量' })),
+      messages: Array.from({ length: 501 }, () => ({ message: '超量' })),
+      pageCount: 167,
     },
     { ...valid, messages: [{ message: '合法', title: '禁止欄位' }] },
     { ...valid, pageDurationSeconds: null },
-    { ...valid, pageNumber: 3 },
+    { ...valid, pageCount: 2 },
+    { ...valid, pageNumber: 2 },
     { ...valid, roundNumber: null, totalRounds: 10 },
+    { ...valid, roundNumber: 1, totalRounds: 1_000 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, revision: Number.MAX_SAFE_INTEGER + 1 },
+    { ...valid, contentRevision: -1 },
+    { ...valid, contentRevision: 1.5 },
   ];
 
   for (const snapshot of invalidSnapshots) {
@@ -108,6 +116,22 @@ test('Control 拒絕未知欄位、超過三則、錯誤 metadata 與不安全 r
       accepted: false,
     });
   }
+});
+
+test('Control 的七則 active 訊息必須對應三頁，且接受翻頁時不變的內容版本', async () => {
+  const { acceptPresentationSnapshot } = await loadPresentationState();
+  const messages = Array.from({ length: 7 }, (_value, index) => ({
+    message: `訊息${index + 1}`,
+  }));
+  const snapshot = {
+    ...createPageSnapshot(8),
+    messages,
+    pageNumber: 2,
+    pageCount: 3,
+    contentRevision: 4,
+  };
+
+  assert.equal(acceptPresentationSnapshot(7, snapshot).accepted, true);
 });
 
 test('接受後深層複製 messages，不保留可被外部修改的物件', async () => {

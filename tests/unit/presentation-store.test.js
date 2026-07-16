@@ -123,3 +123,41 @@ test('snapshot 與輸入 program 都使用深層副本，Renderer 無法反向�
 
   assert.equal(store.getSnapshot().messages[0].message, '訊息1');
 });
+
+test('Control 取得完整 active 內容，翻頁不改 contentRevision，內容替換才遞增', () => {
+  const store = new PresentationStore();
+  const firstDisplayPage = store.startProgram(
+    createProgram(4, { mode: 'finite', rounds: 1 }),
+  );
+  const firstControlPage = store.getControlSnapshot();
+
+  assert.equal(Object.hasOwn(firstDisplayPage, 'contentRevision'), false);
+  assert.deepEqual(firstDisplayPage.messages, [
+    { message: '訊息1' },
+    { message: '訊息2' },
+    { message: '訊息3' },
+  ]);
+  assert.deepEqual(firstControlPage.messages, [
+    { message: '訊息1' },
+    { message: '訊息2' },
+    { message: '訊息3' },
+    { message: '訊息4' },
+  ]);
+  assert.equal(firstControlPage.contentRevision, 1);
+
+  store.advanceProgram();
+  const secondControlPage = store.getControlSnapshot();
+  assert.equal(secondControlPage.pageNumber, 2);
+  assert.equal(secondControlPage.revision, 2);
+  assert.equal(secondControlPage.contentRevision, 1);
+  assert.equal(secondControlPage.messages.length, 4);
+
+  store.advanceProgram();
+  assert.equal(store.getControlSnapshot().mode, 'blank');
+  assert.equal(store.getControlSnapshot().contentRevision, 2);
+
+  store.showEmergency('555');
+  assert.equal(store.getControlSnapshot().contentRevision, 3);
+  store.clearPresentation();
+  assert.equal(store.getControlSnapshot().contentRevision, 4);
+});

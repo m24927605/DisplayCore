@@ -20,7 +20,7 @@ function createDeferred() {
   return { promise, resolve, reject };
 }
 
-function createBlankSnapshot(revision = 0) {
+function createBlankSnapshot(revision = 0, contentRevision = 0) {
   return {
     mode: 'blank',
     messages: [],
@@ -31,10 +31,15 @@ function createBlankSnapshot(revision = 0) {
     roundNumber: null,
     totalRounds: null,
     revision,
+    contentRevision,
   };
 }
 
-function createPageSnapshot(revision, message = '001請至前廳') {
+function createPageSnapshot(
+  revision,
+  message = '001請至前廳',
+  contentRevision = 1,
+) {
   return {
     mode: 'page',
     messages: [{ message }],
@@ -45,6 +50,7 @@ function createPageSnapshot(revision, message = '001請至前廳') {
     roundNumber: null,
     totalRounds: null,
     revision,
+    contentRevision,
   };
 }
 
@@ -125,8 +131,8 @@ test('啟動播放只傳完整 program，並同步阻擋重複提交', async () 
   const api = {
     onPresentationChanged: () => () => {},
     getPresentation: async () => ({ ok: true, data: createBlankSnapshot() }),
-    startProgram(program) {
-      apiCalls.push(program);
+    startProgram(program, expectedContentRevision) {
+      apiCalls.push([program, expectedContentRevision]);
       return response.promise;
     },
     showEmergency: async () => ({ ok: false }),
@@ -149,7 +155,7 @@ test('啟動播放只傳完整 program，並同步阻擋重複提交', async () 
   );
 
   assert.equal(duplicateOperation, false);
-  assert.deepEqual(apiCalls, [program]);
+  assert.deepEqual(apiCalls, [[program, 0]]);
 
   response.resolve({ ok: true, data: createPageSnapshot(1) });
   assert.equal(await firstOperation, true);
@@ -186,8 +192,8 @@ test('緊急代碼與清除使用各自專用 API；錯誤 envelope 不改變目
         },
       };
     },
-    clearPresentation: async () => {
-      apiCalls.push(['clear']);
+    clearPresentation: async (expectedContentRevision) => {
+      apiCalls.push(['clear', expectedContentRevision]);
       return {
         ok: false,
         error: {
@@ -205,7 +211,7 @@ test('緊急代碼與清除使用各自專用 API；錯誤 envelope 不改變目
 
   assert.equal(await controller.showEmergency('555'), false);
   assert.equal(await controller.clearPresentation(), false);
-  assert.deepEqual(apiCalls, [['emergency', '555'], ['clear']]);
+  assert.deepEqual(apiCalls, [['emergency', '555'], ['clear', 1]]);
   assert.equal(
     calls.filter(([type]) => type === 'presentation').length,
     presentationCount,

@@ -29,7 +29,7 @@ async function runElectronFixture() {
     );
 
     if (
-      result?.restoredFocusId !== 'manage-output-settings-button' ||
+      result?.restoredFocusId !== 'open-settings-button' ||
       result?.preservedNewFocusId !== 'next-action-input'
     ) {
       console.error(
@@ -61,7 +61,7 @@ if (process.versions.electron) {
   // Regression: ISSUE-001 — 設定對話框偶爾恢復到錯誤的入口按鈕
   // Found by /qa on 2026-07-17
   // Report: .gstack/qa-reports/qa-report-displaycore-2026-07-17.md
-  test('設定對話框恢復實際入口且不延遲搶走後續焦點', () => {
+  test('設定對話框恢復單一齒輪入口且不延遲搶走後續焦點', () => {
     const electronBinary = require('electron');
     const result = spawnSync(electronBinary, [__filename], {
       encoding: 'utf8',

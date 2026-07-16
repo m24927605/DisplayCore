@@ -19,6 +19,7 @@ const {
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
   validateEmergencyPayload,
+  validateClearPresentationPayload,
   validatePageProgressPayload,
   validateSaveSettingsPayload,
   validateStartProgramPayload,
@@ -165,11 +166,13 @@ test('一般顯示接受完整 message 清單與明確的持續／有限輪播�
     messages,
     pageDurationSeconds: 3,
     repeat: { mode: PLAYBACK_MODES.CONTINUOUS },
+    expectedContentRevision: 0,
   });
   const finite = validateStartProgramPayload({
     messages,
     pageDurationSeconds: 8,
     repeat: { mode: PLAYBACK_MODES.FINITE, rounds: 10 },
+    expectedContentRevision: 7,
   });
 
   assert.deepEqual(continuous, {
@@ -178,6 +181,7 @@ test('一般顯示接受完整 message 清單與明確的持續／有限輪播�
       messages,
       pageDurationSeconds: 3,
       repeat: { mode: 'continuous' },
+      expectedContentRevision: 0,
     },
   });
   assert.deepEqual(finite, {
@@ -186,6 +190,7 @@ test('一般顯示接受完整 message 清單與明確的持續／有限輪播�
       messages,
       pageDurationSeconds: 8,
       repeat: { mode: 'finite', rounds: 10 },
+      expectedContentRevision: 7,
     },
   });
   assert.notEqual(continuous.value.messages, messages);
@@ -206,6 +211,7 @@ test('每頁固定最多三則，並為訊息數、時間、輪次與總字數�
         messages: createMessages(count),
         pageDurationSeconds: 3,
         repeat: { mode: 'continuous' },
+        expectedContentRevision: 0,
       }).ok,
       true,
       `${count} 則應通過`,
@@ -216,6 +222,7 @@ test('每頁固定最多三則，並為訊息數、時間、輪次與總字數�
     messages: [{ message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS) }],
     pageDurationSeconds: MAX_PAGE_DURATION_SECONDS,
     repeat: { mode: 'finite', rounds: MAX_CYCLE_COUNT },
+    expectedContentRevision: Number.MAX_SAFE_INTEGER,
   });
   assert.equal(exactlyAtLimit.ok, true);
 });
@@ -225,6 +232,7 @@ test('一般顯示原子拒絕未知欄位、空項目、錯誤 repeat 與超量
     messages: [{ message: '001請至前廳' }],
     pageDurationSeconds: 3,
     repeat: { mode: 'continuous' },
+    expectedContentRevision: 0,
   };
   const invalidPayloads = [
     null,
@@ -260,6 +268,25 @@ test('一般顯示原子拒絕未知欄位、空項目、錯誤 repeat 與超量
     assert.equal(result.ok, false, JSON.stringify(payload)?.slice(0, 200));
     assert.equal(result.error.code, 'VALIDATION_FAILED');
     assert.equal(typeof result.error.message, 'string');
+  }
+});
+
+test('清除畫面只接受 exact contentRevision，比對值不得為負數或小數', () => {
+  assert.deepEqual(validateClearPresentationPayload({
+    expectedContentRevision: 12,
+  }), {
+    ok: true,
+    value: { expectedContentRevision: 12 },
+  });
+
+  for (const payload of [
+    undefined,
+    {},
+    { expectedContentRevision: -1 },
+    { expectedContentRevision: 1.5 },
+    { expectedContentRevision: 0, extra: true },
+  ]) {
+    assert.equal(validateClearPresentationPayload(payload).ok, false);
   }
 });
 

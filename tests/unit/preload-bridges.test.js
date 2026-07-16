@@ -91,9 +91,10 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
     [{ message: '  Nancy請至前廳\n原樣保留  ' }],
     3,
     { mode: 'continuous' },
+    12,
   );
   await api.showEmergency('555');
-  await api.clearPresentation();
+  await api.clearPresentation(12);
   await api.getSettings();
   await api.saveSettings({ configVersion: 1 }, 7);
   await api.chooseLogo();
@@ -118,11 +119,16 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
       messages: [{ message: '  Nancy請至前廳\n原樣保留  ' }],
       pageDurationSeconds: 3,
       repeat: { mode: 'continuous' },
+      expectedContentRevision: 12,
     }),
   );
   assert.equal(
     JSON.stringify(harness.invocations[2].args[0]),
     JSON.stringify({ code: '555' }),
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.invocations[3].args[0])),
+    { expectedContentRevision: 12 },
   );
   assert.deepEqual(
     JSON.parse(JSON.stringify(harness.invocations[5].args[0])),

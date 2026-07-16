@@ -1,6 +1,7 @@
 const ALLOWED_LAYOUTS = new Set(['single-line', 'fill-screen']);
 const ALLOWED_MODES = new Set(['blank', 'page', 'emergency']);
 const SNAPSHOT_KEYS = Object.freeze([
+  'contentRevision',
   'layout',
   'messages',
   'mode',
@@ -12,9 +13,13 @@ const SNAPSHOT_KEYS = Object.freeze([
   'totalRounds',
 ]);
 const MESSAGE_KEYS = Object.freeze(['message']);
-const MAX_PAGE_MESSAGES = 3;
+const MESSAGES_PER_PAGE = 3;
+const MAX_ACTIVE_MESSAGES = 500;
+const MAX_PAGE_COUNT = Math.ceil(MAX_ACTIVE_MESSAGES / MESSAGES_PER_PAGE);
 const MAX_TOTAL_CODE_POINTS = 10_000;
+const MAX_ROUNDS = 999;
 
+/** 僅接受 structured-clone 後的普通資料物件，拒絕陣列與自定 prototype。 */
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -37,7 +42,7 @@ function hasExactKeys(value, expectedKeys) {
 }
 
 function isValidMessages(messages) {
-  if (!Array.isArray(messages) || messages.length > MAX_PAGE_MESSAGES) {
+  if (!Array.isArray(messages) || messages.length > MAX_ACTIVE_MESSAGES) {
     return false;
   }
 
@@ -81,6 +86,7 @@ function isValidPageMetadata(snapshot) {
     Number.isSafeInteger(snapshot.roundNumber) &&
     Number.isSafeInteger(snapshot.totalRounds) &&
     snapshot.roundNumber >= 1 &&
+    snapshot.totalRounds <= MAX_ROUNDS &&
     snapshot.totalRounds >= snapshot.roundNumber;
 
   return (
@@ -92,6 +98,10 @@ function isValidPageMetadata(snapshot) {
     Number.isSafeInteger(snapshot.pageNumber) &&
     Number.isSafeInteger(snapshot.pageCount) &&
     snapshot.pageCount >= 1 &&
+    snapshot.pageCount <= MAX_PAGE_COUNT &&
+    snapshot.pageCount === Math.ceil(
+      snapshot.messages.length / MESSAGES_PER_PAGE,
+    ) &&
     snapshot.pageNumber >= 1 &&
     snapshot.pageNumber <= snapshot.pageCount &&
     (hasContinuousRepeat || hasFiniteRepeat)
@@ -104,6 +114,8 @@ function isValidSnapshot(snapshot) {
     !ALLOWED_MODES.has(snapshot.mode) ||
     !ALLOWED_LAYOUTS.has(snapshot.layout) ||
     !isValidMessages(snapshot.messages) ||
+    !Number.isSafeInteger(snapshot.contentRevision) ||
+    snapshot.contentRevision < 0 ||
     !Number.isSafeInteger(snapshot.revision) ||
     snapshot.revision < 0
   ) {
@@ -155,6 +167,7 @@ export function acceptPresentationSnapshot(currentRevision, candidate) {
       roundNumber: candidate.roundNumber,
       totalRounds: candidate.totalRounds,
       revision: candidate.revision,
+      contentRevision: candidate.contentRevision,
     },
   };
 }

@@ -12,10 +12,12 @@ const MAX_PAGE_DURATION_SECONDS = 3_600;
 const MAX_CYCLE_COUNT = 999;
 
 const PROGRAM_KEYS = Object.freeze([
+  'expectedContentRevision',
   'messages',
   'pageDurationSeconds',
   'repeat',
 ]);
+const CLEAR_PRESENTATION_KEYS = Object.freeze(['expectedContentRevision']);
 const MESSAGE_KEYS = Object.freeze(['message']);
 const EMERGENCY_KEYS = Object.freeze(['code']);
 const SAVE_SETTINGS_KEYS = Object.freeze(['config', 'expectedRevision']);
@@ -154,6 +156,20 @@ function validateRepeat(repeat) {
   return validationFailure('repeat mode 不在允許清單中。', 'repeat');
 }
 
+function validateExpectedContentRevision(expectedContentRevision) {
+  if (
+    !Number.isSafeInteger(expectedContentRevision) ||
+    expectedContentRevision < 0
+  ) {
+    return validationFailure(
+      '螢幕內容版本必須是非負整數。',
+      'expectedContentRevision',
+    );
+  }
+
+  return { ok: true, value: expectedContentRevision };
+}
+
 /** 驗證並深層複製一般訊息播放清單。 */
 function validateStartProgramPayload(payload) {
   if (!hasExactKeys(payload, PROGRAM_KEYS)) {
@@ -164,6 +180,14 @@ function validateStartProgramPayload(payload) {
 
   if (!messages.ok) {
     return messages;
+  }
+
+  const expectedContentRevision = validateExpectedContentRevision(
+    payload.expectedContentRevision,
+  );
+
+  if (!expectedContentRevision.ok) {
+    return expectedContentRevision;
   }
 
   if (
@@ -189,8 +213,27 @@ function validateStartProgramPayload(payload) {
       messages: messages.value,
       pageDurationSeconds: payload.pageDurationSeconds,
       repeat: repeat.value,
+      expectedContentRevision: expectedContentRevision.value,
     },
   };
+}
+
+/** 清除也必須攜帶操作者目前看到的內容版本，避免 stale click。 */
+function validateClearPresentationPayload(payload) {
+  if (!hasExactKeys(payload, CLEAR_PRESENTATION_KEYS)) {
+    return validationFailure('清除畫面資料包含缺少或不允許的欄位。');
+  }
+
+  const expectedContentRevision = validateExpectedContentRevision(
+    payload.expectedContentRevision,
+  );
+
+  return expectedContentRevision.ok
+    ? {
+      ok: true,
+      value: { expectedContentRevision: expectedContentRevision.value },
+    }
+    : expectedContentRevision;
 }
 
 /** 555／888 使用獨立指令，不允許一般 message 假冒緊急操作。 */
@@ -324,6 +367,7 @@ module.exports = {
   MAX_PAGE_DURATION_SECONDS,
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
+  validateClearPresentationPayload,
   validateEmergencyPayload,
   validatePageProgressPayload,
   validateSaveSettingsPayload,

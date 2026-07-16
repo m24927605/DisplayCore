@@ -2,19 +2,60 @@
 
 let latestRevision = -1;
 
-function isExpectedSnapshot(snapshot) {
+const EXPECTED_PAGE_MESSAGES = Object.freeze([
+  '555\nNancy原樣<script>不是標籤</script>',
+  '002請至前廳',
+  '歡迎光臨',
+]);
+
+const DISPLAY_SNAPSHOT_KEYS = Object.freeze([
+  'layout',
+  'messages',
+  'mode',
+  'pageCount',
+  'pageDurationSeconds',
+  'pageNumber',
+  'revision',
+  'roundNumber',
+  'totalRounds',
+]);
+
+function hasExactKeys(value, expectedKeys) {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    return false;
+  }
+
+  const keys = Object.keys(value).sort();
   return (
+    keys.length === expectedKeys.length &&
+    keys.every((key, index) => key === expectedKeys[index])
+  );
+}
+
+function hasExpectedPageMessages(messages) {
+  return (
+    Array.isArray(messages) &&
+    messages.length === EXPECTED_PAGE_MESSAGES.length &&
+    messages.every(
+      (item, index) =>
+        hasExactKeys(item, ['message']) &&
+        item.message === EXPECTED_PAGE_MESSAGES[index],
+    )
+  );
+}
+
+function isExpectedDisplaySnapshot(snapshot) {
+  return (
+    hasExactKeys(snapshot, DISPLAY_SNAPSHOT_KEYS) &&
     snapshot.mode === 'page' &&
-    snapshot.messages.length === 1 &&
-    snapshot.messages[0].message ===
-      '555\nNancy原樣<script>不是標籤</script>' &&
+    hasExpectedPageMessages(snapshot.messages) &&
     snapshot.layout === 'single-line' &&
     snapshot.pageDurationSeconds === 3 &&
     snapshot.pageNumber === 1 &&
-    snapshot.pageCount === 1 &&
+    snapshot.pageCount === 2 &&
     snapshot.roundNumber === null &&
     snapshot.totalRounds === null &&
-    snapshot.revision === 1
+    snapshot.revision === 2
   );
 }
 
@@ -25,14 +66,14 @@ async function applySnapshot(snapshot) {
 
   latestRevision = snapshot.revision;
 
-  if (!isExpectedSnapshot(snapshot)) {
+  if (!isExpectedDisplaySnapshot(snapshot)) {
     return;
   }
 
   const current = await window.displayCoreDisplay.getPresentation();
 
-  if (current.ok && isExpectedSnapshot(current.data)) {
-    document.title = 'DISPLAYCORE_IPC_OK';
+  if (current.ok && isExpectedDisplaySnapshot(current.data)) {
+    document.title = 'DISPLAYCORE_DISPLAY_IPC_OK';
   }
 }
 

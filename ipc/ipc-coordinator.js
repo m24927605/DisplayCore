@@ -5,6 +5,7 @@ const { createDisplaySettingsSnapshot } = require('./display-settings');
 const { createControlOutputSnapshot } = require('./output-status');
 const {
   validateEmergencyPayload,
+  validateClearPresentationPayload,
   validatePageProgressPayload,
   validateSaveSettingsPayload,
   validateStartProgramPayload,
@@ -44,6 +45,16 @@ function internalError() {
     error: {
       code: 'INTERNAL_ERROR',
       message: '操作失敗，請稍後再試。',
+    },
+  };
+}
+
+function presentationConflict() {
+  return {
+    ok: false,
+    error: {
+      code: 'PRESENTATION_CONFLICT',
+      message: '螢幕內容已更新，請重新操作。',
     },
   };
 }
@@ -164,7 +175,7 @@ class IpcCoordinator {
     this.ipcMain.handle(
       IPC_CHANNELS.CONTROL_GET_PRESENTATION,
       (event) => this.handleRequest(IPC_ROLES.CONTROL, event, () =>
-        success(this.presentationService.getSnapshot()),
+        success(this.presentationService.getControlSnapshot()),
       ),
     );
     this.ipcMain.handle(
@@ -185,10 +196,10 @@ class IpcCoordinator {
     );
     this.ipcMain.handle(
       IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
-      (event) => this.handleRequest(
+      (event, payload) => this.handleRequest(
         IPC_ROLES.CONTROL,
         event,
-        () => success(this.presentationService.clearPresentation()),
+        () => this.clearPresentation(payload),
       ),
     );
     this.ipcMain.handle(
@@ -343,7 +354,14 @@ class IpcCoordinator {
       return validation;
     }
 
-    return success(this.presentationService.startProgram(validation.value));
+    const { expectedContentRevision, ...program } = validation.value;
+
+    if (!this.hasCurrentContentRevision(expectedContentRevision)) {
+      return presentationConflict();
+    }
+
+    this.presentationService.startProgram(program);
+    return success(this.presentationService.getControlSnapshot());
   }
 
   showEmergency(payload) {
@@ -353,9 +371,32 @@ class IpcCoordinator {
       return validation;
     }
 
-    return success(
-      this.presentationService.showEmergency(validation.value.code),
-    );
+    this.presentationService.showEmergency(validation.value.code);
+    return success(this.presentationService.getControlSnapshot());
+  }
+
+  clearPresentation(payload) {
+    const validation = validateClearPresentationPayload(payload);
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    if (
+      !this.hasCurrentContentRevision(
+        validation.value.expectedContentRevision,
+      )
+    ) {
+      return presentationConflict();
+    }
+
+    this.presentationService.clearPresentation();
+    return success(this.presentationService.getControlSnapshot());
+  }
+
+  hasCurrentContentRevision(expectedContentRevision) {
+    return this.presentationService.getControlSnapshot().contentRevision ===
+      expectedContentRevision;
   }
 
   reportPageProgress(event, payload) {
@@ -393,7 +434,7 @@ class IpcCoordinator {
     this.sendToRole(
       IPC_ROLES.CONTROL,
       IPC_CHANNELS.CONTROL_PRESENTATION_CHANGED,
-      snapshot,
+      this.presentationService.getControlSnapshot(),
     );
     this.sendToRole(
       IPC_ROLES.DISPLAY,

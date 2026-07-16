@@ -91,13 +91,18 @@ function createEvent(
   };
 }
 
-function createProgram(messageCount = 1, repeat = { mode: 'continuous' }) {
+function createProgram(
+  messageCount = 1,
+  repeat = { mode: 'continuous' },
+  expectedContentRevision = 0,
+) {
   return {
     messages: Array.from({ length: messageCount }, (_value, index) => ({
       message: `訊息${index + 1}`,
     })),
     pageDurationSeconds: 3,
     repeat,
+    expectedContentRevision,
   };
 }
 
@@ -603,7 +608,7 @@ test('設定衝突與 Logo 格式錯誤回傳固定可操作訊息', async () =>
   assert.equal(errors.length, 0);
 });
 
-test('Control 啟動清單、滿屏與清除時，Main 對兩個角色發布相同 snapshot', async () => {
+test('Control 取得完整內容版本，Display 只取得目前頁面 snapshot', async () => {
   const { ipcMain, windows } = createHarness();
   const controlEvent = createEvent(windows.control);
   const displayEvent = createEvent(windows.display);
@@ -629,10 +634,12 @@ test('Control 啟動清單、滿屏與清除時，Main 對兩個角色發布相�
   const cleared = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
     controlEvent,
+    { expectedContentRevision: 2 },
   );
 
   assert.equal(initial.ok, true);
   assert.equal(initial.data.mode, 'blank');
+  assert.equal(initial.data.contentRevision, 0);
   assert.deepEqual(shown, {
     ok: true,
     data: {
@@ -645,20 +652,85 @@ test('Control 啟動清單、滿屏與清除時，Main 對兩個角色發布相�
       roundNumber: null,
       totalRounds: null,
       revision: 1,
+      contentRevision: 1,
     },
   });
-  assert.deepEqual(displaySnapshot, shown);
+  assert.equal(displaySnapshot.ok, true);
+  assert.equal(displaySnapshot.data.mode, 'page');
+  assert.equal(Object.hasOwn(displaySnapshot.data, 'contentRevision'), false);
   assert.equal(emergency.data.mode, 'emergency');
   assert.equal(emergency.data.messages[0].message, '888');
+  assert.equal(emergency.data.contentRevision, 2);
   assert.equal(cleared.data.mode, 'blank');
   assert.equal(cleared.data.revision, 3);
+  assert.equal(cleared.data.contentRevision, 3);
 
-  for (const role of [IPC_ROLES.CONTROL, IPC_ROLES.DISPLAY]) {
-    assert.deepEqual(
-      windows[role].webContents.sent.map(({ payload }) => payload.revision),
-      [1, 2, 3],
-    );
+  assert.deepEqual(
+    windows.control.webContents.sent.map(({ payload }) =>
+      [payload.revision, payload.contentRevision]),
+    [[1, 1], [2, 2], [3, 3]],
+  );
+  assert.deepEqual(
+    windows.display.webContents.sent.map(({ payload }) =>
+      [payload.revision, Object.hasOwn(payload, 'contentRevision')]),
+    [[1, false], [2, false], [3, false]],
+  );
+});
+
+test('內容 CAS 不受翻頁 revision 影響，過期修改會原子拒絕', async () => {
+  const { ipcMain, presentationService, timers, windows } = createHarness();
+  const controlEvent = createEvent(windows.control);
+  const displayEvent = createEvent(windows.display);
+
+  const started = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    controlEvent,
+    createProgram(4, { mode: 'finite', rounds: 1 }, 0),
+  );
+  assert.equal(started.data.contentRevision, 1);
+
+  await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    displayEvent,
+    createPageProgress(presentationService.getSnapshot(), 'ready'),
+  );
+  timers[0].callback();
+  assert.equal(presentationService.getSnapshot().pageNumber, 2);
+  assert.equal(presentationService.getControlSnapshot().contentRevision, 1);
+
+  const replaced = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    controlEvent,
+    createProgram(1, { mode: 'continuous' }, 1),
+  );
+  assert.equal(replaced.ok, true);
+  assert.equal(replaced.data.contentRevision, 2);
+  const broadcastCount = windows.control.webContents.sent.length;
+
+  for (const [channel, payload] of [
+    [IPC_CHANNELS.CONTROL_START_PROGRAM, createProgram(1, { mode: 'continuous' }, 1)],
+    [IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION, { expectedContentRevision: 1 }],
+  ]) {
+    const conflict = await ipcMain.invoke(channel, controlEvent, payload);
+    assert.deepEqual(conflict, {
+      ok: false,
+      error: {
+        code: 'PRESENTATION_CONFLICT',
+        message: '螢幕內容已更新，請重新操作。',
+      },
+    });
   }
+
+  assert.equal(presentationService.getControlSnapshot().contentRevision, 2);
+  assert.equal(windows.control.webContents.sent.length, broadcastCount);
+  assert.equal(
+    (await ipcMain.invoke(
+      IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
+      controlEvent,
+      { expectedContentRevision: 2 },
+    )).ok,
+    true,
+  );
 });
 
 test('Main scheduler 等 Display ready 後才計算每頁最短時間並發布翻頁', async () => {
@@ -943,7 +1015,7 @@ test('Display 已銷毀時 Main 仍保存清單，等待重建 Renderer 取得�
   );
 
   assert.equal(result.ok, true);
-  assert.deepEqual(presentationService.getSnapshot(), result.data);
+  assert.deepEqual(presentationService.getControlSnapshot(), result.data);
   assert.equal(windows.control.webContents.sent.length, 1);
   assert.equal(windows.display.webContents.sent.length, 0);
   assert.equal(warnings.length, 0);

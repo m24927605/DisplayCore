@@ -26,6 +26,8 @@ let coordinator = null;
 let presentationService = null;
 let completed = false;
 let timeout = null;
+let controlVerified = false;
+let displayVerified = false;
 
 function finish(exitCode, message, error) {
   if (completed) {
@@ -69,6 +71,12 @@ function createWindow(preload) {
       devTools: false,
     },
   });
+}
+
+function finishWhenBothRenderersAreVerified() {
+  if (controlVerified && displayVerified) {
+    finish(0, '[DisplayCore] IPC bridge round-trip succeeded.');
+  }
 }
 
 async function run() {
@@ -120,16 +128,23 @@ async function run() {
   displayWindow.on('page-title-updated', (event, title) => {
     event.preventDefault();
 
-    if (title === 'DISPLAYCORE_IPC_OK') {
-      finish(0, '[DisplayCore] IPC bridge round-trip succeeded.');
+    if (title === 'DISPLAYCORE_DISPLAY_IPC_OK') {
+      displayVerified = true;
+      finishWhenBothRenderersAreVerified();
     }
   });
 
   controlWindow.on('page-title-updated', (event, title) => {
     event.preventDefault();
 
-    if (title === 'DISPLAYCORE_IPC_FAILED') {
+    if (title === 'DISPLAYCORE_CONTROL_IPC_FAILED') {
       finish(1, '[DisplayCore] Control bridge returned an error.');
+      return;
+    }
+
+    if (title === 'DISPLAYCORE_CONTROL_IPC_OK') {
+      controlVerified = true;
+      finishWhenBothRenderersAreVerified();
     }
   });
 

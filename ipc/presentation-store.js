@@ -23,7 +23,7 @@ function freezeProgram(program) {
   });
 }
 
-function createBlankState(revision) {
+function createBlankState(revision, contentRevision) {
   return Object.freeze({
     mode: PRESENTATION_MODES.BLANK,
     program: null,
@@ -31,6 +31,7 @@ function createBlankState(revision) {
     roundNumber: null,
     emergencyCode: null,
     revision,
+    contentRevision,
   });
 }
 
@@ -42,7 +43,7 @@ function createBlankState(revision) {
  */
 class PresentationStore {
   constructor() {
-    this.state = createBlankState(0);
+    this.state = createBlankState(0, 0);
   }
 
   getSnapshot() {
@@ -99,6 +100,20 @@ class PresentationStore {
     };
   }
 
+  /** Control 需要完整 active 內容；Display 仍只取得 getSnapshot() 的當頁。 */
+  getControlSnapshot() {
+    const snapshot = this.getSnapshot();
+    const messages = this.state.mode === PRESENTATION_MODES.PAGE
+      ? copyMessages(this.state.program.messages)
+      : copyMessages(snapshot.messages);
+
+    return {
+      ...snapshot,
+      messages,
+      contentRevision: this.state.contentRevision,
+    };
+  }
+
   startProgram(program) {
     const frozenProgram = freezeProgram(program);
     const isFinite = frozenProgram.repeat.mode === PLAYBACK_MODES.FINITE;
@@ -110,6 +125,7 @@ class PresentationStore {
       roundNumber: isFinite ? 1 : null,
       emergencyCode: null,
       revision: this.state.revision + 1,
+      contentRevision: this.state.contentRevision + 1,
     });
 
     return this.getSnapshot();
@@ -153,7 +169,10 @@ class PresentationStore {
       return this.getSnapshot();
     }
 
-    this.state = createBlankState(state.revision + 1);
+    this.state = createBlankState(
+      state.revision + 1,
+      state.contentRevision + 1,
+    );
     return this.getSnapshot();
   }
 
@@ -165,13 +184,17 @@ class PresentationStore {
       roundNumber: null,
       emergencyCode: code,
       revision: this.state.revision + 1,
+      contentRevision: this.state.contentRevision + 1,
     });
 
     return this.getSnapshot();
   }
 
   clearPresentation() {
-    this.state = createBlankState(this.state.revision + 1);
+    this.state = createBlankState(
+      this.state.revision + 1,
+      this.state.contentRevision + 1,
+    );
     return this.getSnapshot();
   }
 

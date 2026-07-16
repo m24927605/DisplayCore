@@ -114,6 +114,10 @@ class PresentationService {
     return this.store.getSnapshot();
   }
 
+  getControlSnapshot() {
+    return this.store.getControlSnapshot();
+  }
+
   /** Main 將此世代隨 refit 通知送給目前可見的 Display。 */
   getDisplayEpoch() {
     return this.displayEpoch;

@@ -13,6 +13,16 @@ async function loadComposer() {
   return import(moduleUrl);
 }
 
+test('營運罐頭訊息固定為歡迎光臨與請輕聲細語', async () => {
+  const { OPERATION_MESSAGES } = await loadComposer();
+
+  assert.deepEqual(OPERATION_MESSAGES, {
+    WELCOME: '歡迎光臨',
+    QUIET: '請輕聲細語',
+  });
+  assert.equal(Object.isFrozen(OPERATION_MESSAGES), true);
+});
+
 test('固定動作把編號或花名放在完整 message 最前方', async () => {
   const { ACTIONS, composeMessage } = await loadComposer();
 

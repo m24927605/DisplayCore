@@ -20,60 +20,94 @@
             <h1 id="page-title">顯示控制台</h1>
           </div>
         </div>
-        <div class="offline-badge" aria-label="系統以本機離線模式運作">
-          <span class="status-dot" aria-hidden="true"></span>
-          本機離線模式
+
+        <div class="header-actions">
+          <div
+            id="output-status-cluster"
+            class="output-status-cluster"
+            aria-busy="true"
+          >
+            <span
+              id="hdmi-status-badge"
+              class="hdmi-status-badge"
+              data-tone="detecting"
+            >
+              <span class="status-dot" aria-hidden="true"></span>
+              <span id="hdmi-status-text">正在偵測 HDMI…</span>
+            </span>
+            <span class="output-divider" aria-hidden="true">·</span>
+            <span id="output-target">正在取得螢幕資訊…</span>
+            <span id="output-status-notice" class="visually-hidden" role="status" hidden></span>
+            <span id="output-status-error" class="visually-hidden" role="alert" hidden></span>
+          </div>
+
+          <button
+            id="open-settings-button"
+            class="icon-button"
+            type="button"
+            aria-label="開啟系統設定"
+            title="系統設定"
+            disabled
+          >
+            <span aria-hidden="true">⚙</span>
+          </button>
+
+          <button
+            id="inspection-555-button"
+            class="button emergency-button inspection-button"
+            data-emergency-code="555"
+            type="button"
+            disabled
+          >
+            <strong>555</strong>
+            <span>臨檢</span>
+          </button>
+          <button
+            id="inspection-888-button"
+            class="button emergency-button release-button"
+            data-emergency-code="888"
+            type="button"
+            disabled
+          >
+            <strong>888</strong>
+            <span>解除</span>
+          </button>
         </div>
       </header>
 
-      <main class="dashboard" aria-labelledby="page-title">
-        <section
-          id="inspection-actions"
-          class="panel emergency-panel"
-          aria-labelledby="inspection-title"
-        >
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="section-kicker warning-kicker">重要操作</p>
-              <h2 id="inspection-title">臨檢滿屏代碼</h2>
-            </div>
-            <span class="emergency-symbol" aria-hidden="true">!</span>
-          </div>
-          <p class="section-description">
-            代碼會立即覆蓋播放中的清單，並以不受單行限制的滿屏模式顯示。
-          </p>
-          <div class="emergency-actions">
-            <button
-              id="inspection-555-button"
-              class="button emergency-button inspection-button"
-              data-emergency-code="555"
-              type="button"
-              disabled
-            >
-              <span class="button-code">555</span>
-              <span>臨檢滿屏</span>
-            </button>
-            <button
-              id="inspection-888-button"
-              class="button emergency-button clear-code-button"
-              data-emergency-code="888"
-              type="button"
-              disabled
-            >
-              <span class="button-code">888</span>
-              <span>解除臨檢滿屏</span>
-            </button>
-          </div>
-        </section>
-
+      <main class="control-layout" aria-labelledby="page-title">
         <section class="panel composer-panel" aria-labelledby="composer-title">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">編輯單則</p>
-              <h2 id="composer-title">建立顯示訊息</h2>
+              <p class="section-kicker">快速操作</p>
+              <h2 id="composer-title">營運訊息</h2>
             </div>
-            <span class="step-badge">第 6 步</span>
           </div>
+
+          <div class="operation-message-grid" aria-label="固定營運訊息">
+            <button
+              id="operation-welcome-button"
+              class="operation-message-button"
+              data-operation-message="歡迎光臨"
+              type="button"
+              disabled
+            >
+              <span class="operation-icon" aria-hidden="true">迎</span>
+              <span>歡迎光臨</span>
+            </button>
+            <button
+              id="operation-quiet-button"
+              class="operation-message-button"
+              data-operation-message="請輕聲細語"
+              type="button"
+              disabled
+            >
+              <span class="operation-icon" aria-hidden="true">靜</span>
+              <span>請輕聲細語</span>
+            </button>
+          </div>
+
+          <div class="section-separator" role="presentation"></div>
 
           <form id="message-form" novalidate>
             <div class="field-group">
@@ -87,249 +121,68 @@
                 type="text"
                 autocomplete="off"
                 spellcheck="false"
-                aria-describedby="recipient-help recipient-error"
+                aria-describedby="recipient-error"
                 placeholder="例如：001 或 Nancy"
               >
-              <p id="recipient-help" class="field-help">
-                使用文字欄位保留 001 的前導零與所有原始字元。
-              </p>
               <p id="recipient-error" class="field-error" hidden></p>
             </div>
 
-            <fieldset id="action-fieldset" class="field-group action-fieldset">
-              <legend>動作指令</legend>
+            <fieldset
+              id="action-fieldset"
+              class="field-group action-fieldset"
+              aria-describedby="action-error"
+            >
+              <legend>動作</legend>
               <div class="action-grid">
                 <label class="action-option">
-                  <input
-                    type="radio"
-                    name="action"
-                    value="go-to-lobby"
-                    checked
-                  >
-                  <span class="action-copy">
-                    <span class="action-title">請至前廳</span>
-                    <span class="action-example">001請至前廳</span>
-                  </span>
+                  <input type="radio" name="action" value="go-to-lobby" checked>
+                  <span>請至前廳</span>
                 </label>
-
                 <label class="action-option">
                   <input type="radio" name="action" value="lobby-code">
-                  <span class="action-copy">
-                    <span class="action-title">前廳000</span>
-                    <span class="action-example">Nancy前廳000</span>
-                  </span>
+                  <span>前廳000</span>
                 </label>
-
                 <label class="action-option">
                   <input type="radio" name="action" value="custom">
-                  <span class="action-copy">
-                    <span class="action-title">自定義</span>
-                    <span class="action-example">公告或其他內容</span>
-                  </span>
+                  <span>自定義</span>
                 </label>
               </div>
               <p id="action-error" class="field-error" hidden></p>
             </fieldset>
 
             <div id="custom-message-field" class="field-group" hidden>
-              <div class="label-row">
-                <label for="custom-message-input">自定義內容</label>
-                <span class="field-note">編號／花名可留空</span>
-              </div>
+              <label for="custom-message-input">自定義內容</label>
               <textarea
                 id="custom-message-input"
                 name="customMessage"
                 autocomplete="off"
                 spellcheck="false"
-                aria-describedby="custom-message-help custom-message-error"
+                aria-describedby="custom-message-error"
                 placeholder="例如：公告今日停止服務"
-                rows="3"
+                rows="2"
                 disabled
               ></textarea>
-              <p id="custom-message-help" class="field-help">
-                內容會直接接在編號／花名後方，不插入分隔符號。
-              </p>
               <p id="custom-message-error" class="field-error" hidden></p>
             </div>
 
-            <div class="preview-block" aria-labelledby="preview-title">
-              <div class="preview-heading">
-                <div>
-                  <p class="section-kicker">加入前確認</p>
-                  <h3 id="preview-title">完整 message 預覽</h3>
-                </div>
-                <span class="layout-badge">單行</span>
-              </div>
+            <div class="preview-block">
+              <span class="preview-label">電視預覽</span>
               <output
                 id="message-preview"
                 class="message-preview is-placeholder"
+                tabindex="0"
                 for="recipient-input action-fieldset custom-message-input"
               >請先輸入編號、花名或自定義內容</output>
-              <p class="preview-note">加入待播清單不會立即改變電視畫面。</p>
             </div>
 
-            <div class="form-actions">
-              <button
-                id="add-message-button"
-                class="button button-primary button-wide"
-                type="submit"
-                disabled
-              >
-                加入顯示清單
-              </button>
-            </div>
-          </form>
-        </section>
-
-        <section
-          id="message-queue"
-          class="panel queue-panel"
-          data-message-count="0"
-          aria-labelledby="queue-title"
-        >
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="section-kicker">送出前可編輯</p>
-              <h2 id="queue-title">待播訊息清單</h2>
-            </div>
-            <output id="queue-message-count" class="count-badge">0 則</output>
-          </div>
-          <p class="section-description">
-            依加入順序播放，每頁最多 3 則；第 4 則起會自動分到下一頁。
-          </p>
-          <p id="queue-error" class="queue-error" role="alert" hidden></p>
-          <p id="queue-empty-state" class="queue-empty" role="status">
-            尚未加入訊息。請先建立一則 message。
-          </p>
-          <div id="queue-pages" class="queue-pages" hidden></div>
-          <div class="queue-footer">
-            <span>共 <output id="queue-page-count">0 頁</output></span>
             <button
-              id="clear-queue-button"
-              class="button button-secondary button-compact"
-              type="button"
+              id="display-message-button"
+              class="button button-primary display-button"
+              type="submit"
               disabled
             >
-              清空待播清單
+              顯示
             </button>
-          </div>
-        </section>
-
-        <section class="panel playback-panel" aria-labelledby="playback-title">
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="section-kicker">播放設定</p>
-              <h2 id="playback-title">每頁最短秒數與整輪次數</h2>
-            </div>
-          </div>
-
-          <form id="playback-form" novalidate>
-            <div class="playback-fields">
-              <div class="field-group compact-field">
-                <label for="page-duration-input">每頁最短顯示秒數</label>
-                <div class="number-input-row">
-                  <input
-                    id="page-duration-input"
-                    name="pageDurationSeconds"
-                    type="number"
-                    min="1"
-                    max="3600"
-                    step="1"
-                    value="3"
-                    inputmode="numeric"
-                    aria-describedby="page-duration-help page-duration-error"
-                    disabled
-                  >
-                  <span aria-hidden="true">秒</span>
-                </div>
-                <p id="page-duration-help" class="field-help">每頁至少完整停留這段時間。</p>
-                <p id="page-duration-error" class="field-error" hidden></p>
-              </div>
-
-              <fieldset id="repeat-mode-fieldset" class="field-group repeat-fieldset">
-                <legend>播放模式</legend>
-                <div class="repeat-options">
-                  <label class="repeat-option">
-                    <input
-                      type="radio"
-                      name="repeat-mode"
-                      value="finite"
-                      checked
-                      disabled
-                    >
-                    <span>指定整輪次數</span>
-                  </label>
-                  <label class="repeat-option">
-                    <input
-                      type="radio"
-                      name="repeat-mode"
-                      value="continuous"
-                      disabled
-                    >
-                    <span>持續顯示</span>
-                  </label>
-                </div>
-                <p id="repeat-error" class="field-error" hidden></p>
-              </fieldset>
-
-              <div id="round-count-field" class="field-group compact-field">
-                <label for="round-count-input">整輪顯示次數</label>
-                <div class="number-input-row">
-                  <input
-                    id="round-count-input"
-                    name="rounds"
-                    type="number"
-                    min="1"
-                    max="999"
-                    step="1"
-                    value="1"
-                    inputmode="numeric"
-                    aria-describedby="round-count-help round-count-error"
-                    disabled
-                  >
-                  <span aria-hidden="true">輪</span>
-                </div>
-                <p id="round-count-help" class="field-help">從第 1 頁播到最後一頁算 1 輪。</p>
-                <p id="round-count-error" class="field-error" hidden></p>
-              </div>
-            </div>
-
-            <dl class="playback-summary" aria-label="播放時間試算">
-              <div>
-                <dt>頁數</dt>
-                <dd id="summary-page-count">0 頁</dd>
-              </div>
-              <div>
-                <dt>每輪最短時間</dt>
-                <dd id="round-duration">—</dd>
-              </div>
-              <div>
-                <dt>預計最短總播放時間</dt>
-                <dd id="total-duration">—</dd>
-              </div>
-            </dl>
-            <p class="playback-note">
-              跑馬燈頁會等文字完整跑完一輪才翻頁，必要時自動延長；因此試算為最短時間。
-            </p>
-
-            <div class="form-actions playback-actions">
-              <button
-                id="clear-display-button"
-                class="button button-secondary"
-                type="button"
-                disabled
-              >
-                清除電視畫面
-              </button>
-              <button
-                id="start-program-button"
-                class="button button-primary button-wide"
-                type="submit"
-                disabled
-              >
-                顯示清單到電視
-              </button>
-            </div>
           </form>
         </section>
 
@@ -338,287 +191,133 @@
           class="panel current-panel"
           aria-labelledby="current-title"
         >
-          <div class="section-heading compact-heading">
+          <div class="section-heading current-heading">
             <div>
-              <p class="section-kicker">Main Process</p>
-              <h2 id="current-title">目前電視畫面</h2>
+              <p class="section-kicker">即時狀態</p>
+              <h2 id="current-title">目前螢幕內容</h2>
             </div>
-            <span id="current-layout" class="layout-badge">單行</span>
+            <output
+              id="current-page-summary"
+              class="page-badge"
+              tabindex="-1"
+            >—</output>
           </div>
-          <div
-            id="current-message"
-            class="current-message is-placeholder"
-          >
-            正在取得目前畫面…
-          </div>
-          <dl class="state-meta">
-            <div>
-              <dt>頁面</dt>
-              <dd id="current-page-progress">—</dd>
-            </div>
-            <div>
-              <dt>整輪</dt>
-              <dd id="current-round-progress">—</dd>
-            </div>
-            <div>
-              <dt>狀態版本</dt>
-              <dd id="current-revision" class="revision-value">—</dd>
-            </div>
-          </dl>
-        </section>
 
-        <section
-          id="settings-launch"
-          class="panel settings-launch-panel"
-          aria-labelledby="settings-launch-title"
-        >
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="section-kicker">本機設定</p>
-              <h2 id="settings-launch-title">顯示外觀與行為</h2>
-            </div>
-            <span class="step-badge">第 8 步</span>
-          </div>
-          <p class="section-description">
-            管理 Logo、色彩、字型與顯示行為。儲存後會保留於本機，並即時套用到顯示畫面。
+          <p id="current-empty-state" class="current-empty" role="status">
+            目前沒有顯示內容
           </p>
-          <button
-            id="open-settings-button"
-            class="button button-secondary settings-launch-button"
-            type="button"
-            disabled
-          >
-            開啟系統設定
-          </button>
-        </section>
+          <ol id="current-message-list" class="current-message-list" hidden></ol>
 
-        <section
-          id="output-status-panel"
-          class="panel output-panel"
-          aria-labelledby="output-status-title"
-          aria-describedby="output-status-notice output-status-error"
-          aria-busy="true"
-        >
-          <div class="section-heading compact-heading">
-            <div>
-              <p class="section-kicker">本機輸出</p>
-              <h2 id="output-status-title">螢幕連線與輸出</h2>
-            </div>
-            <span
-              id="hdmi-status-badge"
-              class="output-status-badge"
-              data-tone="detecting"
+          <div class="current-footer">
+            <p>每頁最多顯示 3 則，超過時自動分頁。</p>
+            <button
+              id="clear-display-button"
+              class="button button-secondary"
+              type="button"
+              disabled
             >
-              <span class="output-status-dot" aria-hidden="true"></span>
-              <span id="hdmi-status-text">正在偵測 HDMI…</span>
-            </span>
+              清除畫面
+            </button>
           </div>
-          <dl id="output-status-summary" class="output-status-summary">
-            <div>
-              <dt>目前輸出</dt>
-              <dd id="output-target">正在取得螢幕資訊…</dd>
-            </div>
-            <div>
-              <dt>顯示模式</dt>
-              <dd id="output-mode">—</dd>
-            </div>
-            <div>
-              <dt>可用螢幕</dt>
-              <dd id="output-display-count">—</dd>
-            </div>
-          </dl>
-          <p
-            id="output-status-notice"
-            class="output-status-notice"
-            data-tone="pending"
-            role="status"
-            aria-live="polite"
-            aria-atomic="true"
-          >
-            正在偵測輸出裝置…
-          </p>
-          <p
-            id="output-status-error"
-            class="output-status-error"
-            role="alert"
-            aria-live="assertive"
-            aria-atomic="true"
-            hidden
-          ></p>
-          <button
-            id="manage-output-settings-button"
-            class="button button-secondary output-settings-button"
-            data-settings-section="display"
-            type="button"
-            disabled
-          >
-            管理輸出設定
-          </button>
         </section>
       </main>
 
-      <footer class="operation-footer">
-        <span class="footer-indicator" aria-hidden="true"></span>
-        <p id="operation-status" role="status" aria-live="polite">
-          正在連接主程式…
-        </p>
+      <footer class="operation-feedback">
+        <p id="operation-status" role="status" aria-live="polite">正在連接主程序…</p>
         <p id="operation-error" role="alert" aria-live="assertive" hidden></p>
       </footer>
     </div>
 
-    <dialog
-      id="settings-dialog"
-      aria-labelledby="settings-dialog-title"
-      aria-describedby="settings-dialog-description"
-    >
+    <dialog id="settings-dialog" aria-labelledby="settings-dialog-title">
       <form id="settings-form" class="settings-dialog-surface" novalidate>
         <header class="settings-dialog-header">
           <div>
-            <p class="section-kicker">DisplayCore 本機設定</p>
-            <h2 id="settings-dialog-title">顯示外觀與行為</h2>
+            <p class="section-kicker">DisplayCore</p>
+            <h2 id="settings-dialog-title">系統設定</h2>
           </div>
-          <output
-            id="settings-dirty-status"
-            class="settings-dirty-status"
-            role="status"
-            aria-live="polite"
-          >所有變更皆已儲存</output>
-          <p id="settings-dialog-description" class="dialog-description">
-            設定會保存於這台電腦，儲存後會即時套用到 Display Window。
-          </p>
+          <output id="settings-dirty-status" class="settings-dirty-status" role="status">
+            所有變更皆已儲存
+          </output>
           <p id="settings-notice" class="settings-notice" role="alert" hidden></p>
-          <p
-            id="settings-error"
-            class="settings-error"
-            role="alert"
-            aria-live="assertive"
-            tabindex="-1"
-            hidden
-          ></p>
+          <p id="settings-error" class="settings-error" role="alert" tabindex="-1" hidden></p>
           <p id="settings-status" class="settings-status" role="status" aria-live="polite"></p>
         </header>
 
         <div class="settings-dialog-body">
+          <fieldset id="playback-settings-fieldset" class="settings-fieldset">
+            <legend>訊息播放</legend>
+            <p class="settings-fieldset-description">
+              調整後可直接關閉，不需儲存。套用於下一次「顯示」或移除操作，每頁完成排版後才開始計時。
+            </p>
+            <div class="settings-control-grid">
+              <div class="settings-field">
+                <label for="page-duration-input">每頁顯示秒數</label>
+                <input id="page-duration-input" type="number" min="1" max="3600" step="1" value="3" inputmode="numeric" aria-describedby="page-duration-error">
+                <p id="page-duration-error" class="field-error" hidden></p>
+              </div>
+              <fieldset id="repeat-mode-fieldset" class="inline-fieldset" aria-describedby="repeat-error">
+                <legend>播放方式</legend>
+                <label><input type="radio" name="repeat-mode" value="finite" checked> 指定整輪次數</label>
+                <label><input type="radio" name="repeat-mode" value="continuous"> 持續顯示</label>
+                <p id="repeat-error" class="field-error" hidden></p>
+              </fieldset>
+              <div id="round-count-field" class="settings-field">
+                <label for="round-count-input">整輪顯示次數</label>
+                <input id="round-count-input" type="number" min="1" max="999" step="1" value="1" inputmode="numeric" aria-describedby="round-count-error">
+                <p id="round-count-error" class="field-error" hidden></p>
+              </div>
+            </div>
+          </fieldset>
+
           <fieldset id="logo-settings-fieldset" class="settings-fieldset">
             <legend>Logo</legend>
-            <p class="settings-fieldset-description">
-              僅接受 PNG、JPEG 或 WebP；圖片會複製到 DisplayCore 管理的本機目錄。
-            </p>
             <label class="settings-switch" for="logo-enabled-input">
-              <span>
-                <strong>顯示 Logo</strong>
-                <small>保留圖片時可隨時停用或重新啟用。</small>
-              </span>
+              <span><strong>顯示 Logo</strong><small>使用已匯入的本機圖片。</small></span>
               <input id="logo-enabled-input" type="checkbox">
             </label>
             <div class="settings-field">
               <label for="logo-path-input">已匯入圖片</label>
-              <input
-                id="logo-path-input"
-                type="text"
-                readonly
-                aria-describedby="logo-path-help logo-path-error"
-                placeholder="尚未選擇 Logo"
-              >
-              <p id="logo-path-help" class="field-help">只顯示受管理的相對資產名稱。</p>
+              <input id="logo-path-input" type="text" readonly placeholder="尚未選擇 Logo">
               <p id="logo-path-error" class="field-error" hidden></p>
             </div>
             <div class="settings-inline-actions">
-              <button
-                id="choose-logo-button"
-                class="button button-secondary"
-                type="button"
-              >
-                選擇 Logo
-              </button>
-              <button
-                id="remove-logo-button"
-                class="button button-quiet"
-                type="button"
-              >
-                移除 Logo
-              </button>
+              <button id="choose-logo-button" class="button button-secondary" type="button">選擇 Logo</button>
+              <button id="remove-logo-button" class="button button-quiet" type="button">移除 Logo</button>
             </div>
           </fieldset>
 
           <fieldset id="appearance-settings-fieldset" class="settings-fieldset">
             <legend>顯示外觀</legend>
-            <p class="settings-fieldset-description">
-              色彩與字型儲存後會立即更新 Display Window；臨檢滿屏固定使用高對比黑底白字。
-            </p>
             <div class="settings-control-grid">
               <div class="settings-field">
                 <label for="background-color-input">背景顏色</label>
-                <div class="settings-color-control">
-                  <input
-                    id="background-color-picker"
-                    type="color"
-                    aria-label="選擇背景顏色"
-                    value="#000000"
-                  >
-                  <input
-                    id="background-color-input"
-                    type="text"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-describedby="background-color-error"
-                    value="#000000"
-                  >
+                <div class="color-control">
+                  <input id="background-color-picker" type="color" aria-label="選擇背景顏色" value="#000000">
+                  <input id="background-color-input" type="text" value="#000000" autocomplete="off" spellcheck="false">
                 </div>
                 <p id="background-color-error" class="field-error" hidden></p>
               </div>
-
               <div class="settings-field">
                 <label for="font-color-input">字體顏色</label>
-                <div class="settings-color-control">
-                  <input
-                    id="font-color-picker"
-                    type="color"
-                    aria-label="選擇字體顏色"
-                    value="#ffffff"
-                  >
-                  <input
-                    id="font-color-input"
-                    type="text"
-                    autocomplete="off"
-                    spellcheck="false"
-                    aria-describedby="font-color-error"
-                    value="#FFFFFF"
-                  >
+                <div class="color-control">
+                  <input id="font-color-picker" type="color" aria-label="選擇字體顏色" value="#ffffff">
+                  <input id="font-color-input" type="text" value="#FFFFFF" autocomplete="off" spellcheck="false">
                 </div>
                 <p id="font-color-error" class="field-error" hidden></p>
               </div>
-
               <div class="settings-field settings-field-wide">
                 <label for="font-family-select">顯示字型</label>
-                <select id="font-family-select" aria-describedby="font-family-error">
-                  <option value="Microsoft JhengHei UI, Microsoft JhengHei, sans-serif">
-                    微軟正黑體（建議）
-                  </option>
+                <select id="font-family-select">
+                  <option value="Microsoft JhengHei UI, Microsoft JhengHei, sans-serif">微軟正黑體（建議）</option>
                   <option value="Microsoft JhengHei, sans-serif">微軟正黑體</option>
                   <option value="Arial, sans-serif">Arial</option>
                   <option value="sans-serif">系統無襯線字體</option>
                 </select>
                 <p id="font-family-error" class="field-error" hidden></p>
               </div>
-
               <div class="settings-field settings-field-wide">
                 <label for="minimum-font-size-input">最小字體大小</label>
-                <div class="settings-unit-control">
-                  <input
-                    id="minimum-font-size-input"
-                    type="number"
-                    min="1"
-                    max="12"
-                    step="0.25"
-                    inputmode="decimal"
-                    aria-describedby="minimum-font-size-help minimum-font-size-error"
-                  >
-                  <span aria-hidden="true">rem</span>
-                </div>
-                <p id="minimum-font-size-help" class="field-help">
-                  字體縮至此大小仍放不下時，才依設定使用跑馬燈。
-                </p>
+                <input id="minimum-font-size-input" type="number" min="1" max="12" step="0.25" inputmode="decimal">
                 <p id="minimum-font-size-error" class="field-error" hidden></p>
               </div>
             </div>
@@ -628,128 +327,26 @@
             <legend>顯示行為</legend>
             <div class="settings-switch-list">
               <label class="settings-switch" for="date-time-enabled-input">
-                <span>
-                  <strong>顯示日期時間</strong>
-                  <small>使用本機時間與設定語系。</small>
-                </span>
+                <span><strong>顯示日期時間</strong><small>使用這台電腦的本機時間。</small></span>
                 <input id="date-time-enabled-input" type="checkbox">
               </label>
               <label class="settings-switch" for="hour12-input">
-                <span>
-                  <strong>使用 12 小時制</strong>
-                  <small>停用時使用 24 小時制。</small>
-                </span>
+                <span><strong>使用 12 小時制</strong><small>停用時使用 24 小時制。</small></span>
                 <input id="hour12-input" type="checkbox">
               </label>
               <label class="settings-switch" for="marquee-enabled-input">
-                <span>
-                  <strong>必要時啟用水平跑馬燈</strong>
-                  <small>只有一般單行訊息在最小字體仍放不下時使用。</small>
-                </span>
+                <span><strong>必要時啟用跑馬燈</strong><small>最小字體仍放不下時使用。</small></span>
                 <input id="marquee-enabled-input" type="checkbox">
               </label>
             </div>
           </fieldset>
-
-          <fieldset id="display-settings-fieldset" class="settings-fieldset">
-            <legend>輸出偏好</legend>
-            <div class="settings-readonly-summary">
-              <span>目前實際輸出</span>
-              <strong id="display-mode-summary">正在取得螢幕資訊…</strong>
-            </div>
-            <p class="settings-fieldset-description">
-              自動模式優先使用外接螢幕；指定螢幕中斷時會暫用主螢幕，原設定不會遺失。
-            </p>
-
-            <div class="display-choice-list">
-              <label class="display-choice" for="display-auto-input">
-                <input
-                  id="display-auto-input"
-                  name="display-selection-mode"
-                  value="auto"
-                  type="radio"
-                  checked
-                >
-                <span>
-                  <strong>自動選擇（建議）</strong>
-                  <small>優先外接螢幕；沒有外接螢幕時使用主螢幕。</small>
-                </span>
-              </label>
-              <label class="display-choice" for="display-manual-input">
-                <input
-                  id="display-manual-input"
-                  name="display-selection-mode"
-                  value="manual"
-                  type="radio"
-                >
-                <span>
-                  <strong>指定螢幕</strong>
-                  <small>固定使用清單中的螢幕，重新連接後會自動恢復。</small>
-                </span>
-              </label>
-            </div>
-            <p id="display-mode-error" class="field-error" hidden></p>
-
-            <div class="settings-field settings-field-wide display-select-field">
-              <label for="default-display-select">指定輸出螢幕</label>
-              <select
-                id="default-display-select"
-                aria-describedby="default-display-help default-display-error"
-                disabled
-              >
-                <option value="">正在取得可用螢幕…</option>
-              </select>
-              <p id="default-display-help" class="field-help">
-                解析度為 Windows 縮放比例換算的約略值；清單不代表特定 HDMI 接頭。
-              </p>
-              <p id="default-display-error" class="field-error" hidden></p>
-            </div>
-
-            <div class="settings-switch-list display-fullscreen-setting">
-              <label class="settings-switch" for="display-fullscreen-input">
-                <span>
-                  <strong>Display 全螢幕顯示（建議）</strong>
-                  <small>關閉後會在所選螢幕中央，以可用區 80% 的 16:9 視窗顯示。</small>
-                </span>
-                <input id="display-fullscreen-input" type="checkbox" checked>
-              </label>
-            </div>
-            <p id="display-fullscreen-error" class="field-error" hidden></p>
-            <p
-              id="display-output-notice"
-              class="display-output-notice"
-              role="status"
-              aria-live="polite"
-              aria-atomic="true"
-              hidden
-            ></p>
-          </fieldset>
         </div>
 
         <footer class="settings-dialog-footer">
-          <button
-            id="load-defaults-button"
-            class="button button-quiet settings-defaults-button"
-            type="button"
-          >
-            載入預設值
-          </button>
+          <button id="load-defaults-button" class="button button-quiet" type="button">載入預設值</button>
           <div class="dialog-actions">
-            <button
-              id="settings-close-button"
-              class="button button-secondary"
-              type="button"
-            >
-              關閉
-            </button>
-            <button
-              id="save-settings-button"
-              class="button button-primary"
-              type="submit"
-              disabled
-            >
-              儲存設定
-            </button>
+            <button id="settings-close-button" class="button button-secondary" type="button">關閉</button>
+            <button id="save-settings-button" class="button button-primary" type="button" disabled>儲存設定</button>
           </div>
         </footer>
       </form>
@@ -764,31 +361,13 @@
         <p class="section-kicker warning-kicker">滿屏代碼確認</p>
         <h2 id="inspection-dialog-title">確認覆蓋目前顯示？</h2>
         <p id="inspection-dialog-description" class="dialog-description">
-          此操作會立即覆蓋目前訊息，請確認現場狀況後再繼續。
+          此操作會立即覆蓋目前訊息，並切換為不受單行限制的滿屏模式。
         </p>
         <output id="inspection-code-preview" class="dialog-code">---</output>
-        <p
-          id="inspection-dialog-error"
-          class="dialog-error"
-          role="alert"
-          hidden
-        ></p>
+        <p id="inspection-dialog-error" class="dialog-error" role="alert" hidden></p>
         <div class="dialog-actions">
-          <button
-            id="inspection-cancel-button"
-            class="button button-secondary"
-            type="button"
-            autofocus
-          >
-            取消
-          </button>
-          <button
-            id="inspection-confirm-button"
-            class="button dialog-confirm-button"
-            type="button"
-          >
-            確認顯示
-          </button>
+          <button id="inspection-cancel-button" class="button button-secondary" type="button" autofocus>取消</button>
+          <button id="inspection-confirm-button" class="button dialog-confirm-button" type="button">確認顯示</button>
         </div>
       </div>
     </dialog>

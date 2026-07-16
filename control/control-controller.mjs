@@ -45,6 +45,7 @@ function readResponse(response) {
  */
 export function createControlController({ api, view }) {
   let latestRevision = -1;
+  let latestContentRevision = -1;
   let busy = false;
   let started = false;
   let disposed = false;
@@ -58,6 +59,7 @@ export function createControlController({ api, view }) {
     }
 
     latestRevision = result.snapshot.revision;
+    latestContentRevision = result.snapshot.contentRevision;
     view.renderPresentation(result.snapshot);
     return true;
   }
@@ -152,7 +154,7 @@ export function createControlController({ api, view }) {
     /** 啟動由 Main 管理 timer 的完整訊息清單。 */
     startProgram(program, successMessage = '訊息清單已顯示。') {
       return runMutation(
-        () => api.startProgram(program),
+        () => api.startProgram(program, latestContentRevision),
         successMessage,
       );
     },
@@ -167,7 +169,7 @@ export function createControlController({ api, view }) {
 
     clearPresentation() {
       return runMutation(
-        () => api.clearPresentation(),
+        () => api.clearPresentation(latestContentRevision),
         '顯示畫面已清除。',
       );
     },

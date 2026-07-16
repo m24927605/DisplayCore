@@ -46,16 +46,24 @@ contextBridge.exposeInMainWorld(
   'displayCoreControl',
   Object.freeze({
     getPresentation: () => ipcRenderer.invoke(CHANNELS.GET_PRESENTATION),
-    startProgram: (messages, pageDurationSeconds, repeat) =>
+    startProgram: (
+      messages,
+      pageDurationSeconds,
+      repeat,
+      expectedContentRevision,
+    ) =>
       ipcRenderer.invoke(CHANNELS.START_PROGRAM, {
         messages,
         pageDurationSeconds,
         repeat,
+        expectedContentRevision,
       }),
     showEmergency: (code) =>
       ipcRenderer.invoke(CHANNELS.SHOW_EMERGENCY, { code }),
-    clearPresentation: () =>
-      ipcRenderer.invoke(CHANNELS.CLEAR_PRESENTATION),
+    clearPresentation: (expectedContentRevision) =>
+      ipcRenderer.invoke(CHANNELS.CLEAR_PRESENTATION, {
+        expectedContentRevision,
+      }),
     getSettings: () => ipcRenderer.invoke(CHANNELS.GET_SETTINGS),
     saveSettings: (config, expectedRevision) =>
       ipcRenderer.invoke(CHANNELS.SAVE_SETTINGS, {

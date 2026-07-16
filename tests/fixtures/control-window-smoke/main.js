@@ -16,9 +16,6 @@ const { IPC_ROLES } = require(path.join(projectRoot, 'ipc', 'channels'));
 const { IpcCoordinator } = require(
   path.join(projectRoot, 'ipc', 'ipc-coordinator'),
 );
-const { ConfigValidationError } = require(
-  path.join(projectRoot, 'config', 'config-manager'),
-);
 const { PresentationService } = require(
   path.join(projectRoot, 'ipc', 'presentation-service'),
 );
@@ -40,7 +37,6 @@ const defaultConfig = require(path.join(projectRoot, 'config.json'));
 
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const DISPLAY_URL = 'displaycore://app/display/index.html';
-const ERROR_SENTINEL = 'DISPLAYCORE_INTERNAL_ERROR_TEST';
 const TIMEOUT_MS = 20_000;
 
 let controlWindow = null;
@@ -49,7 +45,7 @@ let presentationService = null;
 let completed = false;
 let timeout = null;
 
-// privileged scheme 必須在 ready 前註冊，與正式 composition root 相同。
+// privileged scheme 必須在 app ready 前註冊，與正式 composition root 相同。
 registerAppScheme(protocol);
 
 function finish(exitCode, message, error) {
@@ -58,7 +54,6 @@ function finish(exitCode, message, error) {
   }
 
   completed = true;
-
   if (timeout) {
     clearTimeout(timeout);
   }
@@ -86,7 +81,6 @@ async function waitFor(predicate, description, timeoutMs = 6_000) {
   while (Date.now() < deadline) {
     try {
       const result = await predicate();
-
       if (result) {
         return result;
       }
@@ -98,11 +92,9 @@ async function waitFor(predicate, description, timeoutMs = 6_000) {
   }
 
   const error = new Error(`等待逾時：${description}`);
-
   if (lastError) {
     error.cause = lastError;
   }
-
   throw error;
 }
 
@@ -110,125 +102,75 @@ function execute(source) {
   return controlWindow.webContents.executeJavaScript(source, true);
 }
 
-function setTextInput(elementId, value) {
+function click(elementId) {
   return execute(`(() => {
     const element = document.getElementById(${JSON.stringify(elementId)});
+    if (!element) throw new Error('找不到元素：${elementId}');
+    element.click();
+    return true;
+  })()`);
+}
+
+function setInput(elementId, value) {
+  return execute(`(() => {
+    const element = document.getElementById(${JSON.stringify(elementId)});
+    if (!element) throw new Error('找不到元素：${elementId}');
     element.value = ${JSON.stringify(value)};
     element.dispatchEvent(new Event('input', { bubbles: true }));
     return element.value;
   })()`);
 }
 
-function selectAction(action) {
+function selectRadio(name, value) {
   return execute(`(() => {
     const input = document.querySelector(
-      'input[name="action"][value=${JSON.stringify(action)}]'
+      'input[name=${JSON.stringify(name)}][value=${JSON.stringify(value)}]'
     );
+    if (!input) throw new Error('找不到 radio：${name}/${value}');
     input.checked = true;
     input.dispatchEvent(new Event('change', { bubbles: true }));
     return input.checked;
   })()`);
 }
 
-function click(elementId) {
-  return execute(`(() => {
-    const element = document.getElementById(${JSON.stringify(elementId)});
-    element.click();
-    return true;
-  })()`);
-}
-
 async function waitForRevision(store, revision) {
   await waitFor(
-    () => store.getSnapshot().revision >= revision,
-    `Main revision ${revision}`,
+    () => store.getControlSnapshot().revision === revision,
+    `Main presentation revision ${revision}`,
   );
-  assert.equal(store.getSnapshot().revision, revision);
 }
 
-async function waitForCurrentDom(revision) {
+async function waitForMessages(expectedMessages, expectedSummary) {
   await waitFor(
-    () => execute(
-      `document.getElementById('current-revision').textContent === '#${revision}'`,
-    ),
-    `Control DOM revision ${revision}`,
+    () => execute(`(() => {
+      const messages = [...document.querySelectorAll('.current-message-text')]
+        .map((element) => element.textContent);
+      return JSON.stringify(messages) === ${JSON.stringify(
+        JSON.stringify(expectedMessages),
+      )} &&
+        document.getElementById('current-page-summary').textContent ===
+          ${JSON.stringify(expectedSummary)};
+    })()`),
+    `目前內容 ${expectedMessages.join('、') || '空白'}`,
   );
 }
 
-async function waitForIdle() {
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('clear-display-button').disabled === false &&
-      document.getElementById('inspection-confirm-dialog').open === false
-    )()`),
-    'Control 操作完成',
-  );
-}
-
-async function assertCurrentDom(expected) {
-  const state = await execute(`(() => ({
-    message: document.getElementById('current-message').textContent,
-    rows: [...document.querySelectorAll('.current-message-row')]
+function readCurrentDom() {
+  return execute(`(() => ({
+    summary: document.getElementById('current-page-summary').textContent,
+    messages: [...document.querySelectorAll('.current-message-text')]
       .map((element) => element.textContent),
-    layout: document.getElementById('current-layout').textContent,
-    page: document.getElementById('current-page-progress').textContent,
-    round: document.getElementById('current-round-progress').textContent,
-    revision: document.getElementById('current-revision').textContent,
-    childCount: document.getElementById('current-message').children.length,
+    indices: [...document.querySelectorAll('.current-message-index')]
+      .map((element) => element.textContent),
+    removeIndices: [...document.querySelectorAll('.current-remove-button')]
+      .map((element) => element.dataset.messageIndex),
+    emptyHidden: document.getElementById('current-empty-state').hidden,
+    listHidden: document.getElementById('current-message-list').hidden,
+    clearDisabled: document.getElementById('clear-display-button').disabled,
+    status: document.getElementById('operation-status').textContent,
+    errorHidden: document.getElementById('operation-error').hidden,
+    error: document.getElementById('operation-error').textContent,
   }))()`);
-
-  assert.deepEqual(state, expected);
-}
-
-function expectedPage(
-  messages,
-  revision,
-  {
-    pageNumber,
-    pageCount,
-    roundNumber,
-    totalRounds,
-  },
-) {
-  return {
-    mode: 'page',
-    messages: messages.map((message) => ({ message })),
-    layout: 'single-line',
-    pageDurationSeconds: 3,
-    pageNumber,
-    pageCount,
-    roundNumber,
-    totalRounds,
-    revision,
-  };
-}
-
-function expectedEmergency(code, revision) {
-  return {
-    mode: 'emergency',
-    messages: [{ message: code }],
-    layout: 'fill-screen',
-    pageDurationSeconds: null,
-    pageNumber: null,
-    pageCount: null,
-    roundNumber: null,
-    totalRounds: null,
-    revision,
-  };
-}
-
-function expectedBlank(revision) {
-  return {
-    mode: 'blank',
-    messages: [],
-    layout: 'single-line',
-    pageDurationSeconds: null,
-    pageNumber: null,
-    pageCount: null,
-    roundNumber: null,
-    totalRounds: null,
-    revision,
-  };
 }
 
 function createTopologySnapshot(overrides = {}) {
@@ -294,18 +236,9 @@ class FakeOutputService {
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
-
-  publish(snapshot) {
-    this.snapshot = structuredClone(snapshot);
-
-    for (const listener of this.listeners) {
-      listener(this[this.getterName]());
-    }
-  }
 }
 
-function createSettingsManager(onSaved = () => {}) {
-  let pendingValidationError = null;
+function createSettingsManager() {
   const listeners = new Set();
   let snapshot = {
     config: structuredClone(defaultConfig),
@@ -318,300 +251,27 @@ function createSettingsManager(onSaved = () => {}) {
     getSnapshot() {
       return structuredClone(snapshot);
     },
+
     async saveConfig(config, expectedRevision) {
       assert.equal(expectedRevision, snapshot.revision);
-
-      if (pendingValidationError) {
-        const validationError = pendingValidationError;
-        pendingValidationError = null;
-        throw new ConfigValidationError(validationError);
-      }
-
       snapshot = {
         config: structuredClone(config),
         defaults: snapshot.defaults,
         revision: snapshot.revision + 1,
         notice: null,
       };
-      onSaved(snapshot.config, snapshot.revision);
 
       for (const listener of listeners) {
         listener(this.getSnapshot());
       }
-
       return this.getSnapshot();
     },
+
     subscribe(listener) {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    rejectNextSave(validationError) {
-      pendingValidationError = validationError;
-    },
   };
-}
-
-async function runSettingsWorkflow(settingsManager, presentationStore) {
-  const presentationBefore = structuredClone(presentationStore.getSnapshot());
-  await click('open-settings-button');
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('settings-dialog').open &&
-      document.getElementById('settings-status').textContent === '設定已載入。'
-    )()`),
-    '設定對話框載入',
-  );
-
-  const initial = await execute(`(() => ({
-    background: document.getElementById('background-color-input').value,
-    fontColor: document.getElementById('font-color-input').value,
-    minimumFontSize: document.getElementById('minimum-font-size-input').value,
-    dirty: document.getElementById('settings-dirty-status').textContent,
-    saveDisabled: document.getElementById('save-settings-button').disabled,
-  }))()`);
-  assert.deepEqual(initial, {
-    background: '#000000',
-    fontColor: '#FFFFFF',
-    minimumFontSize: '2.5',
-    dirty: '所有變更皆已儲存',
-    saveDisabled: true,
-  });
-
-  await click('logo-enabled-input');
-  await execute(`document.getElementById('settings-form').requestSubmit()`);
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('logo-path-error').hidden === false &&
-      document.activeElement?.id === 'choose-logo-button'
-    )()`),
-    'Logo 錯誤聚焦可修正操作',
-  );
-  assert.equal(settingsManager.getSnapshot().revision, 0);
-
-  await setTextInput('background-color-input', '#123456');
-  await click('choose-logo-button');
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('logo-path-input').value ===
-        'logos/0123456789abcdef01234567.png' &&
-      document.getElementById('logo-enabled-input').checked
-    )()`),
-    'Logo 匯入結果',
-  );
-  assert.equal(
-    await execute(`document.getElementById('background-color-picker').value`),
-    '#123456',
-  );
-  assert.equal(
-    await execute(`document.getElementById('settings-dirty-status').textContent`),
-    '有未儲存變更',
-  );
-
-  await setTextInput('minimum-font-size-input', '2.6');
-  await execute(`document.getElementById('settings-form').requestSubmit()`);
-  await waitFor(
-    () => execute(
-      `document.getElementById('minimum-font-size-error').hidden === false`,
-    ),
-    '設定欄位錯誤',
-  );
-  assert.equal(settingsManager.getSnapshot().revision, 0);
-  assert.equal(
-    await execute(`document.getElementById('settings-dialog').open`),
-    true,
-  );
-
-  await setTextInput('minimum-font-size-input', '3.25');
-  settingsManager.rejectNextSave({
-    code: 'VALIDATION_FAILED',
-    field: 'appearance.minimumFontSizeRem',
-    message: 'Main 拒絕此最小字級。',
-  });
-  await execute(`document.getElementById('settings-form').requestSubmit()`);
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('minimum-font-size-error').textContent ===
-        'Main 拒絕此最小字級。' &&
-      document.getElementById('settings-form').getAttribute('aria-busy') ===
-        'false' &&
-      document.activeElement?.id === 'minimum-font-size-input'
-    )()`),
-    'Main 欄位錯誤解鎖後聚焦',
-  );
-  assert.equal(settingsManager.getSnapshot().revision, 0);
-
-  await execute(`(() => {
-    const dialog = document.getElementById('settings-dialog');
-    const observer = new MutationObserver(() => {
-      if (!dialog.open) {
-        observer.disconnect();
-        document.getElementById('open-settings-button').click();
-      }
-    });
-    observer.observe(dialog, { attributes: true, attributeFilter: ['open'] });
-    document.getElementById('settings-form').requestSubmit();
-  })()`);
-  await waitFor(
-    () => settingsManager.getSnapshot().revision === 1,
-    '設定成功儲存',
-  );
-
-  const saved = settingsManager.getSnapshot();
-  assert.equal(saved.revision, 1);
-  assert.equal(saved.config.appearance.backgroundColor, '#123456');
-  assert.equal(saved.config.appearance.minimumFontSizeRem, 3.25);
-  assert.deepEqual(saved.config.logo, {
-    enabled: true,
-    path: 'logos/0123456789abcdef01234567.png',
-  });
-  assert.deepEqual(presentationStore.getSnapshot(), presentationBefore);
-
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('settings-dialog').open &&
-      document.getElementById('background-color-input').value === '#123456' &&
-      document.getElementById('settings-status').textContent === '設定已載入。' &&
-      document.getElementById('load-defaults-button').disabled === false
-    )()`),
-    '重新載入已儲存設定',
-  );
-  await click('load-defaults-button');
-  assert.equal(
-    await execute(`document.getElementById('background-color-input').value`),
-    '#000000',
-  );
-  assert.equal(
-    await execute(`document.getElementById('settings-close-button').textContent`),
-    '捨棄變更',
-  );
-  await click('settings-close-button');
-  assert.equal(settingsManager.getSnapshot().revision, 1);
-
-  await click('open-settings-button');
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('settings-dialog').open &&
-      document.getElementById('background-color-input').value === '#123456' &&
-      document.getElementById('settings-status').textContent === '設定已載入。'
-    )()`),
-    '捨棄預設草稿後重新載入',
-  );
-  await click('settings-close-button');
-}
-
-async function runOutputWorkflow(
-  settingsManager,
-  topologyService,
-  placementService,
-) {
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('output-target').textContent === '前廳電視' &&
-      document.getElementById('output-mode').textContent === '全螢幕' &&
-      document.getElementById('output-display-count').textContent === '2 台' &&
-      document.getElementById('hdmi-status-text').textContent === 'HDMI 已連接' &&
-      document.getElementById('manage-output-settings-button').disabled === false
-    )()`),
-    '輸出狀態卡初始化',
-  );
-
-  await click('manage-output-settings-button');
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('settings-dialog').open &&
-      document.getElementById('display-auto-input').checked &&
-      document.getElementById('default-display-select').options.length === 3 &&
-      document.activeElement?.id === 'display-auto-input'
-    )()`),
-    '從輸出卡開啟輸出設定',
-  );
-
-  const optionLabels = await execute(`(() =>
-    [...document.getElementById('default-display-select').options]
-      .map((option) => option.textContent)
-  )()`);
-  assert.deepEqual(optionLabels, [
-    '請選擇輸出螢幕',
-    '操作電腦螢幕 — 約 1920 × 1080（主螢幕、內建）',
-    '前廳電視 — 約 3840 × 2160',
-  ]);
-  assert.ok(optionLabels.every((label) => !label.includes('HDMI')));
-
-  await click('display-manual-input');
-  await execute(`(() => {
-    const select = document.getElementById('default-display-select');
-    select.value = '2';
-    select.dispatchEvent(new Event('change', { bubbles: true }));
-    document.getElementById('display-fullscreen-input').click();
-  })()`);
-  assert.equal(
-    await execute(`document.getElementById('save-settings-button').disabled`),
-    false,
-  );
-  await execute(`document.getElementById('settings-form').requestSubmit()`);
-
-  await waitFor(
-    () => settingsManager.getSnapshot().revision === 2,
-    '輸出設定成功儲存',
-  );
-  assert.deepEqual(settingsManager.getSnapshot().config.display, {
-    selectionMode: 'manual',
-    defaultDisplayId: 2,
-    fullscreen: false,
-  });
-  await waitFor(
-    () => execute(`(() =>
-      !document.getElementById('settings-dialog').open &&
-      document.getElementById('output-target').textContent === '前廳電視' &&
-      document.getElementById('output-mode').textContent === '視窗模式'
-    )()`),
-    '輸出設定套用至狀態卡',
-  );
-
-  const currentTopology = topologyService.getSnapshot();
-  topologyService.publish(createTopologySnapshot({
-    displays: [currentTopology.displays[0]],
-    effectiveDisplayId: 1,
-    configuredDisplayId: 2,
-    selectionMode: 'manual',
-    fullscreen: false,
-    usingFallback: true,
-    secondDisplayConnected: false,
-    configRevision: 2,
-    revision: currentTopology.revision + 1,
-  }));
-  const currentPlacement = placementService.getStatus();
-  placementService.publish(createPlacementStatus({
-    displayId: 1,
-    fullscreen: false,
-    revision: currentPlacement.revision + 1,
-  }));
-
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('output-target').textContent === '操作電腦螢幕' &&
-      document.getElementById('output-status-notice').textContent.includes('暫時改用')
-    )()`),
-    '指定螢幕離線 fallback',
-  );
-
-  await click('manage-output-settings-button');
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('settings-dialog').open &&
-      document.getElementById('default-display-select').value === '2' &&
-      [...document.getElementById('default-display-select').options]
-        .some((option) => option.textContent.includes('目前未連接'))
-    )()`),
-    '離線指定螢幕仍保留於設定',
-  );
-  await click('settings-close-button');
-  await waitFor(
-    () => execute(
-      `document.activeElement?.id === 'manage-output-settings-button'`,
-    ),
-    '輸出設定關閉後恢復焦點',
-  );
 }
 
 function createTimerHarness() {
@@ -629,9 +289,11 @@ function createTimerHarness() {
       timers.push(timer);
       return timer;
     },
+
     clearTimer(timer) {
       timer.cleared = true;
     },
+
     fireNext(expectedDelay) {
       const timer = timers.find((candidate) =>
         !candidate.cleared && !candidate.fired,
@@ -641,6 +303,7 @@ function createTimerHarness() {
       timer.fired = true;
       timer.callback();
     },
+
     activeCount() {
       return timers.filter((timer) => !timer.cleared && !timer.fired).length;
     },
@@ -666,437 +329,394 @@ function reportStaticDisplayReady(layoutGeneration, settingsRevision) {
   );
 }
 
-async function selectRepeatMode(mode) {
-  return execute(`(() => {
-    const input = document.querySelector(
-      'input[name="repeat-mode"][value=${JSON.stringify(mode)}]'
-    );
-    input.checked = true;
-    input.dispatchEvent(new Event('change', { bubbles: true }));
-    return input.checked;
+async function openPlaybackSettings(settingsManager) {
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('settings-status').textContent === '設定已載入。'
+    )()`),
+    '設定對話框載入',
+  );
+
+  const settingsShape = await execute(`(() => ({
+    pageDuration: document.getElementById('page-duration-input').value,
+    rounds: document.getElementById('round-count-input').value,
+    finiteChecked: document.querySelector(
+      'input[name="repeat-mode"][value="finite"]'
+    ).checked,
+    hasManualDisplay: document.getElementById('display-manual-input') !== null,
+    hasDisplaySelect: document.getElementById('default-display-select') !== null,
+    hasFullscreenToggle:
+      document.getElementById('display-fullscreen-input') !== null,
+  }))()`);
+  assert.deepEqual(settingsShape, {
+    pageDuration: '3',
+    rounds: '1',
+    finiteChecked: true,
+    hasManualDisplay: false,
+    hasDisplaySelect: false,
+    hasFullscreenToggle: false,
+  });
+
+  // 原生檔案選擇取消後，焦點必須回到原按鈕，鍵盤操作才不會掉回 body。
+  await execute(`(() => {
+    const button = document.getElementById('choose-logo-button');
+    button.focus();
+    button.click();
   })()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-status').textContent ===
+        '已取消選擇 Logo。' &&
+      document.getElementById('settings-form').getAttribute('aria-busy') ===
+        'false' &&
+      document.activeElement?.id === 'choose-logo-button'
+    )()`),
+    '取消選擇 Logo 後恢復原按鈕焦點',
+  );
+
+  await setInput('page-duration-input', '4');
+  await setInput('round-count-input', '2');
+
+  // 在播放數字欄按 Enter 不應誤存系統設定或關閉對話框。
+  await execute(`document.getElementById('settings-form').requestSubmit()`);
+  await new Promise((resolve) => setTimeout(resolve, 50));
+  assert.equal(
+    await execute(`document.getElementById('settings-dialog').open`),
+    true,
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 0);
+
+  // 新錯誤必須取代先前的成功／取消狀態，避免同時顯示矛盾回饋。
+  await setInput('background-color-input', '#12345');
+  await waitFor(
+    () => execute(`document.getElementById('save-settings-button').disabled === false`),
+    '無效外觀草稿仍可觸發本機驗證',
+  );
+  await click('save-settings-button');
+  await waitFor(
+    () => execute(`document.getElementById('settings-error').hidden === false`),
+    '顯示背景色碼錯誤',
+  );
+  assert.deepEqual(await execute(`(() => ({
+    status: document.getElementById('settings-status').textContent,
+    error: document.getElementById('settings-error').textContent,
+  }))()`), {
+    status: '',
+    error: '請輸入六位十六進位色碼，例如 #FFFFFF。',
+  });
+  assert.equal(settingsManager.getSnapshot().revision, 0);
+
+  // 只有明確按下儲存按鈕，才可儲存 Logo／外觀類系統設定。
+  await setInput('background-color-input', '#123456');
+  await waitFor(
+    () => execute(`document.getElementById('save-settings-button').disabled === false`),
+    '啟用儲存設定按鈕',
+  );
+  await click('save-settings-button');
+  await waitFor(
+    () => settingsManager.getSnapshot().revision === 1 &&
+      execute(`document.getElementById('settings-dialog').open === false`),
+    '儲存畫面設定並關閉對話框',
+  );
+  assert.equal(
+    settingsManager.getSnapshot().config.appearance.backgroundColor,
+    '#123456',
+  );
 }
 
-async function addDraftMessage({ recipient, action, customText = '' }) {
-  await selectAction(action);
-  await setTextInput('recipient-input', recipient);
-
-  if (action === 'custom') {
-    await setTextInput('custom-message-input', customText);
-  }
-
-  const expectedMessage = action === 'go-to-lobby'
-    ? `${recipient}請至前廳`
-    : action === 'lobby-code'
-      ? `${recipient}前廳000`
-      : `${recipient}${customText}`;
-
+async function submitNormalMessage(recipient, action, expectedMessage) {
+  await selectRadio('action', action);
+  await setInput('recipient-input', recipient);
   assert.equal(
     await execute(`document.getElementById('message-preview').textContent`),
     expectedMessage,
   );
-
-  const previousCount = Number(await execute(
-    `document.getElementById('message-queue').dataset.messageCount || 0`,
-  ));
   await execute(`document.getElementById('message-form').requestSubmit()`);
-  await waitFor(
-    () => execute(
-      `Number(document.getElementById('message-queue').dataset.messageCount) === ${previousCount + 1}`,
-    ),
-    '訊息加入待播清單',
-  );
-  assert.equal(await execute('document.activeElement.id'), 'recipient-input');
-
-  return expectedMessage;
 }
 
-async function runWorkflow(
-  presentationStore,
-  timers,
-  settingsManager,
-  topologyService,
-  placementService,
-) {
+async function runWorkflow(store, timers, settingsManager, metrics) {
   await waitFor(
-    () => execute(
-      `document.getElementById('clear-display-button').disabled === false`,
-    ),
-    'Control bridge 初始化',
+    () => execute(`(() =>
+      document.getElementById('operation-status').textContent ===
+        '控制介面已就緒。' &&
+      document.getElementById('operation-welcome-button').disabled === false &&
+      document.getElementById('inspection-555-button').disabled === false
+    )()`),
+    'Control 啟動',
   );
 
-  const securityState = await execute(`(() => ({
-    requireType: typeof globalThis.require,
-    processType: typeof globalThis.process,
-    moduleType: typeof globalThis.module,
-    bufferType: typeof globalThis.Buffer,
-    bridgeMethods: Object.keys(window.displayCoreControl).sort(),
-  }))()`);
-  assert.deepEqual(securityState, {
-    requireType: 'undefined',
-    processType: 'undefined',
-    moduleType: 'undefined',
-    bufferType: 'undefined',
-    bridgeMethods: [
-      'chooseLogo',
-      'clearPresentation',
-      'getOutputStatus',
-      'getPresentation',
-      'getSettings',
-      'onOutputStatusChanged',
-      'onPresentationChanged',
-      'saveSettings',
-      'showEmergency',
-      'startProgram',
-    ],
+  assert.deepEqual(await execute(`(() => ({
+    hdmi: document.getElementById('hdmi-status-text').textContent,
+    target: document.getElementById('output-target').textContent,
+    hasQueue: document.getElementById('message-queue') !== null,
+    hasQueueStart: document.getElementById('start-program-button') !== null,
+    hasQueueClear: document.getElementById('clear-queue-button') !== null,
+    hasOutputSettings:
+      document.getElementById('manage-output-settings-button') !== null,
+    panelsShareFirstRow: (() => {
+      const composer = document.querySelector('.composer-panel').getBoundingClientRect();
+      const current = document.querySelector('.current-panel').getBoundingClientRect();
+      return Math.abs(composer.top - current.top) < 2 && current.left > composer.right;
+    })(),
+  }))()`), {
+    hdmi: 'HDMI 已連接',
+    target: '前廳電視',
+    hasQueue: false,
+    hasQueueStart: false,
+    hasQueueClear: false,
+    hasOutputSettings: false,
+    panelsShareFirstRow: true,
   });
 
-  await runSettingsWorkflow(settingsManager, presentationStore);
-  await runOutputWorkflow(
-    settingsManager,
-    topologyService,
-    placementService,
-  );
-
-  // 輸入七則完整 message；加入草稿不可提前修改 Main 畫面。
-  const literalHtml =
-    '公告\n<img src=x onerror="globalThis.displayCorePwned=true">';
-  const messages = [];
-  messages.push(await addDraftMessage({
-    recipient: '001',
-    action: 'go-to-lobby',
-  }));
-  messages.push(await addDraftMessage({
-    recipient: '002',
-    action: 'go-to-lobby',
-  }));
-  messages.push(await addDraftMessage({
-    recipient: '003',
-    action: 'lobby-code',
-  }));
-  messages.push(await addDraftMessage({
-    recipient: '004',
-    action: 'custom',
-    customText: '請至櫃檯',
-  }));
-  messages.push(await addDraftMessage({
-    recipient: '005',
-    action: 'go-to-lobby',
-  }));
-  messages.push(await addDraftMessage({
-    recipient: '006',
-    action: 'go-to-lobby',
-  }));
-  messages.push(await addDraftMessage({
-    recipient: '',
-    action: 'custom',
-    customText: literalHtml,
-  }));
-  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(0));
-
-  const previewState = await execute(`(() => ({
-    pageTitles: [...document.querySelectorAll('.queue-page-title')]
-      .map((element) => element.textContent),
-    messages: [...document.querySelectorAll('.queue-message-text')]
-      .map((element) => element.textContent),
-    literalChildCount: document.querySelectorAll('.queue-message-text')[6]
-      .children.length,
-    messageCount: document.getElementById('queue-message-count').textContent,
-    pageCount: document.getElementById('queue-page-count').textContent,
-    roundDuration: document.getElementById('round-duration').textContent,
-    totalDuration: document.getElementById('total-duration').textContent,
-    removeButtonCount: document.querySelectorAll('.queue-remove-button').length,
-    pwnedType: typeof globalThis.displayCorePwned,
-  }))()`);
-  assert.deepEqual(previewState, {
-    pageTitles: ['第 1 頁', '第 2 頁', '第 3 頁'],
-    messages,
-    literalChildCount: 0,
-    messageCount: '7 則',
-    pageCount: '3 頁',
-    roundDuration: '9 秒',
-    totalDuration: '9 秒',
-    removeButtonCount: 7,
-    pwnedType: 'undefined',
-  });
-
-  // 按索引刪除後重新加入，重複文字也不會刪錯項目。
-  await execute(`document.querySelector(
-    '.queue-remove-button[data-message-index="6"]'
-  ).click()`);
+  // 當前操作失敗時不可同時留著舊的成功狀態，避免相互矛盾。
+  await selectRadio('action', 'custom');
+  await setInput('custom-message-input', '甲'.repeat(10_001));
+  await execute(`document.getElementById('message-form').requestSubmit()`);
   await waitFor(
-    () => execute(
-      `document.getElementById('queue-message-count').textContent === '6 則'`,
-    ),
-    '刪除待播訊息',
+    () => execute(`document.getElementById('operation-error').hidden === false`),
+    '顯示訊息資源上限錯誤',
   );
-  messages.pop();
-  messages.push(await addDraftMessage({
-    recipient: '',
-    action: 'custom',
-    customText: literalHtml,
-  }));
+  assert.deepEqual(await execute(`(() => ({
+    status: document.getElementById('operation-status').textContent,
+    error: document.getElementById('operation-error').textContent,
+  }))()`), {
+    status: '',
+    error: '所有訊息合計不得超過 10000 個字元。',
+  });
+  assert.equal(store.getControlSnapshot().revision, 0);
+  await setInput('custom-message-input', '');
+  await selectRadio('action', 'go-to-lobby');
 
-  // 七則為三頁；每頁最短 3 秒、10 整輪，最短總時間為 1 分 30 秒。
-  await setTextInput('round-count-input', '10');
-  assert.deepEqual(
-    await execute(`(() => ({
-      roundDuration: document.getElementById('round-duration').textContent,
-      totalDuration: document.getElementById('total-duration').textContent,
-      startDisabled: document.getElementById('start-program-button').disabled,
-    }))()`),
-    { roundDuration: '9 秒', totalDuration: '1 分 30 秒', startDisabled: false },
-  );
+  await openPlaybackSettings(settingsManager);
+
+  // 罐頭訊息直接顯示，沒有先加入本機待播清單的中間狀態。
   await execute(`(() => {
-    const button = document.getElementById('start-program-button');
+    const button = document.getElementById('operation-welcome-button');
     button.focus();
     button.click();
   })()`);
-  await waitForRevision(presentationStore, 1);
-  await waitForCurrentDom(1);
-  await waitForIdle();
-  assert.equal(await execute('document.activeElement.id'), 'start-program-button');
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedPage(messages.slice(0, 3), 1, {
-      pageNumber: 1,
-      pageCount: 3,
-      roundNumber: 1,
-      totalRounds: 10,
-    }),
+  await waitForRevision(store, 1);
+  await waitForMessages(['歡迎光臨'], '第 1 / 1 頁 · 1 / 3 則');
+  await waitFor(
+    () => execute(`document.activeElement?.id === 'operation-welcome-button'`),
+    '罐頭訊息顯示後恢復原操作焦點',
   );
-  await assertCurrentDom({
-    message: messages.slice(0, 3).join(''),
-    rows: messages.slice(0, 3),
-    layout: '單行',
-    page: '第 1 / 3 頁',
-    round: '第 1 / 10 輪',
-    revision: '#1',
-    childCount: 3,
+  assert.deepEqual(store.getControlSnapshot(), {
+    mode: 'page',
+    messages: [{ message: '歡迎光臨' }],
+    layout: 'single-line',
+    pageDurationSeconds: 4,
+    pageNumber: 1,
+    pageCount: 1,
+    roundNumber: 1,
+    totalRounds: 2,
+    revision: 1,
+    contentRevision: 1,
   });
 
+  await click('operation-quiet-button');
+  await waitForRevision(store, 2);
+  await waitForMessages(
+    ['歡迎光臨', '請輕聲細語'],
+    '第 1 / 1 頁 · 2 / 3 則',
+  );
+
+  // 一般表單也是一次 submit 就立即更新 Main 內容。
+  await submitNormalMessage('001', 'go-to-lobby', '001請至前廳');
+  await waitForRevision(store, 3);
+  await waitForMessages(
+    ['歡迎光臨', '請輕聲細語', '001請至前廳'],
+    '第 1 / 1 頁 · 3 / 3 則',
+  );
+
+  await submitNormalMessage('Nancy', 'lobby-code', 'Nancy前廳000');
+  await waitForRevision(store, 4);
+  const allMessages = [
+    '歡迎光臨',
+    '請輕聲細語',
+    '001請至前廳',
+    'Nancy前廳000',
+  ];
+  await waitForMessages(
+    allMessages.slice(0, 3),
+    '第 1 / 2 頁 · 3 / 3 則',
+  );
+  assert.deepEqual(
+    store.getControlSnapshot().messages.map(({ message }) => message),
+    allMessages,
+  );
+  assert.deepEqual(
+    store.getSnapshot().messages.map(({ message }) => message),
+    allMessages.slice(0, 3),
+  );
+  assert.deepEqual(await readCurrentDom(), {
+    summary: '第 1 / 2 頁 · 3 / 3 則',
+    messages: allMessages.slice(0, 3),
+    indices: ['01', '02', '03'],
+    removeIndices: ['0', '1', '2'],
+    emptyHidden: true,
+    listHidden: false,
+    clearDisabled: false,
+    status: '訊息已顯示。',
+    errorHidden: true,
+    error: '',
+  });
+
+  // 每頁最多三則；完成第一頁的 4 秒後，第二頁只顯示第四則。
   assert.equal(timers.activeCount(), 0, 'Display ready 前不得啟動 timer');
   reportStaticDisplayReady(1, settingsManager.getSnapshot().revision);
   assert.equal(timers.activeCount(), 1);
-  timers.fireNext(3_000);
-  await waitForRevision(presentationStore, 2);
-  await waitForCurrentDom(2);
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedPage(messages.slice(3, 6), 2, {
-      pageNumber: 2,
-      pageCount: 3,
-      roundNumber: 1,
-      totalRounds: 10,
-    }),
+  await execute(`document.querySelector(
+    '.current-remove-button[data-message-index="0"]'
+  ).focus()`);
+  timers.fireNext(4_000);
+  await waitForRevision(store, 5);
+  await waitForMessages(['Nancy前廳000'], '第 2 / 2 頁 · 1 / 3 則');
+  await waitFor(
+    () => execute(`document.activeElement?.id === 'current-page-summary'`),
+    '翻頁移除原焦點項目後聚焦目前頁摘要',
   );
-  await assertCurrentDom({
-    message: messages.slice(3, 6).join(''),
-    rows: messages.slice(3, 6),
-    layout: '單行',
-    page: '第 2 / 3 頁',
-    round: '第 1 / 10 輪',
-    revision: '#2',
-    childCount: 3,
-  });
-  reportStaticDisplayReady(2, settingsManager.getSnapshot().revision);
-  assert.equal(timers.activeCount(), 1);
+  assert.deepEqual((await readCurrentDom()).removeIndices, ['3']);
 
-  // 555 開啟 dialog 時尚未送出；確認後一次原子切換為滿屏。
-  await click('inspection-555-button');
-  const inspectionDialog = await execute(`(() => ({
-    open: document.getElementById('inspection-confirm-dialog').open,
-    code: document.getElementById('inspection-code-preview').textContent,
-    confirmText: document.getElementById('inspection-confirm-button').textContent,
-    cancelFocused: document.activeElement.id === 'inspection-cancel-button',
-  }))()`);
-  assert.deepEqual(inspectionDialog, {
-    open: true,
-    code: '555',
-    confirmText: '確認顯示 555',
-    cancelFocused: true,
-  });
-  assert.equal(presentationStore.getSnapshot().revision, 2);
-  await click('inspection-confirm-button');
+  // 防護：無效播放秒數時按移除，只顯示欄位錯誤，不得送出或改變內容。
+  const beforeInvalidRemoval = structuredClone(store.getControlSnapshot());
+  const startCallsBeforeInvalidRemoval = metrics.startProgramCalls;
+  await setInput('page-duration-input', '0');
+  await execute(`document.querySelector(
+    '.current-remove-button[data-message-index="3"]'
+  ).click()`);
   await waitFor(
     () => execute(`(() =>
-      document.getElementById('operation-error').hidden === false &&
-      document.getElementById('inspection-confirm-button').disabled === false
+      document.getElementById('settings-dialog').open === true &&
+      document.getElementById('settings-status').textContent === '設定已載入。' &&
+      document.getElementById('page-duration-error').hidden === false &&
+      document.getElementById('page-duration-error').textContent.length > 0 &&
+      document.activeElement?.id === 'page-duration-input'
     )()`),
-    '555 失敗後恢復確認操作',
+    '移除時開啟設定並聚焦播放秒數錯誤',
   );
-  assert.equal(presentationStore.getSnapshot().revision, 2);
-  assert.deepEqual(
-    await execute(`(() => ({
-      dialogOpen: document.getElementById('inspection-confirm-dialog').open,
-      errorText: document.getElementById('operation-error').textContent,
-      dialogError: document.getElementById('inspection-dialog-error').textContent,
-      confirmText: document.getElementById('inspection-confirm-button').textContent,
-    }))()`),
-    {
-      dialogOpen: true,
-      errorText: '操作失敗，請稍後再試。',
-      dialogError:
-        '無法確認代碼是否已顯示。請先查看目前顯示狀態或電視畫面，再決定是否重試。',
-      confirmText: '確認顯示 555',
-    },
-  );
-
-  // 保留原本 pending code 後可直接重試，連點仍只能產生一次 revision。
-  await execute(`(() => {
-    const button = document.getElementById('inspection-confirm-button');
-    button.click();
-    button.click();
-  })()`);
-  await waitForRevision(presentationStore, 3);
-  await waitForCurrentDom(3);
-  await waitForIdle();
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedEmergency('555', 3),
-  );
-  await assertCurrentDom({
-    message: '555',
-    rows: [],
-    layout: '滿屏',
-    page: '—',
-    round: '—',
-    revision: '#3',
-    childCount: 0,
+  await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.deepEqual(store.getControlSnapshot(), beforeInvalidRemoval);
+  assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval);
+  assert.deepEqual(await execute(`(() => ({
+    operationErrorHidden: document.getElementById('operation-error').hidden,
+    messages: [...document.querySelectorAll('.current-message-text')]
+      .map((element) => element.textContent),
+    summary: document.getElementById('current-page-summary').textContent,
+  }))()`), {
+    operationErrorHidden: true,
+    messages: ['Nancy前廳000'],
+    summary: '第 2 / 2 頁 · 1 / 3 則',
   });
+
+  await setInput('page-duration-input', '4');
   assert.equal(
-    await execute(`document.getElementById('queue-message-count').textContent`),
-    '7 則',
+    await execute(`document.getElementById('page-duration-error').hidden`),
+    true,
   );
-  assert.equal(timers.activeCount(), 0, '滿屏必須取消原播放 timer');
-
-  // 888 的取消流程不改狀態；再次確認才送出。
-  await click('inspection-888-button');
+  await click('settings-close-button');
   await waitFor(
-    () => execute(`(() =>
-      document.getElementById('inspection-confirm-dialog').open &&
-      document.getElementById('inspection-confirm-button').textContent ===
-        '確認顯示 888'
-    )()`),
-    '開啟 888 對話框',
+    () => execute(`document.getElementById('settings-dialog').open === false`),
+    '修正播放秒數後關閉設定',
   );
-  await execute(`(() => {
-    const dialog = document.getElementById('inspection-confirm-dialog');
-    const observer = new MutationObserver(() => {
-      if (!dialog.open) {
-        observer.disconnect();
-        document.getElementById('inspection-888-button').click();
-      }
-    });
-    observer.observe(dialog, { attributes: true, attributeFilter: ['open'] });
-    document.getElementById('inspection-cancel-button').click();
-  })()`);
-  await waitFor(
-    () => execute(`(() =>
-      document.getElementById('inspection-confirm-dialog').open &&
-      document.getElementById('inspection-confirm-button').textContent ===
-        '確認顯示 888'
-    )()`),
-    '取消後立即重新開啟 888 對話框',
+  await execute(`document.querySelector(
+    '.current-remove-button[data-message-index="3"]'
+  ).click()`);
+  await waitForRevision(store, 6);
+  await waitForMessages(
+    allMessages.slice(0, 3),
+    '第 1 / 1 頁 · 3 / 3 則',
   );
-  assert.equal(presentationStore.getSnapshot().revision, 3);
+  assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval + 1);
+  assert.equal((await readCurrentDom()).status, '訊息已移除。');
 
-  await click('inspection-confirm-button');
-  await waitForRevision(presentationStore, 4);
-  await waitForCurrentDom(4);
-  await waitForIdle();
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedEmergency('888', 4),
-  );
-
-  // 清除必須回到空白 single-line，不能把 888 誤當 clear。
+  // 清除畫面直接清除 Main 目前內容。
   await execute(`(() => {
     const button = document.getElementById('clear-display-button');
     button.focus();
     button.click();
   })()`);
-  await waitForRevision(presentationStore, 5);
-  await waitForCurrentDom(5);
-  await waitForIdle();
-  assert.equal(
-    await execute('document.activeElement.id'),
-    'clear-display-button',
-  );
-  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(5));
-  await assertCurrentDom({
-    message: '目前為空白畫面',
-    rows: [],
-    layout: '單行',
-    page: '—',
-    round: '—',
-    revision: '#5',
-    childCount: 0,
-  });
-
-  // 清空本機草稿與清除電視是完全獨立的操作。
-  await click('clear-queue-button');
-  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(5));
-  assert.deepEqual(
-    await execute(`(() => ({
-      count: document.getElementById('queue-message-count').textContent,
-      emptyHidden: document.getElementById('queue-empty-state').hidden,
-    }))()`),
-    { count: '0 則', emptyHidden: false },
-  );
-
-  // 持續模式不得夾帶舊的 rounds，單頁也不排無意義 timer。
-  await addDraftMessage({
-    recipient: '',
-    action: 'custom',
-    customText: '公告持續顯示',
-  });
-  await selectRepeatMode('continuous');
-  await click('start-program-button');
-  await waitForRevision(presentationStore, 6);
-  await waitForCurrentDom(6);
-  await waitForIdle();
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedPage(['公告持續顯示'], 6, {
-      pageNumber: 1,
-      pageCount: 1,
-      roundNumber: null,
-      totalRounds: null,
-    }),
-  );
-  assert.equal(timers.activeCount(), 0);
-  await click('clear-display-button');
-  await waitForRevision(presentationStore, 7);
-  await waitForCurrentDom(7);
-  await waitForIdle();
-  await click('clear-queue-button');
-
-  // Main 內部例外只能顯示固定錯誤，草稿不消失也不改變畫面。
-  await selectRepeatMode('finite');
-  await setTextInput('round-count-input', '1');
-  await addDraftMessage({
-    recipient: '',
-    action: 'custom',
-    customText: ERROR_SENTINEL,
-  });
-  await click('start-program-button');
+  await waitForRevision(store, 7);
   await waitFor(
-    () => execute(
-      `document.getElementById('operation-error').hidden === false`,
-    ),
-    'Control 錯誤訊息',
+    () => execute(`(() =>
+      document.getElementById('current-empty-state').hidden === false &&
+      document.getElementById('current-message-list').hidden === true &&
+      document.getElementById('clear-display-button').disabled === true
+    )()`),
+    '清除目前畫面',
   );
-  const errorText = await execute(
-    `document.getElementById('operation-error').textContent`,
+  assert.equal(store.getControlSnapshot().mode, 'blank');
+  assert.equal(await execute(`document.activeElement?.id`), 'recipient-input');
+
+  // 關閉確認對話框後，若操作員已主動移動焦點，不得延遲搶回 555。
+  await click('inspection-555-button');
+  await execute(`new Promise((resolve) => {
+    const dialog = document.getElementById('inspection-confirm-dialog');
+    dialog.addEventListener('close', () => resolve(true), { once: true });
+    dialog.close();
+    document.getElementById('recipient-input').focus();
+  })`);
+  await waitFor(
+    () => execute(`document.activeElement?.id === 'recipient-input'`),
+    '臨檢對話框關閉後保留操作員的新焦點',
   );
-  assert.equal(errorText, '操作失敗，請稍後再試。');
-  assert.doesNotMatch(errorText, /private|config|stack/i);
-  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(7));
-  assert.equal(
-    await execute(`document.getElementById('queue-message-count').textContent`),
-    '1 則',
+  assert.equal(await execute(`document.activeElement?.id`), 'recipient-input');
+
+  // 555／888 都經確認後立即切換 fill-screen，且不受一般三則分頁限制。
+  await click('inspection-555-button');
+  assert.deepEqual(await execute(`(() => ({
+    open: document.getElementById('inspection-confirm-dialog').open,
+    code: document.getElementById('inspection-code-preview').textContent,
+    confirm: document.getElementById('inspection-confirm-button').textContent,
+  }))()`), {
+    open: true,
+    code: '555',
+    confirm: '確認顯示 555',
+  });
+  assert.equal(store.getControlSnapshot().revision, 7);
+  await click('inspection-confirm-button');
+  await waitForRevision(store, 8);
+  await waitForMessages(['555'], '滿屏顯示');
+  assert.deepEqual(store.getControlSnapshot(), {
+    mode: 'emergency',
+    messages: [{ message: '555' }],
+    layout: 'fill-screen',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    revision: 8,
+    contentRevision: 7,
+  });
+  assert.equal((await readCurrentDom()).removeIndices.length, 0);
+
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('inspection-confirm-dialog').open === false &&
+      document.getElementById('inspection-888-button').disabled === false
+    )()`),
+    '555 確認對話框完整關閉',
   );
+  await click('inspection-888-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('inspection-confirm-dialog').open &&
+      document.getElementById('inspection-code-preview').textContent === '888'
+    )()`),
+    '開啟 888 確認',
+  );
+  await click('inspection-confirm-button');
+  await waitForRevision(store, 9);
+  await waitForMessages(['888'], '滿屏顯示');
+  assert.equal(store.getControlSnapshot().layout, 'fill-screen');
+  assert.equal(store.getControlSnapshot().contentRevision, 8);
+
+  await click('clear-display-button');
+  await waitForRevision(store, 10);
+  assert.equal(store.getControlSnapshot().mode, 'blank');
 }
 
 async function run() {
@@ -1122,34 +742,20 @@ async function run() {
   );
   hardenWebContents(controlWindow.webContents);
 
-  const presentationStore = new PresentationStore();
+  const store = new PresentationStore();
   const timers = createTimerHarness();
+  const metrics = { startProgramCalls: 0 };
   presentationService = new PresentationService({
-    store: presentationStore,
+    store,
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
   });
   const startProgram = presentationService.startProgram.bind(
     presentationService,
   );
-  const showEmergency = presentationService.showEmergency.bind(
-    presentationService,
-  );
-  let failNextInspection = true;
-  presentationService.showEmergency = (code) => {
-    if (code === '555' && failNextInspection) {
-      failNextInspection = false;
-      throw new Error('/private/inspection.json: simulated emergency failure');
-    }
-
-    return showEmergency(code);
-  };
-
   presentationService.startProgram = (program) => {
-    if (program.messages.some(({ message }) => message === ERROR_SENTINEL)) {
-      throw new Error('/private/config.json: simulated internal stack');
-    }
-
+    assert.ok(program && typeof program === 'object', '不得呼叫 startProgram(null)');
+    metrics.startProgramCalls += 1;
     return startProgram(program);
   };
 
@@ -1161,45 +767,10 @@ async function run() {
     createPlacementStatus(),
     'getStatus',
   );
-  const settingsManager = createSettingsManager((config, revision) => {
-    const currentTopology = topologyService.getSnapshot();
-    const configuredTarget = currentTopology.displays.find(
-      ({ id }) => id === config.display.defaultDisplayId,
-    );
-    const automaticTarget = currentTopology.displays.find(
-      ({ isPrimary, isInternal }) => !isPrimary && !isInternal,
-    ) ?? currentTopology.displays.find(({ isPrimary }) => isPrimary);
-    const target = config.display.selectionMode === 'manual'
-      ? configuredTarget ?? currentTopology.displays.find(({ isPrimary }) => isPrimary)
-      : automaticTarget;
-    const usingFallback =
-      config.display.selectionMode === 'manual' && !configuredTarget;
-
-    topologyService.publish({
-      ...currentTopology,
-      effectiveDisplayId: target?.id ?? null,
-      configuredDisplayId: config.display.defaultDisplayId,
-      selectionMode: config.display.selectionMode,
-      fullscreen: config.display.fullscreen,
-      usingFallback,
-      configRevision: revision,
-      revision: currentTopology.revision + 1,
-    });
-
-    const currentPlacement = placementService.getStatus();
-    placementService.publish({
-      status: target ? 'applied' : 'pending',
-      displayId: target?.id ?? null,
-      fullscreen: config.display.fullscreen,
-      revision: currentPlacement.revision + 1,
-    });
-  });
+  const settingsManager = createSettingsManager();
   const logoImporter = {
     async chooseAndImport() {
-      return {
-        canceled: false,
-        assetPath: 'logos/0123456789abcdef01234567.png',
-      };
+      return { canceled: true, assetPath: null };
     },
   };
 
@@ -1210,16 +781,12 @@ async function run() {
     logoImporter,
     displayTopologyService: topologyService,
     displayPlacementController: placementService,
-    getWindow: (role) =>
-      role === IPC_ROLES.CONTROL ? controlWindow : null,
+    getWindow: (role) => role === IPC_ROLES.CONTROL ? controlWindow : null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,
       [IPC_ROLES.DISPLAY]: DISPLAY_URL,
     },
-    logger: {
-      warn: () => {},
-      error: () => {},
-    },
+    logger: { warn() {}, error() {} },
   });
   coordinator.register();
 
@@ -1243,13 +810,7 @@ async function run() {
   });
 
   await controlWindow.loadURL(CONTROL_URL);
-  await runWorkflow(
-    presentationStore,
-    timers,
-    settingsManager,
-    topologyService,
-    placementService,
-  );
+  await runWorkflow(store, timers, settingsManager, metrics);
   finish(0, '[DisplayCore] Control window workflow succeeded.');
 }
 

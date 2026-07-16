@@ -5,12 +5,12 @@
     <title>DisplayCore 設定焦點回歸測試</title>
   </head>
   <body>
-    <button id="open-settings-button" type="button" disabled>開啟系統設定</button>
     <button
-      id="manage-output-settings-button"
-      data-settings-section="display"
+      id="open-settings-button"
       type="button"
-    >管理輸出設定</button>
+      aria-label="開啟系統設定"
+      disabled
+    >設定</button>
     <input id="next-action-input" type="text">
 
     <dialog id="settings-dialog">
@@ -50,33 +50,11 @@
             <input id="marquee-enabled-input" type="checkbox">
           </fieldset>
 
-          <fieldset id="display-settings-fieldset">
-            <strong id="display-mode-summary"></strong>
-            <input
-              id="display-auto-input"
-              name="display-selection-mode"
-              type="radio"
-              value="auto"
-              checked
-            >
-            <input
-              id="display-manual-input"
-              name="display-selection-mode"
-              type="radio"
-              value="manual"
-            >
-            <p id="display-mode-error" hidden></p>
-            <select id="default-display-select"></select>
-            <p id="default-display-error" hidden></p>
-            <input id="display-fullscreen-input" type="checkbox" checked>
-            <p id="display-fullscreen-error" hidden></p>
-            <p id="display-output-notice" hidden></p>
-          </fieldset>
         </div>
 
         <button id="load-defaults-button" type="button">載入預設值</button>
         <button id="settings-close-button" type="button">關閉</button>
-        <button id="save-settings-button" type="submit">儲存設定</button>
+        <button id="save-settings-button" type="button">儲存設定</button>
       </form>
     </dialog>
 
@@ -111,16 +89,14 @@
       });
       const dialog = document.getElementById('settings-dialog');
       const standardTrigger = document.getElementById('open-settings-button');
-      const outputTrigger = document.getElementById(
-        'manage-output-settings-button',
-      );
       const nextAction = document.getElementById('next-action-input');
 
-      // 模擬瀏覽器在 close() 返回前，先將焦點還給開啟前的舊入口。
+      // 模擬瀏覽器在 close() 返回前，先把焦點放到其他控制項。
+      // Settings View 必須同步校正回唯一的齒輪入口。
       const nativeClose = dialog.close.bind(dialog);
       dialog.close = (...args) => {
         nativeClose(...args);
-        standardTrigger.focus();
+        nextAction.focus();
       };
 
       const view = createSettingsView({ document });
@@ -135,7 +111,7 @@
       });
       view.bind();
 
-      async function openAndCloseOutputSettings() {
+      async function openAndCloseSettings() {
         const closeSettled = new Promise((resolve) => {
           dialog.addEventListener(
             'close',
@@ -143,7 +119,7 @@
             { once: true },
           );
         });
-        outputTrigger.click();
+        standardTrigger.click();
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         if (!dialog.open) {
@@ -163,7 +139,7 @@
 
       window.runFocusRegression = async () => {
         standardTrigger.focus();
-        return openAndCloseOutputSettings();
+        return openAndCloseSettings();
       };
     </script>
   </body>
