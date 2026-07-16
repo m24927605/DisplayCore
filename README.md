@@ -27,7 +27,7 @@ npm run make
 - `npm run package`：產生目前作業系統的未安裝應用程式封裝。
 - `npm run make`：產生安裝檔；Squirrel.Windows 應於 Windows 10／11 環境執行。
 
-## 目前進度：第 9 步 HDMI 與輸出螢幕管理
+## 目前進度：第 10 步軟體 QA 完成；Windows 實機驗收待進行
 
 本階段已完成：
 
@@ -74,10 +74,16 @@ npm run make
 - 自動模式優先使用外接螢幕，沒有可用外接螢幕時回退主螢幕；外接電視被設為 Windows 主螢幕時也能正確辨識。
 - 手動模式保存指定 Display ID；螢幕中斷時暫用主螢幕但不覆寫原設定，重新連接同一 ID 後自動恢復。
 - Display Window 在載入頁面前先依目標螢幕的 DIP bounds 定位；可切換全螢幕或可用區 80% 的置中 16:9 視窗。
-- Windows 只從受信任的 `SystemRoot\\System32\\WindowsPowerShell` 絕對路徑執行固定、無使用者輸入的 WMI 查詢；只有明確的空陣列代表未連接，逾時、空白或畸形輸出則顯示 unknown，不影響正常螢幕路由。
+- Windows 只從受信任的 `SystemRoot\System32\WindowsPowerShell` 絕對路徑執行固定、無使用者輸入的 WMI 查詢；只有明確的空陣列代表未連接，逾時、空白或畸形輸出則顯示 unknown，不影響正常螢幕路由。
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 以獨立狀態卡呈現 HDMI、實際輸出目標、全螢幕模式及螢幕數；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 設定對話框可選自動／指定螢幕與全螢幕；拓樸事件不會覆蓋尚未儲存的表單草稿。
+- Node.js 24.18.0 完整測試 245/245 通過；line coverage 94.82%、branch coverage 88.44%～88.45%、function coverage 92.69%（並行測試重跑時 branch 結果有 0.01% 浮動）。
+- 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 5＋2 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
+- 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
+- macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
+- dependencies 與 devDependencies 的 `npm audit` 均為 0 vulnerabilities；封裝已驗證安全 Electron fuses、ASAR integrity 與 macOS code signature。
+- 完整測試證據、截圖、已修正問題及實機驗收邊界記錄於 [第 10 步 QA 報告](.gstack/qa-reports/qa-report-displaycore-2026-07-17.md)。
 
 ## 播放模型
 
@@ -190,6 +196,8 @@ Electron `screen` 能可靠取得可用顯示器、內建／外接資訊、DIP �
 
 因此 Control 不會把任何單一螢幕選項標成 HDMI；DisplayPort、USB-C、轉接器、虛擬或遠端顯示環境仍可能出現在螢幕清單。非 Windows 或 WMI 無法查詢時，HDMI 會顯示「無法判定」，而不是誤報「未連接」。
 
-## 尚未進入的步驟
+## 尚待確認與實機驗收
 
-- 第 10 步：Windows 10／11 實機、HDMI 電視、熱插拔、睡眠恢復、混合 DPI 與目標解析度的完整驗收。
+- 超長文字使用跑馬燈時，固定每頁秒數可能早於完整一輪動畫結束；需確認是否將每頁秒數改為最短停留時間並自動延長。
+- `prefers-reduced-motion` 下，極長單行文字只能靜態水平壓縮而不可讀；需確認無人 Display 是否仍強制跑馬燈，或由 Control 阻擋該內容。
+- Windows 10／11 實機、HDMI 電視、熱插拔、睡眠恢復、混合 DPI、目標解析度及 Squirrel.Windows 安裝流程仍需在 Windows 硬體執行。
