@@ -112,7 +112,7 @@ test('Forge 開發工具鏈覆寫為已修補的封裝與暫存套件', async ()
   assert.equal(packageJson.overrides.tmp, '0.2.7');
 });
 
-test('Electron 封裝排除專案與相依套件的測試、覆蓋率與 AIT 資料', () => {
+test('Electron 封裝排除測試、覆蓋率、QA 報告與 AIT 資料', () => {
   const forgeConfig = require('../../forge.config');
   const ignoredPaths = forgeConfig.packagerConfig.ignore;
   const isIgnored = (relativePath) =>
@@ -134,6 +134,7 @@ test('Electron 封裝排除專案與相依套件的測試、覆蓋率與 AIT 資
   assert.equal(isIgnored('/assets/ait/config.json'), true);
   assert.equal(isIgnored('/assets/wait/config.json'), false);
   assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
+  assert.equal(isIgnored('/.gstack/qa-reports/baseline.json'), true);
   assert.equal(isIgnored('/node_modules/example/index.js'), false);
   assert.equal(typeof forgeConfig.hooks.packageAfterCopy, 'function');
   assert.equal(typeof forgeConfig.hooks.postPackage, 'function');

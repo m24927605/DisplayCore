@@ -19,6 +19,7 @@ module.exports = {
     ignore: [
       /^\/tests(?:\/|$)/,
       /^\/coverage(?:\/|$)/,
+      /^\/\.gstack(?:\/|$)/,
       /^\/node_modules\/.*\/(?:test|tests|coverage)(?:\/|$)/,
       /^\/(?:.*\/)?\.?ait(?:\/|$)/i,
       /\.ait$/i,
