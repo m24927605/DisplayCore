@@ -93,6 +93,7 @@ function createService({
   displays,
   primaryDisplayId,
   settingsSnapshot,
+  powerMonitor,
   hdmiResult = {
     status: 'not-connected',
     activeConnectionCount: 1,
@@ -116,6 +117,7 @@ function createService({
     screen,
     settingsManager,
     hdmiDetector,
+    powerMonitor,
     logger: {
       warn(message) {
         warnings.push(message);
@@ -195,6 +197,35 @@ test('初始化不等待 HDMI 探測，先提供可定位的拓樸再背景更�
   await flushAsyncWork();
 
   assert.equal(service.getSnapshot().hdmiConnectionStatus, 'connected');
+});
+
+test('休眠恢復與解鎖後重新查詢拓樸，dispose 精確移除 powerMonitor 監聽', async () => {
+  const powerMonitor = new EventEmitter();
+  const primary = createDisplay(1, { internal: true });
+  const external = createDisplay(2);
+  const { screen, service } = createService({
+    displays: [primary],
+    primaryDisplayId: 1,
+    powerMonitor,
+  });
+
+  await service.initialize();
+  await flushAsyncWork();
+  const queryCountBefore = screen.queryCount;
+  screen.displays = [primary, external];
+
+  powerMonitor.emit('resume');
+  powerMonitor.emit('unlock-screen');
+  await flushAsyncWork();
+
+  assert.equal(screen.queryCount, queryCountBefore + 1);
+  assert.equal(service.getSnapshot().effectiveDisplayId, 2);
+  assert.equal(powerMonitor.listenerCount('resume'), 1);
+  assert.equal(powerMonitor.listenerCount('unlock-screen'), 1);
+
+  service.dispose();
+  assert.equal(powerMonitor.listenerCount('resume'), 0);
+  assert.equal(powerMonitor.listenerCount('unlock-screen'), 0);
 });
 
 test('只有主螢幕時 auto 使用主螢幕並發布最小唯讀快照', async () => {

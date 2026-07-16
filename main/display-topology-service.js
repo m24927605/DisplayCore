@@ -284,6 +284,7 @@ class DisplayTopologyService {
     screen,
     settingsManager,
     hdmiDetector,
+    powerMonitor = null,
     logger = console,
     hdmiDebounceMilliseconds = 250,
     setTimer = setTimeout,
@@ -297,7 +298,10 @@ class DisplayTopologyService {
       hdmiDebounceMilliseconds < 0 ||
       hdmiDebounceMilliseconds > 5000 ||
       typeof setTimer !== 'function' ||
-      typeof clearTimer !== 'function'
+      typeof clearTimer !== 'function' ||
+      (powerMonitor !== null &&
+        (typeof powerMonitor.on !== 'function' ||
+          typeof powerMonitor.removeListener !== 'function'))
     ) {
       throw new TypeError('螢幕拓樸服務缺少必要相依物件。');
     }
@@ -305,6 +309,7 @@ class DisplayTopologyService {
     this.screen = screen;
     this.settingsManager = settingsManager;
     this.hdmiDetector = hdmiDetector;
+    this.powerMonitor = powerMonitor;
     this.logger = logger;
     this.hdmiDebounceMilliseconds = hdmiDebounceMilliseconds;
     this.setTimer = setTimer;
@@ -366,6 +371,10 @@ class DisplayTopologyService {
       'display-metrics-changed',
     ]) {
       this.screen.on(eventName, this.handleScreenChange);
+    }
+
+    for (const eventName of ['resume', 'unlock-screen']) {
+      this.powerMonitor?.on(eventName, this.handleScreenChange);
     }
 
     this.settingsUnsubscribe = this.settingsManager.subscribe(
@@ -636,6 +645,10 @@ class DisplayTopologyService {
       'display-metrics-changed',
     ]) {
       this.screen.removeListener(eventName, this.handleScreenChange);
+    }
+
+    for (const eventName of ['resume', 'unlock-screen']) {
+      this.powerMonitor?.removeListener(eventName, this.handleScreenChange);
     }
 
     this.settingsUnsubscribe?.();
