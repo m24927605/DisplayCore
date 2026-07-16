@@ -76,6 +76,8 @@ const uiState = {
   messages: Object.freeze([]),
   queueErrorMessage: null,
   pendingEmergency: null,
+  inspectionClosing: false,
+  inspectionReopenButton: null,
   focusBeforeBusy: null,
   controller: null,
 };
@@ -584,7 +586,18 @@ async function startProgram() {
 }
 
 function openEmergencyDialog(triggerButton) {
-  if (uiState.busy || !uiState.ready || elements.dialog.open) {
+  if (uiState.busy || !uiState.ready) {
+    return;
+  }
+
+  // close() 與 close event 之間仍可能收到下一次操作；先排隊，避免
+  // 舊 close handler 清除新一輪的 pendingEmergency。
+  if (uiState.inspectionClosing) {
+    uiState.inspectionReopenButton = triggerButton;
+    return;
+  }
+
+  if (elements.dialog.open) {
     return;
   }
 
@@ -612,6 +625,13 @@ function openEmergencyDialog(triggerButton) {
   elements.dialog.showModal();
 }
 
+function closeEmergencyDialog() {
+  if (elements.dialog.open && !uiState.busy) {
+    uiState.inspectionClosing = true;
+    elements.dialog.close();
+  }
+}
+
 async function confirmEmergency() {
   const pendingEmergency = uiState.pendingEmergency;
 
@@ -637,7 +657,7 @@ async function confirmEmergency() {
   }
 
   if (elements.dialog.open) {
-    elements.dialog.close();
+    closeEmergencyDialog();
   }
 }
 
@@ -700,7 +720,7 @@ function bindUiEvents() {
 
   elements.dialogCancelButton.addEventListener('click', () => {
     if (!uiState.busy) {
-      elements.dialog.close();
+      closeEmergencyDialog();
     }
   });
 
@@ -711,17 +731,33 @@ function bindUiEvents() {
   elements.dialog.addEventListener('cancel', (event) => {
     if (uiState.busy) {
       event.preventDefault();
+    } else {
+      uiState.inspectionClosing = true;
     }
   });
 
   elements.dialog.addEventListener('close', () => {
     const triggerButton = uiState.pendingEmergency?.triggerButton;
+    const reopenButton = uiState.inspectionReopenButton;
+    const activeElement = document.activeElement;
+    const shouldRestoreTriggerFocus =
+      activeElement === null ||
+      activeElement === document.body ||
+      elements.dialog.contains(activeElement);
     uiState.pendingEmergency = null;
+    uiState.inspectionReopenButton = null;
+    uiState.inspectionClosing = false;
     elements.dialogError.textContent = '';
     elements.dialogError.hidden = true;
 
     queueMicrotask(() => {
-      if (triggerButton?.isConnected && !triggerButton.disabled) {
+      if (reopenButton?.isConnected && !reopenButton.disabled) {
+        openEmergencyDialog(reopenButton);
+      } else if (
+        shouldRestoreTriggerFocus &&
+        triggerButton?.isConnected &&
+        !triggerButton.disabled
+      ) {
         triggerButton.focus();
       }
     });

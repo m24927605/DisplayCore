@@ -355,10 +355,20 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
   );
   assert.equal(settingsManager.getSnapshot().revision, 0);
 
-  await execute(`document.getElementById('settings-form').requestSubmit()`);
+  await execute(`(() => {
+    const dialog = document.getElementById('settings-dialog');
+    const observer = new MutationObserver(() => {
+      if (!dialog.open) {
+        observer.disconnect();
+        document.getElementById('open-settings-button').click();
+      }
+    });
+    observer.observe(dialog, { attributes: true, attributeFilter: ['open'] });
+    document.getElementById('settings-form').requestSubmit();
+  })()`);
   await waitFor(
-    () => execute(`document.getElementById('settings-dialog').open === false`),
-    '設定儲存後關閉',
+    () => settingsManager.getSnapshot().revision === 1,
+    '設定成功儲存',
   );
 
   const saved = settingsManager.getSnapshot();
@@ -371,7 +381,6 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
   });
   assert.deepEqual(presentationStore.getSnapshot(), presentationBefore);
 
-  await click('open-settings-button');
   await waitFor(
     () => execute(`(() =>
       document.getElementById('settings-dialog').open &&
@@ -726,14 +735,35 @@ async function runWorkflow(presentationStore, timers, settingsManager) {
 
   // 888 的取消流程不改狀態；再次確認才送出。
   await click('inspection-888-button');
-  await click('inspection-cancel-button');
-  assert.equal(
-    await execute(`document.getElementById('inspection-confirm-dialog').open`),
-    false,
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('inspection-confirm-dialog').open &&
+      document.getElementById('inspection-confirm-button').textContent ===
+        '確認顯示 888'
+    )()`),
+    '開啟 888 對話框',
+  );
+  await execute(`(() => {
+    const dialog = document.getElementById('inspection-confirm-dialog');
+    const observer = new MutationObserver(() => {
+      if (!dialog.open) {
+        observer.disconnect();
+        document.getElementById('inspection-888-button').click();
+      }
+    });
+    observer.observe(dialog, { attributes: true, attributeFilter: ['open'] });
+    document.getElementById('inspection-cancel-button').click();
+  })()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('inspection-confirm-dialog').open &&
+      document.getElementById('inspection-confirm-button').textContent ===
+        '確認顯示 888'
+    )()`),
+    '取消後立即重新開啟 888 對話框',
   );
   assert.equal(presentationStore.getSnapshot().revision, 3);
 
-  await click('inspection-888-button');
   await click('inspection-confirm-button');
   await waitForRevision(presentationStore, 4);
   await waitForCurrentDom(4);

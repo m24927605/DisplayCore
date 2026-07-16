@@ -60,6 +60,8 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     ready: false,
     busy: false,
     dirty: false,
+    closing: false,
+    reopenAfterClose: false,
     bound: false,
   };
   const eventController = new AbortController();
@@ -199,6 +201,7 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
 
   function closeDialog() {
     if (elements.dialog.open && !state.busy) {
+      state.closing = true;
       elements.dialog.close();
     }
   }
@@ -221,7 +224,18 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
   }
 
   async function openDialog() {
-    if (!state.controller || state.busy || elements.dialog.open) {
+    if (!state.controller || state.busy) {
+      return;
+    }
+
+    // dialog.close() 先移除 open，close event 稍後才送達；這段間隙的
+    // 重開請求必須排到舊生命週期清理完成後，避免舊 close 清掉新草稿。
+    if (state.closing) {
+      state.reopenAfterClose = true;
+      return;
+    }
+
+    if (elements.dialog.open) {
       return;
     }
 
@@ -345,18 +359,34 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
         elements.status.textContent = state.busy
           ? '設定作業進行中，請稍候。'
           : '尚有未儲存變更；請儲存或按「捨棄變更」。';
+      } else {
+        state.closing = true;
       }
     }, { signal });
     elements.dialog.addEventListener('close', () => {
+      const shouldReopen = state.reopenAfterClose;
+      const activeElement = document.activeElement;
+      const shouldRestoreTriggerFocus =
+        activeElement === null ||
+        activeElement === document.body ||
+        elements.dialog.contains(activeElement);
+      state.reopenAfterClose = false;
       state.ready = false;
       state.baseline = null;
       state.defaults = null;
       state.revision = null;
       state.logoPath = null;
       setDirty(false);
+      state.closing = false;
 
       queueMicrotask(() => {
-        if (elements.trigger.isConnected && !elements.trigger.disabled) {
+        if (shouldReopen) {
+          void openDialog();
+        } else if (
+          shouldRestoreTriggerFocus &&
+          elements.trigger.isConnected &&
+          !elements.trigger.disabled
+        ) {
           elements.trigger.focus();
         }
       });
