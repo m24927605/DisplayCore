@@ -141,6 +141,11 @@ async function bootstrap() {
         protocol: appSession.protocol,
         net,
         appRoot: PROJECT_ROOT,
+        managedLogoDirectory: path.join(dataRoot, 'logos'),
+        getAllowedLogoPath: () => {
+          const logo = settingsManager.getSnapshot().config.logo;
+          return logo.enabled ? logo.path : null;
+        },
       });
       await settingsManager.initialize();
       ipcCoordinator.register();

@@ -13,7 +13,7 @@ const SNAPSHOT_KEYS = Object.freeze([
   'revision',
 ]);
 const NOTICE_KEYS = Object.freeze(['code', 'message']);
-const MANAGED_LOGO_PATH = /^logos\/[a-z0-9][a-z0-9._-]*\.(?:jpe?g|png|webp)$/i;
+const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const DECIMAL_NUMBER = /^\d+(?:\.\d{1,2})?$/;

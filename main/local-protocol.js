@@ -1,11 +1,24 @@
 'use strict';
 
+const { createHash } = require('node:crypto');
+const defaultFileSystem = require('node:fs/promises');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
+
+const {
+  MAXIMUM_LOGO_BYTES,
+  matchesImageSignature,
+} = require('../config/logo-importer');
 
 const APP_SCHEME = 'displaycore';
 const APP_HOST = 'app';
 const ALLOWED_RESOURCE_ROOTS = new Set(['assets', 'control', 'display']);
+const MANAGED_LOGO_ROUTE = /^\/managed\/logo\/([a-f0-9]{24}\.(png|jpg|webp))$/;
+const LOGO_MIME_TYPES = Object.freeze({
+  jpg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+});
 
 /**
  * 在 Electron ready 前註冊最小權限的本機協定。
@@ -106,6 +119,118 @@ function createErrorResponse(status, statusText) {
   });
 }
 
+function resolveManagedLogoRequest(requestUrl) {
+  let parsedUrl;
+
+  try {
+    parsedUrl = new URL(requestUrl);
+  } catch {
+    return null;
+  }
+
+  if (
+    parsedUrl.protocol !== `${APP_SCHEME}:` ||
+    parsedUrl.host !== APP_HOST ||
+    parsedUrl.username !== '' ||
+    parsedUrl.password !== '' ||
+    parsedUrl.port !== '' ||
+    parsedUrl.search !== '' ||
+    parsedUrl.hash !== '' ||
+    parsedUrl.pathname.includes('%') ||
+    parsedUrl.pathname.includes('\\')
+  ) {
+    return null;
+  }
+
+  const match = MANAGED_LOGO_ROUTE.exec(parsedUrl.pathname);
+
+  if (!match) {
+    return null;
+  }
+
+  return Object.freeze({ fileName: match[1], extension: `.${match[2]}` });
+}
+
+async function serveManagedLogo({
+  fileName,
+  extension,
+  method,
+  managedLogoDirectory,
+  getAllowedLogoPath,
+  fileSystem,
+}) {
+  if (
+    typeof managedLogoDirectory !== 'string' ||
+    managedLogoDirectory.length === 0 ||
+    typeof getAllowedLogoPath !== 'function'
+  ) {
+    return createErrorResponse(404, 'Not Found');
+  }
+
+  try {
+    const expectedAssetPath = `logos/${fileName}`;
+
+    if (getAllowedLogoPath() !== expectedAssetPath) {
+      return createErrorResponse(404, 'Not Found');
+    }
+
+    const allowedRoot = path.resolve(managedLogoDirectory);
+    const filePath = path.resolve(allowedRoot, fileName);
+    const relativePath = path.relative(allowedRoot, filePath);
+
+    if (
+      relativePath !== fileName ||
+      path.isAbsolute(relativePath) ||
+      relativePath.startsWith(`..${path.sep}`)
+    ) {
+      return createErrorResponse(404, 'Not Found');
+    }
+
+    const stats = await fileSystem.lstat(filePath);
+
+    if (
+      !stats.isFile() ||
+      stats.isSymbolicLink() ||
+      stats.size <= 0 ||
+      stats.size > MAXIMUM_LOGO_BYTES
+    ) {
+      return createErrorResponse(404, 'Not Found');
+    }
+
+    const contents = await fileSystem.readFile(filePath);
+
+    if (
+      contents.length <= 0 ||
+      contents.length > MAXIMUM_LOGO_BYTES ||
+      !matchesImageSignature(contents, extension)
+    ) {
+      return createErrorResponse(404, 'Not Found');
+    }
+
+    const digest = createHash('sha256')
+      .update(contents)
+      .digest('hex')
+      .slice(0, 24);
+
+    if (!fileName.startsWith(`${digest}.`)) {
+      return createErrorResponse(404, 'Not Found');
+    }
+
+    return new Response(method === 'HEAD' ? null : contents, {
+      status: 200,
+      headers: {
+        'Content-Type': LOGO_MIME_TYPES[extension.slice(1)],
+        'Content-Length': String(contents.length),
+        'Cache-Control': 'no-store',
+        'X-Content-Type-Options': 'nosniff',
+        'Cross-Origin-Resource-Policy': 'same-origin',
+      },
+    });
+  } catch {
+    return createErrorResponse(404, 'Not Found');
+  }
+}
+
 /**
  * 建立 Electron protocol.handle 使用的本機資源處理器。
  *
@@ -114,12 +239,30 @@ function createErrorResponse(status, statusText) {
  * @param {typeof Electron.net} dependencies.net
  * @returns {(request: GlobalRequest) => Promise<Response>}
  */
-function createLocalProtocolHandler({ appRoot, net }) {
+function createLocalProtocolHandler({
+  appRoot,
+  net,
+  managedLogoDirectory = null,
+  getAllowedLogoPath = null,
+  fileSystem = defaultFileSystem,
+}) {
   return async function handleLocalResource(request) {
     const method = request.method || 'GET';
 
     if (method !== 'GET' && method !== 'HEAD') {
       return createErrorResponse(405, 'Method Not Allowed');
+    }
+
+    const managedLogo = resolveManagedLogoRequest(request.url);
+
+    if (managedLogo) {
+      return serveManagedLogo({
+        ...managedLogo,
+        method,
+        managedLogoDirectory,
+        getAllowedLogoPath,
+        fileSystem,
+      });
     }
 
     const resourcePath = resolveAppResource(appRoot, request.url);
@@ -144,10 +287,21 @@ function createLocalProtocolHandler({ appRoot, net }) {
  * @param {typeof Electron.net} dependencies.net
  * @param {string} dependencies.appRoot
  */
-function installLocalProtocol({ protocol, net, appRoot }) {
+function installLocalProtocol({
+  protocol,
+  net,
+  appRoot,
+  managedLogoDirectory,
+  getAllowedLogoPath,
+}) {
   protocol.handle(
     APP_SCHEME,
-    createLocalProtocolHandler({ appRoot, net }),
+    createLocalProtocolHandler({
+      appRoot,
+      net,
+      managedLogoDirectory,
+      getAllowedLogoPath,
+    }),
   );
 }
 
@@ -157,4 +311,5 @@ module.exports = {
   installLocalProtocol,
   registerAppScheme,
   resolveAppResource,
+  resolveManagedLogoRequest,
 };

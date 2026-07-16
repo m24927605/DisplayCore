@@ -39,7 +39,10 @@ function createHarness(apiOverrides = {}) {
     async chooseLogo() {
       return {
         ok: true,
-        data: { canceled: false, assetPath: 'logos/abc123.png' },
+        data: {
+          canceled: false,
+          assetPath: 'logos/0123456789abcdef01234567.png',
+        },
       };
     },
     ...apiOverrides,
@@ -163,7 +166,9 @@ test('Logo 取消不改草稿；成功只回傳受管理 asset path', async () =
   const selectedHarness = createHarness();
   const selectedController = createSettingsController(selectedHarness);
   assert.equal(await selectedController.chooseLogo(), true);
-  assert.deepEqual(selectedHarness.calls.logoAssets, ['logos/abc123.png']);
+  assert.deepEqual(selectedHarness.calls.logoAssets, [
+    'logos/0123456789abcdef01234567.png',
+  ]);
   assert.deepEqual(selectedHarness.calls.statuses, [
     'Logo 已匯入；儲存設定後才會採用。',
   ]);
@@ -223,4 +228,3 @@ test('dispose 後所有設定操作安全失敗且不再呼叫 bridge', async ()
   assert.equal(await controller.chooseLogo(), false);
   assert.equal(calls, 0);
 });
-

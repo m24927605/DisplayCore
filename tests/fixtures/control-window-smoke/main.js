@@ -308,7 +308,8 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
   await click('choose-logo-button');
   await waitFor(
     () => execute(`(() =>
-      document.getElementById('logo-path-input').value === 'logos/smoke-logo.png' &&
+      document.getElementById('logo-path-input').value ===
+        'logos/0123456789abcdef01234567.png' &&
       document.getElementById('logo-enabled-input').checked
     )()`),
     'Logo 匯入結果',
@@ -377,7 +378,7 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
   assert.equal(saved.config.appearance.minimumFontSizeRem, 3.25);
   assert.deepEqual(saved.config.logo, {
     enabled: true,
-    path: 'logos/smoke-logo.png',
+    path: 'logos/0123456789abcdef01234567.png',
   });
   assert.deepEqual(presentationStore.getSnapshot(), presentationBefore);
 
@@ -921,7 +922,7 @@ async function run() {
     async chooseAndImport() {
       return {
         canceled: false,
-        assetPath: 'logos/smoke-logo.png',
+        assetPath: 'logos/0123456789abcdef01234567.png',
       };
     },
   };

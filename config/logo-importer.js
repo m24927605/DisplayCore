@@ -251,6 +251,6 @@ module.exports = {
   LogoImporter,
   LogoImportError,
   MAXIMUM_LOGO_BYTES,
+  matchesImageSignature,
   validateLocalSourcePath,
 };
-

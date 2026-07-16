@@ -76,7 +76,7 @@ test('設定草稿只修改可編輯欄位並保留 locale 與第 9 步輸出設
   const result = buildSettingsDraft({
     baseline,
     logoEnabled: true,
-    logoPath: 'logos/abc-123.PNG',
+    logoPath: 'logos/0123456789abcdef01234567.png',
     backgroundColor: '#102a3c',
     fontFamily: 'Arial, sans-serif',
     fontColor: '#f0e0d0',
@@ -89,7 +89,10 @@ test('設定草稿只修改可編輯欄位並保留 locale 與第 9 步輸出設
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
     configVersion: 1,
-    logo: { enabled: true, path: 'logos/abc-123.PNG' },
+    logo: {
+      enabled: true,
+      path: 'logos/0123456789abcdef01234567.png',
+    },
     appearance: {
       backgroundColor: '#102A3C',
       fontFamily: 'Arial, sans-serif',
@@ -120,6 +123,7 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
   const invalidPartials = [
     { logoEnabled: true, logoPath: null },
     { logoPath: 'C:\\logo.png' },
+    { logoPath: 'logos/operator-logo.png' },
     { backgroundColor: '#000' },
     { fontColor: 'white' },
     { fontFamily: '   ' },
@@ -149,4 +153,3 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   assert.equal(settingsEqual(defaultConfig, changed), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
 });
-

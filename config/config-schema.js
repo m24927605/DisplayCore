@@ -39,7 +39,8 @@ const DISPLAY_KEYS = Object.freeze([
   'selectionMode',
 ]);
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
-const MANAGED_LOGO_PATH = /^logos\/[a-z0-9][a-z0-9._-]*\.(?:jpe?g|png|webp)$/i;
+// LogoImporter 只會產生 SHA-256 前 24 位的小寫識別；設定不得自行命名檔案。
+const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 function isPlainObject(value) {

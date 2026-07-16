@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
+const fileSystem = require('node:fs/promises');
+const os = require('node:os');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test');
@@ -14,6 +17,27 @@ const {
 } = require('../../main/local-protocol');
 
 const appRoot = path.resolve(__dirname, '..', '..');
+const PNG_SIGNATURE = Buffer.from([
+  0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A,
+]);
+
+async function createManagedLogoHarness(t, contents = PNG_SIGNATURE) {
+  const root = await fileSystem.mkdtemp(
+    path.join(os.tmpdir(), 'displaycore-protocol-logo-'),
+  );
+  const managedLogoDirectory = path.join(root, 'logos');
+  const digest = createHash('sha256').update(contents).digest('hex').slice(0, 24);
+  const fileName = `${digest}.png`;
+  await fileSystem.mkdir(managedLogoDirectory, { recursive: true });
+  await fileSystem.writeFile(path.join(managedLogoDirectory, fileName), contents);
+  t.after(() => fileSystem.rm(root, { recursive: true, force: true }));
+
+  return {
+    fileName,
+    managedLogoDirectory,
+    assetPath: `logos/${fileName}`,
+  };
+}
 
 test('自訂協定在 app ready 前註冊為 standard 與 secure', () => {
   const protocol = {
@@ -127,4 +151,102 @@ test('安裝協定時使用 protocol.handle', () => {
 
   assert.equal(protocol.scheme, 'displaycore');
   assert.equal(typeof protocol.handler, 'function');
+});
+
+test('受管理 Logo 只以目前啟用的同源雜湊 URL 提供正確 MIME', async (t) => {
+  const logo = await createManagedLogoHarness(t);
+  const handler = createLocalProtocolHandler({
+    appRoot,
+    net: { fetch: async () => new Response('static') },
+    managedLogoDirectory: logo.managedLogoDirectory,
+    getAllowedLogoPath: () => logo.assetPath,
+  });
+  const url = `displaycore://app/managed/logo/${logo.fileName}`;
+
+  const response = await handler({ method: 'GET', url });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(
+    response.headers.get('cross-origin-resource-policy'),
+    'same-origin',
+  );
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), PNG_SIGNATURE);
+
+  const headResponse = await handler({ method: 'HEAD', url });
+  assert.equal(headResponse.status, 200);
+  assert.equal((await headResponse.arrayBuffer()).byteLength, 0);
+});
+
+test('受管理 Logo 路由拒絕未選取檔案、變形 URL 與非唯讀方法', async (t) => {
+  const logo = await createManagedLogoHarness(t);
+  let allowedPath = logo.assetPath;
+  const handler = createLocalProtocolHandler({
+    appRoot,
+    net: { fetch: async () => new Response('static') },
+    managedLogoDirectory: logo.managedLogoDirectory,
+    getAllowedLogoPath: () => allowedPath,
+  });
+  const validUrl = `displaycore://app/managed/logo/${logo.fileName}`;
+  const otherHash = 'f'.repeat(24);
+
+  for (const url of [
+    `displaycore://other/managed/logo/${logo.fileName}`,
+    `displaycore://app/managed/logo/${otherHash}.png`,
+    `displaycore://app/managed/logo/${logo.fileName}/extra`,
+    `displaycore://app/managed/logo/${logo.fileName}?cache=1`,
+    `displaycore://app/managed/logo/${logo.fileName}#fragment`,
+    'displaycore://app/managed/logo/../../config.json',
+    'displaycore://app/managed/logo/%2e%2e%2fconfig.json',
+    'displaycore://app/managed/logo/%252e%252e%252fconfig.json',
+    'displaycore://app/managed/logo/%5c..%5cconfig.json',
+    `displaycore://app/managed/logo/${otherHash}.svg`,
+  ]) {
+    const response = await handler({ method: 'GET', url });
+    assert.equal(response.status, 404, url);
+    assert.equal(await response.text(), 'Not Found');
+  }
+
+  allowedPath = null;
+  assert.equal((await handler({ method: 'GET', url: validUrl })).status, 404);
+  assert.equal((await handler({ method: 'POST', url: validUrl })).status, 405);
+});
+
+test('受管理 Logo 每次重驗一般檔案、magic bytes 與內容雜湊', async (t) => {
+  const logo = await createManagedLogoHarness(t);
+  let allowedPath = logo.assetPath;
+  const handler = createLocalProtocolHandler({
+    appRoot,
+    net: { fetch: async () => new Response('static') },
+    managedLogoDirectory: logo.managedLogoDirectory,
+    getAllowedLogoPath: () => allowedPath,
+  });
+  const url = `displaycore://app/managed/logo/${logo.fileName}`;
+  const filePath = path.join(logo.managedLogoDirectory, logo.fileName);
+
+  await fileSystem.writeFile(filePath, Buffer.from('not a png'));
+  let response = await handler({ method: 'GET', url });
+  assert.equal(response.status, 404);
+
+  const replacement = Buffer.concat([PNG_SIGNATURE, Buffer.from('changed')]);
+  await fileSystem.writeFile(filePath, replacement);
+  response = await handler({ method: 'GET', url });
+  assert.equal(response.status, 404);
+
+  await fileSystem.rm(filePath);
+  const targetPath = path.join(logo.managedLogoDirectory, 'target.png');
+  await fileSystem.writeFile(targetPath, PNG_SIGNATURE);
+  await fileSystem.symlink(targetPath, filePath);
+  response = await handler({ method: 'GET', url });
+  assert.equal(response.status, 404);
+  assert.doesNotMatch(await response.text(), /tmp|displaycore-protocol-logo|target/i);
+
+  allowedPath = `logos/${'a'.repeat(24)}.png`;
+  response = await handler({
+    method: 'GET',
+    url: `displaycore://app/managed/logo/${'a'.repeat(24)}.png`,
+  });
+  assert.equal(response.status, 404);
 });
