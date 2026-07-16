@@ -131,6 +131,44 @@ async function flushAsyncWork() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+test('初始化不等待 HDMI 探測，先提供可定位的拓樸再背景更新狀態', async () => {
+  const primary = createDisplay(1, { internal: true });
+  let resolveHdmi;
+  const hdmiResult = new Promise((resolve) => {
+    resolveHdmi = resolve;
+  });
+  const screen = new FakeScreen([primary], 1);
+  const settingsManager = new FakeSettingsManager();
+  const service = new DisplayTopologyService({
+    screen,
+    settingsManager,
+    hdmiDetector: {
+      detect() {
+        return hdmiResult;
+      },
+    },
+  });
+
+  const raceResult = await Promise.race([
+    service.initialize().then(() => 'initialized'),
+    new Promise((resolve) => setImmediate(() => resolve('blocked'))),
+  ]);
+
+  assert.equal(raceResult, 'initialized');
+  assert.equal(service.getSnapshot().topologyStatus, 'ready');
+  assert.equal(service.getSnapshot().effectiveDisplayId, 1);
+  assert.equal(service.getSnapshot().hdmiConnectionStatus, 'detecting');
+
+  resolveHdmi({
+    status: 'connected',
+    activeConnectionCount: 1,
+    hdmiConnectionCount: 1,
+  });
+  await flushAsyncWork();
+
+  assert.equal(service.getSnapshot().hdmiConnectionStatus, 'connected');
+});
+
 test('只有主螢幕時 auto 使用主螢幕並發布最小唯讀快照', async () => {
   const primary = createDisplay(1, {
     label: '  內建\u0000螢幕  ',
@@ -151,6 +189,7 @@ test('只有主螢幕時 auto 使用主螢幕並發布最小唯讀快照', async
   });
 
   await service.initialize();
+  await flushAsyncWork();
   const snapshot = service.getSnapshot();
 
   assert.deepEqual(snapshot, {
@@ -173,7 +212,7 @@ test('只有主螢幕時 auto 使用主螢幕並發布最小唯讀快照', async
     usingFallback: false,
     secondDisplayConnected: false,
     configRevision: 4,
-    revision: 0,
+    revision: 1,
   });
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.displays), true);
@@ -193,6 +232,8 @@ test('auto 優先非主螢幕，清單順序或新增其他螢幕不使現有目
   service.subscribe((snapshot) => snapshots.push(snapshot));
 
   await service.initialize();
+  await flushAsyncWork();
+  snapshots.length = 0;
   assert.equal(service.getSnapshot().effectiveDisplayId, 20);
   assert.deepEqual(
     service.getSnapshot().displays.map(({ id }) => id),

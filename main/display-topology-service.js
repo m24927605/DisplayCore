@@ -7,6 +7,8 @@ const DISPLAY_TOPOLOGY_STATUSES = Object.freeze({
   UNKNOWN: 'unknown',
 });
 
+const HDMI_DETECTING_STATUS = 'detecting';
+
 const OUTPUT_SELECTION_MODES = Object.freeze({
   AUTO: 'auto',
   MANUAL: 'manual',
@@ -314,14 +316,8 @@ class DisplayTopologyService {
 
   async initializeOnce() {
     this.bindSources();
-    const hdmiResult = await this.safeDetectHdmi();
-
-    if (this.disposed) {
-      throw new Error('螢幕拓樸服務已停止。');
-    }
-
     this.commitCurrentTopology({
-      hdmiConnectionStatus: hdmiResult.status,
+      hdmiConnectionStatus: HDMI_DETECTING_STATUS,
       initial: true,
     });
     this.initialized = true;
@@ -330,6 +326,10 @@ class DisplayTopologyService {
       this.refreshPendingDuringInitialization = false;
       this.scheduleRefresh();
     }
+
+    // HDMI 是額外的 Windows 連接器資訊，不參與螢幕選擇；背景探測可避免
+    // PowerShell／WMI timeout 阻塞 Control 與 Display Window 建立。
+    void this.refreshHdmiStatus();
 
     return this.snapshot;
   }
