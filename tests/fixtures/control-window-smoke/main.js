@@ -231,8 +231,82 @@ function expectedBlank(revision) {
   };
 }
 
-function createSettingsManager() {
+function createTopologySnapshot(overrides = {}) {
+  return {
+    schemaVersion: 1,
+    topologyStatus: 'ready',
+    hdmiConnectionStatus: 'connected',
+    displays: [{
+      id: 1,
+      label: '操作電腦螢幕',
+      width: 1920,
+      height: 1080,
+      scaleFactor: 1,
+      isPrimary: true,
+      isInternal: true,
+    }, {
+      id: 2,
+      label: '前廳電視',
+      width: 3840,
+      height: 2160,
+      scaleFactor: 1.5,
+      isPrimary: false,
+      isInternal: false,
+    }],
+    effectiveDisplayId: 2,
+    configuredDisplayId: null,
+    selectionMode: 'auto',
+    fullscreen: true,
+    usingFallback: false,
+    secondDisplayConnected: true,
+    configRevision: 0,
+    revision: 0,
+    ...overrides,
+  };
+}
+
+function createPlacementStatus(overrides = {}) {
+  return {
+    status: 'applied',
+    displayId: 2,
+    fullscreen: true,
+    revision: 0,
+    ...overrides,
+  };
+}
+
+class FakeOutputService {
+  constructor(snapshot, getterName) {
+    this.snapshot = snapshot;
+    this.getterName = getterName;
+    this.listeners = new Set();
+  }
+
+  getSnapshot() {
+    return structuredClone(this.snapshot);
+  }
+
+  getStatus() {
+    return structuredClone(this.snapshot);
+  }
+
+  subscribe(listener) {
+    this.listeners.add(listener);
+    return () => this.listeners.delete(listener);
+  }
+
+  publish(snapshot) {
+    this.snapshot = structuredClone(snapshot);
+
+    for (const listener of this.listeners) {
+      listener(this[this.getterName]());
+    }
+  }
+}
+
+function createSettingsManager(onSaved = () => {}) {
   let pendingValidationError = null;
+  const listeners = new Set();
   let snapshot = {
     config: structuredClone(defaultConfig),
     defaults: structuredClone(defaultConfig),
@@ -259,7 +333,17 @@ function createSettingsManager() {
         revision: snapshot.revision + 1,
         notice: null,
       };
+      onSaved(snapshot.config, snapshot.revision);
+
+      for (const listener of listeners) {
+        listener(this.getSnapshot());
+      }
+
       return this.getSnapshot();
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
     },
     rejectNextSave(validationError) {
       pendingValidationError = validationError;
@@ -415,6 +499,121 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
   await click('settings-close-button');
 }
 
+async function runOutputWorkflow(
+  settingsManager,
+  topologyService,
+  placementService,
+) {
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('output-target').textContent === '前廳電視' &&
+      document.getElementById('output-mode').textContent === '全螢幕' &&
+      document.getElementById('output-display-count').textContent === '2 台' &&
+      document.getElementById('hdmi-status-text').textContent === 'HDMI 已連接' &&
+      document.getElementById('manage-output-settings-button').disabled === false
+    )()`),
+    '輸出狀態卡初始化',
+  );
+
+  await click('manage-output-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('display-auto-input').checked &&
+      document.getElementById('default-display-select').options.length === 3 &&
+      document.activeElement?.id === 'display-auto-input'
+    )()`),
+    '從輸出卡開啟輸出設定',
+  );
+
+  const optionLabels = await execute(`(() =>
+    [...document.getElementById('default-display-select').options]
+      .map((option) => option.textContent)
+  )()`);
+  assert.deepEqual(optionLabels, [
+    '請選擇輸出螢幕',
+    '操作電腦螢幕 — 約 1920 × 1080（主螢幕、內建）',
+    '前廳電視 — 約 3840 × 2160',
+  ]);
+  assert.ok(optionLabels.every((label) => !label.includes('HDMI')));
+
+  await click('display-manual-input');
+  await execute(`(() => {
+    const select = document.getElementById('default-display-select');
+    select.value = '2';
+    select.dispatchEvent(new Event('change', { bubbles: true }));
+    document.getElementById('display-fullscreen-input').click();
+  })()`);
+  assert.equal(
+    await execute(`document.getElementById('save-settings-button').disabled`),
+    false,
+  );
+  await execute(`document.getElementById('settings-form').requestSubmit()`);
+
+  await waitFor(
+    () => settingsManager.getSnapshot().revision === 2,
+    '輸出設定成功儲存',
+  );
+  assert.deepEqual(settingsManager.getSnapshot().config.display, {
+    selectionMode: 'manual',
+    defaultDisplayId: 2,
+    fullscreen: false,
+  });
+  await waitFor(
+    () => execute(`(() =>
+      !document.getElementById('settings-dialog').open &&
+      document.getElementById('output-target').textContent === '前廳電視' &&
+      document.getElementById('output-mode').textContent === '視窗模式'
+    )()`),
+    '輸出設定套用至狀態卡',
+  );
+
+  const currentTopology = topologyService.getSnapshot();
+  topologyService.publish(createTopologySnapshot({
+    displays: [currentTopology.displays[0]],
+    effectiveDisplayId: 1,
+    configuredDisplayId: 2,
+    selectionMode: 'manual',
+    fullscreen: false,
+    usingFallback: true,
+    secondDisplayConnected: false,
+    configRevision: 2,
+    revision: currentTopology.revision + 1,
+  }));
+  const currentPlacement = placementService.getStatus();
+  placementService.publish(createPlacementStatus({
+    displayId: 1,
+    fullscreen: false,
+    revision: currentPlacement.revision + 1,
+  }));
+
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('output-target').textContent === '操作電腦螢幕' &&
+      document.getElementById('output-status-notice').textContent.includes('暫時改用')
+    )()`),
+    '指定螢幕離線 fallback',
+  );
+
+  await click('manage-output-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('default-display-select').value === '2' &&
+      [...document.getElementById('default-display-select').options]
+        .some((option) => option.textContent.includes('目前未連接'))
+    )()`),
+    '離線指定螢幕仍保留於設定',
+  );
+  await click('settings-close-button');
+  await waitFor(
+    () => execute(
+      `document.activeElement?.id === 'manage-output-settings-button'`,
+    ),
+    '輸出設定關閉後恢復焦點',
+  );
+}
+
 function createTimerHarness() {
   const timers = [];
 
@@ -493,7 +692,13 @@ async function addDraftMessage({ recipient, action, customText = '' }) {
   return expectedMessage;
 }
 
-async function runWorkflow(presentationStore, timers, settingsManager) {
+async function runWorkflow(
+  presentationStore,
+  timers,
+  settingsManager,
+  topologyService,
+  placementService,
+) {
   await waitFor(
     () => execute(
       `document.getElementById('clear-display-button').disabled === false`,
@@ -516,8 +721,10 @@ async function runWorkflow(presentationStore, timers, settingsManager) {
     bridgeMethods: [
       'chooseLogo',
       'clearPresentation',
+      'getOutputStatus',
       'getPresentation',
       'getSettings',
+      'onOutputStatusChanged',
       'onPresentationChanged',
       'saveSettings',
       'showEmergency',
@@ -526,6 +733,11 @@ async function runWorkflow(presentationStore, timers, settingsManager) {
   });
 
   await runSettingsWorkflow(settingsManager, presentationStore);
+  await runOutputWorkflow(
+    settingsManager,
+    topologyService,
+    placementService,
+  );
 
   // 輸入七則完整 message；加入草稿不可提前修改 Main 畫面。
   const literalHtml =
@@ -917,7 +1129,47 @@ async function run() {
     return startProgram(program);
   };
 
-  const settingsManager = createSettingsManager();
+  const topologyService = new FakeOutputService(
+    createTopologySnapshot(),
+    'getSnapshot',
+  );
+  const placementService = new FakeOutputService(
+    createPlacementStatus(),
+    'getStatus',
+  );
+  const settingsManager = createSettingsManager((config, revision) => {
+    const currentTopology = topologyService.getSnapshot();
+    const configuredTarget = currentTopology.displays.find(
+      ({ id }) => id === config.display.defaultDisplayId,
+    );
+    const automaticTarget = currentTopology.displays.find(
+      ({ isPrimary, isInternal }) => !isPrimary && !isInternal,
+    ) ?? currentTopology.displays.find(({ isPrimary }) => isPrimary);
+    const target = config.display.selectionMode === 'manual'
+      ? configuredTarget ?? currentTopology.displays.find(({ isPrimary }) => isPrimary)
+      : automaticTarget;
+    const usingFallback =
+      config.display.selectionMode === 'manual' && !configuredTarget;
+
+    topologyService.publish({
+      ...currentTopology,
+      effectiveDisplayId: target?.id ?? null,
+      configuredDisplayId: config.display.defaultDisplayId,
+      selectionMode: config.display.selectionMode,
+      fullscreen: config.display.fullscreen,
+      usingFallback,
+      configRevision: revision,
+      revision: currentTopology.revision + 1,
+    });
+
+    const currentPlacement = placementService.getStatus();
+    placementService.publish({
+      status: target ? 'applied' : 'pending',
+      displayId: target?.id ?? null,
+      fullscreen: config.display.fullscreen,
+      revision: currentPlacement.revision + 1,
+    });
+  });
   const logoImporter = {
     async chooseAndImport() {
       return {
@@ -932,6 +1184,8 @@ async function run() {
     presentationService,
     settingsManager,
     logoImporter,
+    displayTopologyService: topologyService,
+    displayPlacementController: placementService,
     getWindow: (role) =>
       role === IPC_ROLES.CONTROL ? controlWindow : null,
     allowedUrls: {
@@ -965,7 +1219,13 @@ async function run() {
   });
 
   await controlWindow.loadURL(CONTROL_URL);
-  await runWorkflow(presentationStore, timers, settingsManager);
+  await runWorkflow(
+    presentationStore,
+    timers,
+    settingsManager,
+    topologyService,
+    placementService,
+  );
   finish(0, '[DisplayCore] Control window workflow succeeded.');
 }
 

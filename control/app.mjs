@@ -1,4 +1,6 @@
 import { createControlController } from './control-controller.mjs';
+import { createOutputController } from './output-controller.mjs';
+import { createOutputView } from './output-view.mjs';
 import {
   ACTIONS,
   EMERGENCY_CODES,
@@ -774,6 +776,8 @@ function hasRequiredBridge(api) {
     'getSettings',
     'saveSettings',
     'chooseLogo',
+    'getOutputStatus',
+    'onOutputStatusChanged',
   ].every((methodName) => typeof api?.[methodName] === 'function');
 }
 
@@ -806,6 +810,9 @@ async function boot() {
     saveSettings: (config, expectedRevision) =>
       bridge.saveSettings(config, expectedRevision),
     chooseLogo: () => bridge.chooseLogo(),
+    getOutputStatus: () => bridge.getOutputStatus(),
+    onOutputStatusChanged: (listener) =>
+      bridge.onOutputStatusChanged(listener),
   });
 
   const settingsView = createSettingsView({
@@ -819,6 +826,22 @@ async function boot() {
   settingsView.connectController(settingsController);
   settingsView.bind();
 
+  const outputCardView = createOutputView({ document });
+  const outputController = createOutputController({
+    api,
+    view: Object.freeze({
+      renderOutputStatus(snapshot, ux) {
+        outputCardView.renderOutputStatus(snapshot, ux);
+        settingsView.renderOutputStatus(snapshot, ux);
+      },
+      renderOutputError(message) {
+        outputCardView.renderOutputError(message);
+        settingsView.renderOutputError(message);
+      },
+    }),
+  });
+  void outputController.start();
+
   uiState.controller = createControlController({ api, view: createView() });
   const started = await uiState.controller.start();
   uiState.ready = started;
@@ -830,6 +853,7 @@ async function boot() {
       uiState.controller?.dispose();
       settingsController.dispose();
       settingsView.dispose();
+      outputController.dispose();
     },
     { once: true },
   );
