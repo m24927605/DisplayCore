@@ -34,7 +34,7 @@
 
 Visual 分數只評估 standard-motion 下的響應式幾何、裁切、重疊與版面一致性；reduced-motion 的超長文字可讀性另計入 Accessibility。
 
-## 尚待處理的三件事
+## 上線前的三項阻擋
 
 1. **ISSUE-003：超長跑馬燈與固定翻頁秒數衝突** — 需決定每頁秒數是否改為「最短停留時間」，並讓跑馬燈頁至少完成一次後才翻頁。
 2. **ISSUE-004：減少動態效果時的超長文字不可讀** — 需決定無人 Display 是否仍強制跑馬燈，或在 Control 阻擋無法靜態完整顯示的內容。
@@ -200,8 +200,8 @@ Visual 分數只評估 standard-motion 下的響應式幾何、裁切、重疊�
 
 Windows x64 交叉封裝雜湊：
 
-- `DisplayCore.exe`: `fd60141c7b47505e58a9e576e271c4cb709be507227715d0a0f26fc766ef0d01`
-- `resources/app.asar`: `e50809c6c111e45550fa8e8136c7a3c495f6fb225372f3a3462a931a634f2c8f`
+- `DisplayCore.exe`: `73b383ccd997ad465b0e1d7382e46ddc138ea2a86795c3be71a60a81df508840`
+- `resources/app.asar`: `7eccc9eb27077c9066af9f4d302504415d9608d77b0263288737d667de7e9038`
 
 ## 視覺證據
 
