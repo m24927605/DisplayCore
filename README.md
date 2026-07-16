@@ -74,7 +74,7 @@ npm run make
 - 自動模式優先使用外接螢幕，沒有可用外接螢幕時回退主螢幕；外接電視被設為 Windows 主螢幕時也能正確辨識。
 - 手動模式保存指定 Display ID；螢幕中斷時暫用主螢幕但不覆寫原設定，重新連接同一 ID 後自動恢復。
 - Display Window 在載入頁面前先依目標螢幕的 DIP bounds 定位；可切換全螢幕或可用區 80% 的置中 16:9 視窗。
-- Windows 使用固定、無使用者輸入的本機 PowerShell／WMI 查詢判定是否有作用中的 HDMI 輸出；逾時、政策封鎖或無法判定時明確顯示 unknown，不影響正常螢幕路由。
+- Windows 只從受信任的 `SystemRoot\\System32\\WindowsPowerShell` 絕對路徑執行固定、無使用者輸入的 WMI 查詢；只有明確的空陣列代表未連接，逾時、空白或畸形輸出則顯示 unknown，不影響正常螢幕路由。
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 以獨立狀態卡呈現 HDMI、實際輸出目標、全螢幕模式及螢幕數；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 設定對話框可選自動／指定螢幕與全螢幕；拓樸事件不會覆蓋尚未儲存的表單草稿。
