@@ -1,7 +1,9 @@
 'use strict';
 
-const { FusesPlugin } = require('@electron-forge/plugin-fuses');
-const { FuseV1Options, FuseVersion } = require('@electron/fuses');
+const {
+  finalizeDarwinSignature,
+  flipPackageFuses,
+} = require('./config/forge-fuses');
 
 /**
  * Electron Forge 建置設定。
@@ -23,6 +25,19 @@ module.exports = {
     ],
   },
   rebuildConfig: {},
+  hooks: {
+    // 直接使用官方 @electron/fuses API，明確覆蓋 Electron 43 的全部 fuse。
+    packageAfterCopy: async (
+      forgeConfig,
+      buildPath,
+      _electronVersion,
+      platform,
+      arch,
+    ) => flipPackageFuses({ forgeConfig, buildPath, platform, arch }),
+    // Apple Silicon 必須等最終 Info.plist 與 bundle 名稱完成後再重建簽章。
+    postPackage: async (forgeConfig, packageResult) =>
+      finalizeDarwinSignature({ forgeConfig, packageResult }),
+  },
   makers: [
     {
       name: '@electron-forge/maker-squirrel',
@@ -31,17 +46,5 @@ module.exports = {
         setupExe: 'DisplayCoreSetup.exe',
       },
     },
-  ],
-  plugins: [
-    new FusesPlugin({
-      version: FuseVersion.V1,
-      [FuseV1Options.RunAsNode]: false,
-      [FuseV1Options.EnableCookieEncryption]: true,
-      [FuseV1Options.EnableNodeOptionsEnvironmentVariable]: false,
-      [FuseV1Options.EnableNodeCliInspectArguments]: false,
-      [FuseV1Options.EnableEmbeddedAsarIntegrityValidation]: true,
-      [FuseV1Options.OnlyLoadAppFromAsar]: true,
-      [FuseV1Options.GrantFileProtocolExtraPrivileges]: false,
-    }),
   ],
 };

@@ -91,15 +91,15 @@ test('專案未加入網路伺服器、Socket 或資料庫套件', async () => {
   }
 });
 
-test('Electron Forge Fuses 套件使用相容的主版本', async () => {
+test('Electron Fuses 套件支援 WasmTrapHandlers 且不留舊 Forge plugin peer 衝突', async () => {
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
   );
 
-  assert.match(
-    packageJson.devDependencies['@electron/fuses'],
-    /^1\.\d+\.\d+$/,
-    '@electron-forge/plugin-fuses 7.x 僅相容 @electron/fuses 1.x',
+  assert.equal(packageJson.devDependencies['@electron/fuses'], '2.1.3');
+  assert.equal(
+    packageJson.devDependencies['@electron-forge/plugin-fuses'],
+    undefined,
   );
 });
 
@@ -132,6 +132,8 @@ test('Electron 封裝排除專案與相依套件的測試、覆蓋率與 AIT 資
   assert.equal(isIgnored('/.ait/settings.json'), true);
   assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
   assert.equal(isIgnored('/node_modules/example/index.js'), false);
+  assert.equal(typeof forgeConfig.hooks.packageAfterCopy, 'function');
+  assert.equal(typeof forgeConfig.hooks.postPackage, 'function');
 });
 
 test('.gitignore 排除建置產物、相依套件、測試覆蓋率與日誌', async () => {
