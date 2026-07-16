@@ -315,8 +315,15 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
 
   function closeDialog() {
     if (elements.dialog.open && !state.busy) {
+      const activeTrigger = state.activeTrigger ?? elements.trigger;
       state.closing = true;
       elements.dialog.close();
+
+      // close 事件可能在下一個操作開始後才送達；此處立即覆寫瀏覽器
+      // 記住的舊入口，避免延遲 handler 再把使用者的新焦點搶走。
+      if (activeTrigger.isConnected && !activeTrigger.disabled) {
+        activeTrigger.focus();
+      }
     }
   }
 
@@ -503,18 +510,14 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
           ? '設定作業進行中，請稍候。'
           : '尚有未儲存變更；請儲存或按「捨棄變更」。';
       } else {
-        state.closing = true;
+        event.preventDefault();
+        closeDialog();
       }
     }, { signal });
     elements.dialog.addEventListener('close', () => {
       const shouldReopen = state.reopenAfterClose;
       const activeTrigger = state.activeTrigger ?? elements.trigger;
       const requestedSection = state.requestedSection;
-      const activeElement = document.activeElement;
-      const shouldRestoreTriggerFocus =
-        activeElement === null ||
-        activeElement === document.body ||
-        elements.dialog.contains(activeElement);
       state.reopenAfterClose = false;
       state.ready = false;
       state.baseline = null;
@@ -526,18 +529,12 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       state.activeTrigger = null;
       state.requestedSection = null;
 
-      queueMicrotask(() => {
-        if (shouldReopen) {
+      if (shouldReopen) {
+        queueMicrotask(() => {
           state.requestedSection = requestedSection;
           void openDialog(activeTrigger);
-        } else if (
-          shouldRestoreTriggerFocus &&
-          activeTrigger.isConnected &&
-          !activeTrigger.disabled
-        ) {
-          activeTrigger.focus();
-        }
-      });
+        });
+      }
     }, { signal });
   }
 

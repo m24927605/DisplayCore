@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <title>DisplayCore 設定焦點回歸測試</title>
+  </head>
+  <body>
+    <button id="open-settings-button" type="button" disabled>開啟系統設定</button>
+    <button
+      id="manage-output-settings-button"
+      data-settings-section="display"
+      type="button"
+    >管理輸出設定</button>
+    <input id="next-action-input" type="text">
+
+    <dialog id="settings-dialog">
+      <form id="settings-form">
+        <output id="settings-dirty-status"></output>
+        <p id="settings-notice" hidden></p>
+        <p id="settings-error" hidden></p>
+        <p id="settings-status"></p>
+
+        <div class="settings-dialog-body">
+          <fieldset id="logo-settings-fieldset">
+            <input id="logo-enabled-input" type="checkbox">
+            <input id="logo-path-input" type="text">
+            <p id="logo-path-error" hidden></p>
+            <button id="choose-logo-button" type="button">選擇 Logo</button>
+            <button id="remove-logo-button" type="button">移除 Logo</button>
+          </fieldset>
+
+          <fieldset id="appearance-settings-fieldset">
+            <input id="background-color-picker" type="color" value="#000000">
+            <input id="background-color-input" type="text" value="#000000">
+            <p id="background-color-error" hidden></p>
+            <select id="font-family-select">
+              <option value="Arial, sans-serif">Arial</option>
+            </select>
+            <p id="font-family-error" hidden></p>
+            <input id="font-color-picker" type="color" value="#ffffff">
+            <input id="font-color-input" type="text" value="#FFFFFF">
+            <p id="font-color-error" hidden></p>
+            <input id="minimum-font-size-input" type="number" value="3">
+            <p id="minimum-font-size-error" hidden></p>
+          </fieldset>
+
+          <fieldset id="behavior-settings-fieldset">
+            <input id="date-time-enabled-input" type="checkbox">
+            <input id="hour12-input" type="checkbox">
+            <input id="marquee-enabled-input" type="checkbox">
+          </fieldset>
+
+          <fieldset id="display-settings-fieldset">
+            <strong id="display-mode-summary"></strong>
+            <input
+              id="display-auto-input"
+              name="display-selection-mode"
+              type="radio"
+              value="auto"
+              checked
+            >
+            <input
+              id="display-manual-input"
+              name="display-selection-mode"
+              type="radio"
+              value="manual"
+            >
+            <p id="display-mode-error" hidden></p>
+            <select id="default-display-select"></select>
+            <p id="default-display-error" hidden></p>
+            <input id="display-fullscreen-input" type="checkbox" checked>
+            <p id="display-fullscreen-error" hidden></p>
+            <p id="display-output-notice" hidden></p>
+          </fieldset>
+        </div>
+
+        <button id="load-defaults-button" type="button">載入預設值</button>
+        <button id="settings-close-button" type="button">關閉</button>
+        <button id="save-settings-button" type="submit">儲存設定</button>
+      </form>
+    </dialog>
+
+    <script type="module">
+      import { createSettingsView } from '../../../control/settings-view.mjs';
+
+      const config = Object.freeze({
+        logo: Object.freeze({ enabled: false, path: null }),
+        appearance: Object.freeze({
+          backgroundColor: '#000000',
+          fontFamily: 'Arial, sans-serif',
+          fontColor: '#FFFFFF',
+          minimumFontSizeRem: 3,
+        }),
+        dateTime: Object.freeze({
+          enabled: false,
+          hour12: false,
+          locale: 'zh-TW',
+        }),
+        marquee: Object.freeze({ enabled: true }),
+        display: Object.freeze({
+          selectionMode: 'auto',
+          defaultDisplayId: null,
+          fullscreen: true,
+        }),
+      });
+      const snapshot = Object.freeze({
+        revision: 1,
+        config,
+        defaults: config,
+        notice: null,
+      });
+      const dialog = document.getElementById('settings-dialog');
+      const standardTrigger = document.getElementById('open-settings-button');
+      const outputTrigger = document.getElementById(
+        'manage-output-settings-button',
+      );
+      const nextAction = document.getElementById('next-action-input');
+
+      // 模擬瀏覽器在 close() 返回前，先將焦點還給開啟前的舊入口。
+      const nativeClose = dialog.close.bind(dialog);
+      dialog.close = (...args) => {
+        nativeClose(...args);
+        standardTrigger.focus();
+      };
+
+      const view = createSettingsView({ document });
+      view.connectController({
+        async loadSettings() {
+          view.renderSettingsSnapshot(snapshot);
+        },
+        async chooseLogo() {},
+        async saveSettings() {
+          return false;
+        },
+      });
+      view.bind();
+
+      async function openAndCloseOutputSettings() {
+        const closeSettled = new Promise((resolve) => {
+          dialog.addEventListener(
+            'close',
+            () => setTimeout(resolve, 0),
+            { once: true },
+          );
+        });
+        outputTrigger.click();
+        await new Promise((resolve) => setTimeout(resolve, 0));
+
+        if (!dialog.open) {
+          throw new Error('設定對話框未開啟。');
+        }
+
+        document.getElementById('settings-close-button').click();
+        const restoredFocusId = document.activeElement?.id ?? null;
+        // close 事件可能稍後才送達；這段期間下一個操作已可取得焦點。
+        nextAction.focus();
+        await closeSettled;
+        return {
+          restoredFocusId,
+          preservedNewFocusId: document.activeElement?.id ?? null,
+        };
+      }
+
+      window.runFocusRegression = async () => {
+        standardTrigger.focus();
+        return openAndCloseOutputSettings();
+      };
+    </script>
+  </body>
+</html>
