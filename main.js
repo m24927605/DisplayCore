@@ -35,8 +35,8 @@ const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
 /**
  * DisplayCore 主程序 composition root。
  *
- * 本檔只負責組合 Electron API 與各單一職責模組。設定管理、Renderer
- * 正式功能與 HDMI 偵測會依後續開發步驟加入。
+ * 本檔只負責組合 Electron API 與各單一職責模組。正式 Display Renderer、
+ * 設定管理與 HDMI 偵測會依後續開發步驟加入。
  */
 async function bootstrap() {
   // Squirrel.Windows 安裝或解除安裝時會短暫啟動程式，此時不可建立視窗。
