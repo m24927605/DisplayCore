@@ -1,6 +1,9 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { createHash } = require('node:crypto');
+const fileSystem = require('node:fs/promises');
+const { rmSync } = require('node:fs');
 const path = require('node:path');
 const {
   app,
@@ -12,6 +15,10 @@ const {
 } = require('electron');
 
 const projectRoot = path.resolve(__dirname, '..', '..', '..');
+const defaultConfig = require(path.join(projectRoot, 'config.json'));
+const { validateConfig } = require(
+  path.join(projectRoot, 'config', 'config-schema'),
+);
 const { IPC_ROLES } = require(path.join(projectRoot, 'ipc', 'channels'));
 const { IpcCoordinator } = require(
   path.join(projectRoot, 'ipc', 'ipc-coordinator'),
@@ -37,12 +44,18 @@ const { createDisplayWindowOptions } = require(
 const DISPLAY_URL = 'displaycore://app/display/index.html';
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const TIMEOUT_MS = 20_000;
+const LOGO_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 
 let displayWindow = null;
 let coordinator = null;
 let presentationService = null;
+let settingsManager = null;
 let completed = false;
 let timeout = null;
+let runtimeDataRoot = null;
 
 registerAppScheme(protocol);
 
@@ -64,6 +77,14 @@ function finish(exitCode, message, error) {
 
   if (displayWindow && !displayWindow.isDestroyed()) {
     displayWindow.destroy();
+  }
+
+  if (runtimeDataRoot) {
+    try {
+      rmSync(runtimeDataRoot, { recursive: true, force: true });
+    } catch {
+      // 測試程序即將退出；清理失敗不覆蓋原始測試結果。
+    }
   }
 
   app.exit(exitCode);
@@ -126,12 +147,160 @@ function createFakeTimers() {
   };
 }
 
-async function runWorkflow(timers) {
+function createSettingsManager(initialConfig) {
+  const initialValidation = validateConfig(initialConfig);
+
+  if (!initialValidation.ok) {
+    throw new Error('Display smoke 初始設定無效。');
+  }
+
+  const listeners = new Set();
+  let snapshot = Object.freeze({
+    config: initialValidation.value,
+    defaults: initialValidation.value,
+    revision: 0,
+    notice: null,
+  });
+
+  return {
+    getSnapshot() {
+      return snapshot;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    publish(config) {
+      const validation = validateConfig(config);
+
+      if (!validation.ok) {
+        throw new Error('Display smoke 更新設定無效。');
+      }
+
+      snapshot = Object.freeze({
+        config: validation.value,
+        defaults: snapshot.defaults,
+        revision: snapshot.revision + 1,
+        notice: null,
+      });
+
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+
+      return snapshot;
+    },
+  };
+}
+
+async function verifyResponsiveResolutions() {
+  const resolutions = [
+    [1366, 768],
+    [1600, 900],
+    [1920, 1080],
+    [2560, 1440],
+    [3840, 2160],
+  ];
+  const measuredFontSizes = [];
+
+  for (const [width, height] of resolutions) {
+    await execute(
+      `document.getElementById('display-stage').dataset.fittedRevision = 'pending'`,
+    );
+    displayWindow.setContentSize(width, height, false);
+    await waitFor(
+      () => execute(
+        `window.innerWidth === ${width} && window.innerHeight === ${height}`,
+      ),
+      `${width}×${height} viewport`,
+    );
+    await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        return stage.dataset.fittedRevision === '1' &&
+          stage.dataset.fittedSettingsRevision === '0';
+      })()`),
+      `${width}×${height} responsive fit`,
+    );
+
+    const inspection = await execute(`(() => {
+      const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const normal = document.getElementById('normal-layer').getBoundingClientRect();
+      const chrome = document.getElementById('display-chrome').getBoundingClientRect();
+      const logo = document.getElementById('display-logo').getBoundingClientRect();
+      const page = document.getElementById('page-layer').getBoundingClientRect();
+      const rows = [...document.querySelectorAll('.message-row')];
+      return {
+        viewport,
+        rootOverflow:
+          document.documentElement.scrollWidth > document.documentElement.clientWidth ||
+          document.documentElement.scrollHeight > document.documentElement.clientHeight,
+        normalInside:
+          normal.left >= -0.5 && normal.top >= -0.5 &&
+          normal.right <= viewport.width + 0.5 &&
+          normal.bottom <= viewport.height + 0.5,
+        chromeAndPageSeparate: chrome.bottom <= page.top + 0.5,
+        logoWidth: logo.width,
+        logoHeight: logo.height,
+        pageInside:
+          page.left >= -0.5 && page.top >= -0.5 &&
+          page.right <= viewport.width + 0.5 &&
+          page.bottom <= viewport.height + 0.5,
+        rowsInside: rows.every((row) => {
+          const box = row.getBoundingClientRect();
+          const text = row.querySelector('.message-text, .marquee-copy');
+          const textBox = text?.getBoundingClientRect();
+          return box.left >= page.left - 0.5 && box.right <= page.right + 0.5 &&
+            box.top >= page.top - 0.5 && box.bottom <= page.bottom + 0.5 &&
+            textBox && textBox.height <= box.height + 0.5 &&
+            getComputedStyle(row).whiteSpace === 'nowrap';
+        }),
+        fontSize: Number.parseFloat(getComputedStyle(
+          document.getElementById('page-layer')
+        ).fontSize),
+      };
+    })()`);
+
+    assert.deepEqual(inspection.viewport, { width, height });
+    assert.equal(inspection.rootOverflow, false, `${width}×${height} overflow`);
+    assert.equal(inspection.normalInside, true, `${width}×${height} normal bounds`);
+    assert.equal(
+      inspection.chromeAndPageSeparate,
+      true,
+      `${width}×${height} chrome overlap`,
+    );
+    assert.equal(inspection.pageInside, true, `${width}×${height} page bounds`);
+    assert.equal(inspection.rowsInside, true, `${width}×${height} row bounds`);
+    assert.ok(inspection.logoWidth > 0, `${width}×${height} logo width`);
+    assert.ok(
+      inspection.logoHeight >= height * 0.04,
+      `${width}×${height} logo too small: ${inspection.logoHeight}`,
+    );
+    assert.ok(
+      inspection.logoHeight <= height * 0.12,
+      `${width}×${height} logo too tall: ${inspection.logoHeight}`,
+    );
+    assert.ok(Number.isFinite(inspection.fontSize) && inspection.fontSize > 0);
+    measuredFontSizes.push(inspection.fontSize);
+  }
+
+  for (let index = 1; index < measuredFontSizes.length; index += 1) {
+    assert.ok(
+      measuredFontSizes[index] >= measuredFontSizes[index - 1],
+      `字級未隨解析度成長：${measuredFontSizes.join(', ')}`,
+    );
+  }
+}
+
+async function runWorkflow(timers, expectedLogoUrl) {
   await waitFor(
-    () => execute(
-      `document.documentElement.dataset.displayReady === 'true'`,
-    ),
-    'Display bridge 初始化',
+    () => execute(`(() =>
+      document.documentElement.dataset.displayReady === 'true' &&
+      document.documentElement.dataset.settingsReady === 'true' &&
+      document.getElementById('display-stage').dataset.settingsRevision === '0' &&
+      document.getElementById('display-stage').dataset.logoState === 'ready'
+    )()`),
+    'Display presentation 與 settings bridge 初始化',
   );
 
   const security = await execute(`(() => ({
@@ -177,10 +346,21 @@ async function runWorkflow(timers) {
     const rows = [...document.querySelectorAll('.message-row')];
     return {
       mode: stage.dataset.mode,
+      settingsRevision: stage.dataset.settingsRevision,
       messages: rows.map((row) => row.dataset.message),
       rowCount: rows.length,
       pageHidden: document.getElementById('page-layer').hidden,
       fillHidden: document.getElementById('fill-layer').hidden,
+      normalHidden: document.getElementById('normal-layer').hidden,
+      chromeHidden: document.getElementById('display-chrome').hidden,
+      logoHidden: document.getElementById('display-logo').hidden,
+      logoSource: document.getElementById('display-logo').getAttribute('src'),
+      clockHidden: document.getElementById('display-clock').hidden,
+      clockText: document.getElementById('display-clock').textContent,
+      clockDateTime: document.getElementById('display-clock').getAttribute('datetime'),
+      backgroundColor: getComputedStyle(stage).backgroundColor,
+      fontColor: getComputedStyle(stage).color,
+      fontFamily: getComputedStyle(document.body).fontFamily,
       whiteSpaces: rows.map((row) => getComputedStyle(row).whiteSpace),
       hasInjectedImage: Boolean(document.querySelector('.message-row img')),
       pwnedType: typeof globalThis.displayPwned,
@@ -204,10 +384,21 @@ async function runWorkflow(timers) {
   })()`);
   assert.deepEqual(firstPage, {
     mode: 'page',
+    settingsRevision: '0',
     messages: messages.slice(0, 5).map(({ message }) => message),
     rowCount: 5,
     pageHidden: false,
     fillHidden: true,
+    normalHidden: false,
+    chromeHidden: false,
+    logoHidden: false,
+    logoSource: expectedLogoUrl,
+    clockHidden: false,
+    clockText: firstPage.clockText,
+    clockDateTime: firstPage.clockDateTime,
+    backgroundColor: 'rgb(16, 32, 48)',
+    fontColor: 'rgb(244, 245, 246)',
+    fontFamily: firstPage.fontFamily,
     whiteSpaces: Array(5).fill('nowrap'),
     hasInjectedImage: false,
     pwnedType: 'undefined',
@@ -219,6 +410,10 @@ async function runWorkflow(timers) {
     viewportHasOverflow: false,
   });
   assert.ok(firstPage.fontSize > 0);
+  assert.match(firstPage.clockText, /\d/);
+  assert.match(firstPage.clockDateTime, /^\d{4}-\d{2}-\d{2}T/);
+  assert.match(firstPage.fontFamily, /^Arial/i);
+  assert.doesNotMatch(firstPage.logoSource, /file:|Users|userData/i);
   assert.equal(
     firstPage.rowsFitVertically,
     true,
@@ -228,6 +423,8 @@ async function runWorkflow(timers) {
       textHeights: firstPage.textHeights,
     }),
   );
+
+  await verifyResponsiveResolutions();
 
   assert.equal(timers.handles[0].delay, 1_000);
   timers.fire(0);
@@ -246,7 +443,40 @@ async function runWorkflow(timers) {
     repeat: { mode: 'continuous' },
   });
   await waitForRevision(3);
+  const staticOverflow = await execute(`(() => {
+    const row = document.querySelector('.message-row');
+    return {
+      marquee: row.classList.contains('is-marquee'),
+      compressed: row.classList.contains('is-compressed'),
+      message: row.querySelector('.message-text')?.textContent,
+    };
+  })()`);
+  assert.deepEqual(staticOverflow, {
+    marquee: false,
+    compressed: true,
+    message: longMessage,
+  });
+
+  const nextConfig = structuredClone(settingsManager.getSnapshot().config);
+  nextConfig.logo.enabled = false;
+  nextConfig.appearance.backgroundColor = '#204060';
+  nextConfig.appearance.fontColor = '#ABCDEF';
+  nextConfig.dateTime.enabled = false;
+  nextConfig.marquee.enabled = true;
+  settingsManager.publish(nextConfig);
+  await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      return stage.dataset.revision === '3' &&
+        stage.dataset.settingsRevision === '1' &&
+        stage.dataset.fittedSettingsRevision === '1' &&
+        stage.dataset.marqueeCount === '1';
+    })()`),
+    '播放中即時套用設定',
+  );
+
   const marquee = await execute(`(() => {
+    const stage = document.getElementById('display-stage');
     const row = document.querySelector('.message-row');
     const copies = [...row.querySelectorAll('.marquee-copy')];
     return {
@@ -254,6 +484,13 @@ async function runWorkflow(timers) {
       copyCount: copies.length,
       copiesMatch: copies.every((copy) => copy.textContent === ${JSON.stringify(longMessage)}),
       ariaHidden: row.querySelector('.marquee-track')?.getAttribute('aria-hidden'),
+      presentationRevision: stage.dataset.revision,
+      settingsRevision: stage.dataset.settingsRevision,
+      backgroundColor: getComputedStyle(stage).backgroundColor,
+      fontColor: getComputedStyle(stage).color,
+      chromeHidden: document.getElementById('display-chrome').hidden,
+      logoSource: document.getElementById('display-logo').getAttribute('src'),
+      clockText: document.getElementById('display-clock').textContent,
     };
   })()`);
   assert.deepEqual(marquee, {
@@ -261,12 +498,21 @@ async function runWorkflow(timers) {
     copyCount: 2,
     copiesMatch: true,
     ariaHidden: 'true',
+    presentationRevision: '3',
+    settingsRevision: '1',
+    backgroundColor: 'rgb(32, 64, 96)',
+    fontColor: 'rgb(171, 205, 239)',
+    chromeHidden: true,
+    logoSource: null,
+    clockText: '',
   });
 
   presentationService.showEmergency('555');
   await waitForRevision(4, false);
   const inspection = await execute(`(() => ({
     mode: document.getElementById('display-stage').dataset.mode,
+    normalHidden: document.getElementById('normal-layer').hidden,
+    chromeHidden: document.getElementById('display-chrome').hidden,
     pageHidden: document.getElementById('page-layer').hidden,
     fillHidden: document.getElementById('fill-layer').hidden,
     cells: [...document.querySelectorAll('.fill-cell')].map(
@@ -274,14 +520,22 @@ async function runWorkflow(timers) {
     ),
     marqueeCount: document.querySelectorAll('.marquee-track').length,
     announcement: document.getElementById('display-announcement').textContent,
+    ariaLive: document.getElementById('display-announcement').getAttribute('aria-live'),
+    backgroundColor: getComputedStyle(document.getElementById('display-stage')).backgroundColor,
+    fontColor: getComputedStyle(document.getElementById('display-stage')).color,
   }))()`);
   assert.equal(inspection.mode, 'emergency');
+  assert.equal(inspection.normalHidden, true);
+  assert.equal(inspection.chromeHidden, true);
   assert.equal(inspection.pageHidden, true);
   assert.equal(inspection.fillHidden, false);
   assert.equal(inspection.cells.length, 24);
   assert.equal(inspection.cells.every((value) => value === '555'), true);
   assert.equal(inspection.marqueeCount, 0);
   assert.equal(inspection.announcement, '555');
+  assert.equal(inspection.ariaLive, 'assertive');
+  assert.equal(inspection.backgroundColor, 'rgb(0, 0, 0)');
+  assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
 
   presentationService.showEmergency('888');
   await waitForRevision(5, false);
@@ -298,13 +552,59 @@ async function runWorkflow(timers) {
       announcement: document.getElementById('display-announcement').textContent,
       pageChildren: document.getElementById('page-layer').children.length,
       fillChildren: document.getElementById('fill-layer').children.length,
+      normalHidden: document.getElementById('normal-layer').hidden,
+      chromeHidden: document.getElementById('display-chrome').hidden,
+      clockText: document.getElementById('display-clock').textContent,
     }))()`),
-    { mode: 'blank', announcement: '', pageChildren: 0, fillChildren: 0 },
+    {
+      mode: 'blank',
+      announcement: '',
+      pageChildren: 0,
+      fillChildren: 0,
+      normalHidden: true,
+      chromeHidden: true,
+      clockText: '',
+    },
   );
 }
 
 async function run() {
   await app.whenReady();
+
+  runtimeDataRoot = path.join(
+    app.getPath('temp'),
+    `displaycore-display-smoke-data-${process.pid}`,
+  );
+  const managedLogoDirectory = path.join(runtimeDataRoot, 'logos');
+  await fileSystem.rm(runtimeDataRoot, { recursive: true, force: true });
+  await fileSystem.mkdir(managedLogoDirectory, { recursive: true });
+  const logoDigest = createHash('sha256')
+    .update(LOGO_BYTES)
+    .digest('hex')
+    .slice(0, 24);
+  const logoFileName = `${logoDigest}.png`;
+  const logoAssetPath = `logos/${logoFileName}`;
+  const expectedLogoUrl = `displaycore://app/managed/logo/${logoFileName}`;
+  await fileSystem.writeFile(
+    path.join(managedLogoDirectory, logoFileName),
+    LOGO_BYTES,
+  );
+
+  const initialConfig = structuredClone(defaultConfig);
+  initialConfig.logo = { enabled: true, path: logoAssetPath };
+  initialConfig.appearance = {
+    backgroundColor: '#102030',
+    fontFamily: 'Arial, sans-serif',
+    fontColor: '#F4F5F6',
+    minimumFontSizeRem: 3,
+  };
+  initialConfig.dateTime = {
+    enabled: true,
+    locale: 'zh-TW',
+    hour12: false,
+  };
+  initialConfig.marquee = { enabled: false };
+  settingsManager = createSettingsManager(initialConfig);
 
   const appSession = session.fromPartition(
     `displaycore-display-smoke-${process.pid}`,
@@ -315,6 +615,11 @@ async function run() {
     protocol: appSession.protocol,
     net,
     appRoot: projectRoot,
+    managedLogoDirectory,
+    getAllowedLogoPath: () => {
+      const logo = settingsManager.getSnapshot().config.logo;
+      return logo.enabled ? logo.path : null;
+    },
   });
 
   displayWindow = new BrowserWindow(
@@ -335,6 +640,7 @@ async function run() {
   coordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
+    settingsManager,
     getWindow: (role) => role === IPC_ROLES.DISPLAY ? displayWindow : null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,
@@ -364,7 +670,7 @@ async function run() {
   });
 
   await displayWindow.loadURL(DISPLAY_URL);
-  await runWorkflow(timers);
+  await runWorkflow(timers, expectedLogoUrl);
   finish(0, '[DisplayCore] Display window workflow succeeded.');
 }
 

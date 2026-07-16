@@ -109,6 +109,7 @@ body {
 .logo-frame {
   display: grid;
   justify-self: start;
+  block-size: clamp(3rem, 9vh, 16rem);
   max-inline-size: 30vw;
   max-block-size: clamp(3rem, 9vh, 16rem);
   place-items: center start;
@@ -117,7 +118,7 @@ body {
 .display-logo {
   display: block;
   inline-size: auto;
-  block-size: auto;
+  block-size: clamp(3rem, 9vh, 16rem);
   max-inline-size: 30vw;
   max-block-size: clamp(3rem, 9vh, 16rem);
   object-fit: contain;
