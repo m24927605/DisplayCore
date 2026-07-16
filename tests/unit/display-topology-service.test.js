@@ -208,6 +208,26 @@ test('auto 優先非主螢幕，清單順序或新增其他螢幕不使現有目
   assert.equal(snapshots.length, 1);
 });
 
+test('auto 在外接電視是主螢幕時仍優先外接，不誤選內建副螢幕', async () => {
+  const externalPrimary = createDisplay(10, {
+    label: 'HDMI TV',
+    internal: false,
+  });
+  const internalSecondary = createDisplay(20, {
+    label: '內建面板',
+    internal: true,
+  });
+  const { service } = createService({
+    displays: [internalSecondary, externalPrimary],
+    primaryDisplayId: 10,
+  });
+
+  await service.initialize();
+
+  assert.equal(service.getSnapshot().effectiveDisplayId, 10);
+  assert.equal(service.getTargetDisplay().label, 'HDMI TV');
+});
+
 test('manual 螢幕離線時暫用主螢幕，重新連接後自動回到原設定', async () => {
   const primary = createDisplay(1, { internal: true });
   const selected = createDisplay(42, { label: '指定電視' });

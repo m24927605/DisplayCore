@@ -209,20 +209,30 @@ function selectTargetDisplay(displays, preference, currentEffectiveDisplayId) {
     });
   }
 
-  const secondaryDisplays = displays.filter(({ isPrimary }) => !isPrimary);
-  const currentSecondary = secondaryDisplays.find(
+  const externalDisplays = displays.filter(({ isInternal }) => !isInternal);
+  const currentExternal = externalDisplays.find(
     ({ id }) => id === currentEffectiveDisplayId,
   );
-  const preferredSecondary = [...secondaryDisplays].sort((first, second) => {
-    if (first.isInternal !== second.isInternal) {
-      return first.isInternal ? 1 : -1;
+  const preferredExternal = [...externalDisplays].sort((first, second) => {
+    if (first.isPrimary !== second.isPrimary) {
+      return first.isPrimary ? 1 : -1;
     }
 
     return first.id - second.id;
   })[0];
+  const secondaryDisplays = displays.filter(({ isPrimary }) => !isPrimary);
+  const currentSecondary = secondaryDisplays.find(
+    ({ id }) => id === currentEffectiveDisplayId,
+  );
+  const preferredSecondary = secondaryDisplays[0];
 
   return Object.freeze({
-    display: currentSecondary || preferredSecondary || primaryDisplay,
+    display:
+      currentExternal ||
+      preferredExternal ||
+      currentSecondary ||
+      preferredSecondary ||
+      primaryDisplay,
     usingFallback: false,
   });
 }
