@@ -68,7 +68,7 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /--display-font-family/);
   assert.match(css, /\.is-marquee\s+\.marquee-track\s*{[^}]*will-change:\s*transform/s);
   assert.match(css, /font-smoothing:\s*antialiased/);
-  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.doesNotMatch(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.doesNotMatch(css, /text-overflow:\s*ellipsis/);
   assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
   assert.doesNotMatch(css, /will-change:\s*all\b/);
@@ -89,6 +89,7 @@ test('Display app 僅使用唯讀 bridge 與 textContent，且不解析緊急代
   assert.match(source, /document\.fonts\.ready/);
   assert.match(source, /bridge\.getSettings\(\)/);
   assert.match(source, /bridge\.onSettingsChanged\(listener\)/);
+  assert.doesNotMatch(source, /prefers-reduced-motion/);
   assert.match(source, /\.setProperty\(\s*'--display-background'/);
   assert.match(source, /\.setProperty\(\s*'--display-font-family'/);
   assert.match(

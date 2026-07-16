@@ -69,6 +69,10 @@ function finish(exitCode, message, error) {
   coordinator?.dispose();
   presentationService?.dispose();
 
+  if (displayWindow?.webContents.debugger.isAttached()) {
+    displayWindow.webContents.debugger.detach();
+  }
+
   if (error) {
     console.error(message, error);
   } else {
@@ -311,6 +315,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
     interactiveCount: document.querySelectorAll(
       'button,input,select,textarea,a,video,audio,[tabindex],[contenteditable]'
     ).length,
+    reducedMotion: matchMedia('(prefers-reduced-motion: reduce)').matches,
   }))()`);
   assert.deepEqual(security, {
     requireType: 'undefined',
@@ -323,6 +328,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
       'onSettingsChanged',
     ],
     interactiveCount: 0,
+    reducedMotion: true,
   });
 
   const literalHtml = '<img src=x onerror="globalThis.displayPwned=true">\n純文字';
@@ -495,6 +501,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
       clockText: document.getElementById('display-clock').textContent,
       normalHasChrome: document.getElementById('normal-layer').classList.contains('has-chrome'),
       normalGap: getComputedStyle(document.getElementById('normal-layer')).gap,
+      animationName: getComputedStyle(row.querySelector('.marquee-track')).animationName,
+      animationDuration: Number.parseFloat(
+        getComputedStyle(row.querySelector('.marquee-track')).animationDuration
+      ),
     };
   })()`);
   assert.deepEqual(marquee, {
@@ -511,7 +521,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
     clockText: '',
     normalHasChrome: false,
     normalGap: '0px',
+    animationName: 'display-marquee',
+    animationDuration: marquee.animationDuration,
   });
+  assert.ok(marquee.animationDuration >= 8);
 
   presentationService.showEmergency('555');
   await waitForRevision(4, false);
@@ -676,6 +689,16 @@ async function run() {
   });
 
   await displayWindow.loadURL(DISPLAY_URL);
+  displayWindow.webContents.debugger.attach('1.3');
+  await displayWindow.webContents.debugger.sendCommand(
+    'Emulation.setEmulatedMedia',
+    {
+      features: [{
+        name: 'prefers-reduced-motion',
+        value: 'reduce',
+      }],
+    },
+  );
   await runWorkflow(timers, expectedLogoUrl);
   finish(0, '[DisplayCore] Display window workflow succeeded.');
 }

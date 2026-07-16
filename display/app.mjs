@@ -34,8 +34,6 @@ let logoReady = false;
 let clockHasValue = false;
 let clockSignature = null;
 
-const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
-
 const clock = createDisplayClock({
   render(value) {
     if (value === null) {
@@ -207,10 +205,7 @@ function fitCurrentPage(presentationRevision, settingsRevision, generation) {
   );
 
   if (!fit.fitsAtMinimum) {
-    const canAnimate =
-      currentSettings.marquee.enabled && !reducedMotion.matches;
-
-    if (canAnimate) {
+    if (currentSettings.marquee.enabled) {
       for (const row of rows) {
         const message = row.querySelector('.message-text');
         const overflowsHorizontally =
@@ -222,7 +217,7 @@ function fitCurrentPage(presentationRevision, settingsRevision, generation) {
         }
       }
     } else {
-      // 停用動態時守住最小字級；以水平縮放確保極端文字仍完整可見。
+      // 操作者停用跑馬燈時守住最小字級，並水平縮放以保留完整文字。
       compressOverflowingRows(rows);
     }
   }
@@ -486,7 +481,6 @@ const resizeObserver = new ResizeObserver(() => {
 });
 resizeObserver.observe(elements.stage);
 resizeObserver.observe(elements.pageLayer);
-reducedMotion.addEventListener('change', scheduleFit);
 
 async function boot() {
   const bridge = window.displayCoreDisplay;
@@ -535,7 +529,6 @@ window.addEventListener(
     settingsController?.dispose();
     clock.dispose();
     resizeObserver.disconnect();
-    reducedMotion.removeEventListener('change', scheduleFit);
     elements.logo.removeEventListener('load', handleLogoLoad);
     elements.logo.removeEventListener('error', handleLogoError);
     cancelPendingFit();

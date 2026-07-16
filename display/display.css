@@ -244,10 +244,3 @@ body {
     transform: translate3d(-50%, 0, 0);
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .marquee-track {
-    animation: none;
-    will-change: auto;
-  }
-}
