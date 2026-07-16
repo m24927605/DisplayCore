@@ -212,16 +212,17 @@ function selectTargetDisplay(displays, preference, currentEffectiveDisplayId) {
   }
 
   const externalDisplays = displays.filter(({ isInternal }) => !isInternal);
+  const externalSecondaryDisplays = externalDisplays.filter(
+    ({ isPrimary }) => !isPrimary,
+  );
+  const currentExternalSecondary = externalSecondaryDisplays.find(
+    ({ id }) => id === currentEffectiveDisplayId,
+  );
+  const preferredExternalSecondary = externalSecondaryDisplays[0];
   const currentExternal = externalDisplays.find(
     ({ id }) => id === currentEffectiveDisplayId,
   );
-  const preferredExternal = [...externalDisplays].sort((first, second) => {
-    if (first.isPrimary !== second.isPrimary) {
-      return first.isPrimary ? 1 : -1;
-    }
-
-    return first.id - second.id;
-  })[0];
+  const preferredExternal = externalDisplays[0];
   const secondaryDisplays = displays.filter(({ isPrimary }) => !isPrimary);
   const currentSecondary = secondaryDisplays.find(
     ({ id }) => id === currentEffectiveDisplayId,
@@ -230,6 +231,8 @@ function selectTargetDisplay(displays, preference, currentEffectiveDisplayId) {
 
   return Object.freeze({
     display:
+      currentExternalSecondary ||
+      preferredExternalSecondary ||
       currentExternal ||
       preferredExternal ||
       currentSecondary ||
