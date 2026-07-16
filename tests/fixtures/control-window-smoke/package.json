@@ -1,0 +1,5 @@
+{
+  "name": "displaycore-control-window-smoke",
+  "private": true,
+  "main": "main.js"
+}
