@@ -8,6 +8,9 @@ const CHANNELS = Object.freeze({
   START_PROGRAM: 'dc:v2:control:program:start',
   SHOW_EMERGENCY: 'dc:v2:control:emergency:show',
   CLEAR_PRESENTATION: 'dc:v2:control:presentation:clear',
+  GET_SETTINGS: 'dc:v2:control:settings:get',
+  SAVE_SETTINGS: 'dc:v2:control:settings:save',
+  CHOOSE_LOGO: 'dc:v2:control:settings:logo:choose',
   PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
 });
 
@@ -42,6 +45,13 @@ contextBridge.exposeInMainWorld(
       ipcRenderer.invoke(CHANNELS.SHOW_EMERGENCY, { code }),
     clearPresentation: () =>
       ipcRenderer.invoke(CHANNELS.CLEAR_PRESENTATION),
+    getSettings: () => ipcRenderer.invoke(CHANNELS.GET_SETTINGS),
+    saveSettings: (config, expectedRevision) =>
+      ipcRenderer.invoke(CHANNELS.SAVE_SETTINGS, {
+        config,
+        expectedRevision,
+      }),
+    chooseLogo: () => ipcRenderer.invoke(CHANNELS.CHOOSE_LOGO),
     onPresentationChanged,
   }),
 );

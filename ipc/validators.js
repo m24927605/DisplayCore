@@ -1,6 +1,7 @@
 'use strict';
 
 const { PLAYBACK_MODES } = require('./channels');
+const { validateConfig } = require('../config/config-schema');
 
 // 所有限制都由 Main 再驗證，Renderer 的欄位狀態不能視為安全邊界。
 const MESSAGES_PER_PAGE = 5;
@@ -17,6 +18,7 @@ const PROGRAM_KEYS = Object.freeze([
 ]);
 const MESSAGE_KEYS = Object.freeze(['message']);
 const EMERGENCY_KEYS = Object.freeze(['code']);
+const SAVE_SETTINGS_KEYS = Object.freeze(['config', 'expectedRevision']);
 const EMERGENCY_CODES = new Set(['555', '888']);
 
 function isPlainObject(value) {
@@ -187,6 +189,37 @@ function validateEmergencyPayload(payload) {
   return { ok: true, value: { code: payload.code } };
 }
 
+/** 設定儲存必須攜帶完整 config 與操作者所見的 revision。 */
+function validateSaveSettingsPayload(payload) {
+  if (!hasExactKeys(payload, SAVE_SETTINGS_KEYS)) {
+    return validationFailure('設定儲存資料包含缺少或不允許的欄位。');
+  }
+
+  if (
+    !Number.isSafeInteger(payload.expectedRevision) ||
+    payload.expectedRevision < 0
+  ) {
+    return validationFailure(
+      '設定狀態版本必須是非負整數。',
+      'expectedRevision',
+    );
+  }
+
+  const config = validateConfig(payload.config);
+
+  if (!config.ok) {
+    return config;
+  }
+
+  return {
+    ok: true,
+    value: {
+      config: config.value,
+      expectedRevision: payload.expectedRevision,
+    },
+  };
+}
+
 module.exports = {
   MAX_CYCLE_COUNT,
   MAX_MESSAGE_CODE_POINTS,
@@ -195,5 +228,6 @@ module.exports = {
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
   validateEmergencyPayload,
+  validateSaveSettingsPayload,
   validateStartProgramPayload,
 };

@@ -8,6 +8,8 @@ const { IpcCoordinator } = require('../../ipc/ipc-coordinator');
 const { PresentationService } = require('../../ipc/presentation-service');
 const { PresentationStore } = require('../../ipc/presentation-store');
 
+const defaultConfig = require('../../config.json');
+
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const DISPLAY_URL = 'displaycore://app/display/index.html';
 let nextFrameTreeNodeId = 1;
@@ -97,7 +99,37 @@ function createProgram(messageCount = 1, repeat = { mode: 'continuous' }) {
   };
 }
 
-function createHarness({ presentationService = null } = {}) {
+function createSettingsManager() {
+  let snapshot = Object.freeze({
+    config: defaultConfig,
+    defaults: defaultConfig,
+    revision: 0,
+    notice: null,
+  });
+
+  return {
+    saved: [],
+    getSnapshot() {
+      return snapshot;
+    },
+    async saveConfig(config, expectedRevision) {
+      this.saved.push({ config, expectedRevision });
+      snapshot = Object.freeze({
+        config,
+        defaults: defaultConfig,
+        revision: expectedRevision + 1,
+        notice: null,
+      });
+      return snapshot;
+    },
+  };
+}
+
+function createHarness({
+  presentationService = null,
+  settingsManager = null,
+  logoImporter = null,
+} = {}) {
   const ipcMain = new FakeIpcMain();
   const windows = {
     [IPC_ROLES.CONTROL]: createWindow(CONTROL_URL),
@@ -117,9 +149,19 @@ function createHarness({ presentationService = null } = {}) {
       handle.cleared = true;
     },
   });
+  const resolvedSettingsManager = settingsManager || createSettingsManager();
+  const resolvedLogoImporter = logoImporter || {
+    calls: 0,
+    async chooseAndImport() {
+      this.calls += 1;
+      return { canceled: false, assetPath: 'logos/abc123.png' };
+    },
+  };
   const coordinator = new IpcCoordinator({
     ipcMain,
     presentationService: service,
+    settingsManager: resolvedSettingsManager,
+    logoImporter: resolvedLogoImporter,
     getWindow: (role) => windows[role] || null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,
@@ -140,12 +182,165 @@ function createHarness({ presentationService = null } = {}) {
     coordinator,
     errors,
     ipcMain,
+    logoImporter: resolvedLogoImporter,
     presentationService: service,
+    settingsManager: resolvedSettingsManager,
     timers,
     warnings,
     windows,
   };
 }
+
+test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作', async () => {
+  const { ipcMain, logoImporter, settingsManager, windows } = createHarness();
+  const controlEvent = createEvent(windows.control);
+  const displayEvent = createEvent(windows.display);
+  const config = structuredClone(defaultConfig);
+  config.appearance.backgroundColor = '#102030';
+
+  const loaded = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_GET_SETTINGS,
+    controlEvent,
+  );
+  const saved = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    controlEvent,
+    { config, expectedRevision: 0 },
+  );
+  const logo = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+    controlEvent,
+  );
+
+  assert.equal(loaded.ok, true);
+  assert.equal(loaded.data.revision, 0);
+  assert.equal(saved.ok, true);
+  assert.equal(saved.data.revision, 1);
+  assert.equal(saved.data.config.appearance.backgroundColor, '#102030');
+  assert.equal(settingsManager.saved.length, 1);
+  assert.deepEqual(logo, {
+    ok: true,
+    data: { canceled: false, assetPath: 'logos/abc123.png' },
+  });
+  assert.equal(logoImporter.calls, 1);
+
+  for (const channel of [
+    IPC_CHANNELS.CONTROL_GET_SETTINGS,
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+  ]) {
+    const result = await ipcMain.invoke(
+      channel,
+      displayEvent,
+      { config, expectedRevision: 1 },
+    );
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'FORBIDDEN');
+  }
+});
+
+test('Main 原子拒絕畸形設定 payload，不呼叫設定管理器', async () => {
+  const { ipcMain, settingsManager, windows } = createHarness();
+
+  const result = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    createEvent(windows.control),
+    {
+      config: { ...defaultConfig, unknown: true },
+      expectedRevision: 0,
+    },
+  );
+
+  assert.equal(result.ok, false);
+  assert.equal(result.error.code, 'VALIDATION_FAILED');
+  assert.equal(settingsManager.saved.length, 0);
+});
+
+test('非同步設定與 Logo 錯誤使用固定 envelope，不洩漏路徑', async () => {
+  const settingsManager = createSettingsManager();
+  settingsManager.saveConfig = async () => {
+    throw new Error('/private/userData/config.json: stack');
+  };
+  const logoImporter = {
+    async chooseAndImport() {
+      throw new Error('C:\\Users\\Operator\\秘密Logo.png');
+    },
+  };
+  const { errors, ipcMain, windows } = createHarness({
+    settingsManager,
+    logoImporter,
+  });
+  const event = createEvent(windows.control);
+
+  const saveResult = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    event,
+    { config: defaultConfig, expectedRevision: 0 },
+  );
+  const logoResult = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+    event,
+  );
+
+  for (const result of [saveResult, logoResult]) {
+    assert.deepEqual(result, {
+      ok: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: '操作失敗，請稍後再試。',
+      },
+    });
+    assert.doesNotMatch(JSON.stringify(result), /private|Users|Logo\.png|stack/i);
+  }
+  assert.equal(errors.length, 2);
+});
+
+test('設定衝突與 Logo 格式錯誤回傳固定可操作訊息', async () => {
+  const settingsManager = createSettingsManager();
+  settingsManager.saveConfig = async () => {
+    const error = new Error('/private/newer-config.json');
+    error.code = 'CONFIG_CONFLICT';
+    throw error;
+  };
+  const logoImporter = {
+    async chooseAndImport() {
+      const error = new Error('C:\\秘密\\bad.svg');
+      error.code = 'LOGO_IMPORT_FAILED';
+      throw error;
+    },
+  };
+  const { errors, ipcMain, windows } = createHarness({
+    settingsManager,
+    logoImporter,
+  });
+  const event = createEvent(windows.control);
+
+  assert.deepEqual(
+    await ipcMain.invoke(
+      IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+      event,
+      { config: defaultConfig, expectedRevision: 0 },
+    ),
+    {
+      ok: false,
+      error: {
+        code: 'CONFIG_CONFLICT',
+        message: '設定已由另一個操作更新，請重新載入後再儲存。',
+      },
+    },
+  );
+  assert.deepEqual(
+    await ipcMain.invoke(IPC_CHANNELS.CONTROL_CHOOSE_LOGO, event),
+    {
+      ok: false,
+      error: {
+        code: 'LOGO_IMPORT_FAILED',
+        message: '無法匯入 Logo，請確認圖片格式與檔案大小。',
+      },
+    },
+  );
+  assert.equal(errors.length, 0);
+});
 
 test('Control 啟動清單、滿屏與清除時，Main 對兩個角色發布相同 snapshot', async () => {
   const { ipcMain, windows } = createHarness();
@@ -382,6 +577,9 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     IPC_CHANNELS.CONTROL_START_PROGRAM,
     IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
     IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
+    IPC_CHANNELS.CONTROL_GET_SETTINGS,
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
   ];
 

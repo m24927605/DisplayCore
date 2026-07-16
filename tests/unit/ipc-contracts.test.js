@@ -18,8 +18,11 @@ const {
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
   validateEmergencyPayload,
+  validateSaveSettingsPayload,
   validateStartProgramPayload,
 } = require('../../ipc/validators');
+
+const defaultConfig = require('../../config.json');
 
 function createMessages(count, prefix = '訊息') {
   return Array.from({ length: count }, (_value, index) => ({
@@ -188,5 +191,32 @@ test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推
     { code: '555', layout: 'fill-screen' },
   ]) {
     assert.equal(validateEmergencyPayload(payload).ok, false);
+  }
+});
+
+test('設定儲存只接受完整 config 與目前 revision', () => {
+  const valid = validateSaveSettingsPayload({
+    config: defaultConfig,
+    expectedRevision: 0,
+  });
+
+  assert.equal(valid.ok, true);
+  assert.notEqual(valid.value.config, defaultConfig);
+  assert.equal(valid.value.expectedRevision, 0);
+
+  for (const payload of [
+    null,
+    {},
+    { config: defaultConfig },
+    { config: defaultConfig, expectedRevision: -1 },
+    { config: defaultConfig, expectedRevision: 0, unknown: true },
+    {
+      config: { ...defaultConfig, unknown: true },
+      expectedRevision: 0,
+    },
+  ]) {
+    const result = validateSaveSettingsPayload(payload);
+    assert.equal(result.ok, false);
+    assert.equal(result.error.code, 'VALIDATION_FAILED');
   }
 });

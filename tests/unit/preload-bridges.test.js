@@ -70,9 +70,12 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
 
   assert.ok(api);
   assert.deepEqual(Object.keys(api).sort(), [
+    'chooseLogo',
     'clearPresentation',
     'getPresentation',
+    'getSettings',
     'onPresentationChanged',
+    'saveSettings',
     'showEmergency',
     'startProgram',
   ]);
@@ -89,6 +92,9 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   );
   await api.showEmergency('555');
   await api.clearPresentation();
+  await api.getSettings();
+  await api.saveSettings({ configVersion: 1 }, 7);
+  await api.chooseLogo();
 
   assert.deepEqual(
     harness.invocations.map(({ channel }) => channel),
@@ -97,6 +103,9 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
       IPC_CHANNELS.CONTROL_START_PROGRAM,
       IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
       IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
+      IPC_CHANNELS.CONTROL_GET_SETTINGS,
+      IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+      IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
     ],
   );
   assert.equal(
@@ -110,6 +119,10 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   assert.equal(
     JSON.stringify(harness.invocations[2].args[0]),
     JSON.stringify({ code: '555' }),
+  );
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.invocations[5].args[0])),
+    { config: { configVersion: 1 }, expectedRevision: 7 },
   );
 });
 
@@ -126,6 +139,9 @@ test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => 
   assert.equal(api.startProgram, undefined);
   assert.equal(api.showEmergency, undefined);
   assert.equal(api.clearPresentation, undefined);
+  assert.equal(api.getSettings, undefined);
+  assert.equal(api.saveSettings, undefined);
+  assert.equal(api.chooseLogo, undefined);
 
   await api.getPresentation();
   assert.equal(

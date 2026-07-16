@@ -3,6 +3,7 @@
 const { IPC_CHANNELS, IPC_ROLES } = require('./channels');
 const {
   validateEmergencyPayload,
+  validateSaveSettingsPayload,
   validateStartProgramPayload,
 } = require('./validators');
 
@@ -11,6 +12,9 @@ const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.CONTROL_START_PROGRAM,
   IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
   IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
+  IPC_CHANNELS.CONTROL_GET_SETTINGS,
+  IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+  IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
 ]);
 
@@ -38,6 +42,37 @@ function internalError() {
   };
 }
 
+function knownOperationError(error) {
+  if (
+    error?.code === 'VALIDATION_FAILED' &&
+    error.validationError?.code === 'VALIDATION_FAILED'
+  ) {
+    return { ok: false, error: { ...error.validationError } };
+  }
+
+  if (error?.code === 'CONFIG_CONFLICT') {
+    return {
+      ok: false,
+      error: {
+        code: 'CONFIG_CONFLICT',
+        message: '設定已由另一個操作更新，請重新載入後再儲存。',
+      },
+    };
+  }
+
+  if (error?.code === 'LOGO_IMPORT_FAILED') {
+    return {
+      ok: false,
+      error: {
+        code: 'LOGO_IMPORT_FAILED',
+        message: '無法匯入 Logo，請確認圖片格式與檔案大小。',
+      },
+    };
+  }
+
+  return null;
+}
+
 /**
  * Main Process 的 v2 IPC 路由與角色授權中心。
  *
@@ -49,12 +84,16 @@ class IpcCoordinator {
   constructor({
     ipcMain,
     presentationService,
+    settingsManager = null,
+    logoImporter = null,
     getWindow,
     allowedUrls,
     logger = console,
   }) {
     this.ipcMain = ipcMain;
     this.presentationService = presentationService;
+    this.settingsManager = settingsManager;
+    this.logoImporter = logoImporter;
     this.getWindow = getWindow;
     this.allowedUrls = allowedUrls;
     this.logger = logger;
@@ -102,6 +141,28 @@ class IpcCoordinator {
       ),
     );
     this.ipcMain.handle(
+      IPC_CHANNELS.CONTROL_GET_SETTINGS,
+      (event) => this.handleRequest(IPC_ROLES.CONTROL, event, () =>
+        success(this.settingsManager.getSnapshot()),
+      ),
+    );
+    this.ipcMain.handle(
+      IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+      (event, payload) => this.handleAsyncRequest(
+        IPC_ROLES.CONTROL,
+        event,
+        () => this.saveSettings(payload),
+      ),
+    );
+    this.ipcMain.handle(
+      IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+      (event) => this.handleAsyncRequest(
+        IPC_ROLES.CONTROL,
+        event,
+        async () => success(await this.logoImporter.chooseAndImport()),
+      ),
+    );
+    this.ipcMain.handle(
       IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
       (event) => this.handleRequest(IPC_ROLES.DISPLAY, event, () =>
         success(this.presentationService.getSnapshot()),
@@ -133,6 +194,25 @@ class IpcCoordinator {
       return operation();
     } catch (error) {
       this.logger.error('[DisplayCore] IPC 操作發生內部錯誤。', error);
+      return internalError();
+    }
+  }
+
+  async handleAsyncRequest(role, event, operation) {
+    if (!this.isAuthorized(role, event)) {
+      return forbidden();
+    }
+
+    try {
+      return await operation();
+    } catch (error) {
+      const knownError = knownOperationError(error);
+
+      if (knownError) {
+        return knownError;
+      }
+
+      this.logger.error('[DisplayCore] IPC 非同步操作發生內部錯誤。', error);
       return internalError();
     }
   }
@@ -192,6 +272,21 @@ class IpcCoordinator {
 
     return success(
       this.presentationService.showEmergency(validation.value.code),
+    );
+  }
+
+  async saveSettings(payload) {
+    const validation = validateSaveSettingsPayload(payload);
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    return success(
+      await this.settingsManager.saveConfig(
+        validation.value.config,
+        validation.value.expectedRevision,
+      ),
     );
   }
 
