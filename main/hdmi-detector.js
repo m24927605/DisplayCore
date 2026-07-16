@@ -15,13 +15,13 @@ const HDMI_OUTPUT_TECHNOLOGY = 5;
 const POWERSHELL_TIMEOUT_MS = 3_000;
 const POWERSHELL_MAX_BUFFER_BYTES = 64 * 1024;
 const POWERSHELL_QUERY = [
-  "$ErrorActionPreference='Stop'",
-  "$connections=@(Get-CimInstance -Namespace 'root\\wmi' -ClassName 'WmiMonitorConnectionParams'",
+  "$ErrorActionPreference='Stop';",
+  "$connections=@( Get-CimInstance -Namespace 'root\\wmi' -ClassName 'WmiMonitorConnectionParams'",
   "| Where-Object { $_.Active }",
-  "| ForEach-Object { [uint32]$_.VideoOutputTechnology })",
+  "| ForEach-Object { [uint32]$_.VideoOutputTechnology } );",
   "if($connections.Count -eq 0){[Console]::Out.Write('[]')}",
   "else{[Console]::Out.Write(($connections | ConvertTo-Json -Compress))}",
-].join(';');
+].join(' ');
 
 const UNKNOWN_RESULT = Object.freeze({
   status: HDMI_CONNECTION_STATUSES.UNKNOWN,

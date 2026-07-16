@@ -38,6 +38,11 @@ test('Windows 只把作用中的 HDMI 技術代碼 5 判定為已連接', async 
   assert.equal(calls[0].options.timeout, 3_000);
   assert.match(calls[0].args.at(-1), /WmiMonitorConnectionParams/);
   assert.match(calls[0].args.at(-1), /VideoOutputTechnology/);
+  assert.doesNotMatch(
+    calls[0].args.at(-1),
+    /;\s*\|/,
+    'PowerShell pipeline 前不可插入 statement separator',
+  );
 });
 
 test('Windows 接受 PowerShell 單值輸出，非 HDMI 連接回報未連接', async () => {
