@@ -188,6 +188,15 @@ async function runWorkflow(timers) {
       fontSize: Number.parseFloat(
         getComputedStyle(document.getElementById('page-layer')).fontSize
       ),
+      rowsFitVertically: rows.every((row) => {
+        const text = row.querySelector('.message-text, .marquee-copy');
+        return text && text.getBoundingClientRect().height <= row.clientHeight + 0.5;
+      }),
+      rowHeights: rows.map((row) => row.clientHeight),
+      textHeights: rows.map((row) =>
+        row.querySelector('.message-text, .marquee-copy')
+          ?.getBoundingClientRect().height ?? null
+      ),
       viewportHasOverflow:
         document.documentElement.scrollWidth > document.documentElement.clientWidth ||
         document.documentElement.scrollHeight > document.documentElement.clientHeight,
@@ -204,9 +213,21 @@ async function runWorkflow(timers) {
     pwnedType: 'undefined',
     announcement: messages.slice(0, 5).map(({ message }) => message).join('\n'),
     fontSize: firstPage.fontSize,
+    rowsFitVertically: firstPage.rowsFitVertically,
+    rowHeights: firstPage.rowHeights,
+    textHeights: firstPage.textHeights,
     viewportHasOverflow: false,
   });
-  assert.ok(firstPage.fontSize >= 40);
+  assert.ok(firstPage.fontSize > 0);
+  assert.equal(
+    firstPage.rowsFitVertically,
+    true,
+    JSON.stringify({
+      fontSize: firstPage.fontSize,
+      rowHeights: firstPage.rowHeights,
+      textHeights: firstPage.textHeights,
+    }),
+  );
 
   assert.equal(timers.handles[0].delay, 1_000);
   timers.fire(0);

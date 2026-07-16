@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DisplayCore 顯示畫面</title>
@@ -25,11 +25,40 @@
         aria-atomic="true"
       ></p>
       <section
-        id="page-layer"
-        class="page-layer"
+        id="normal-layer"
+        class="normal-layer"
         aria-hidden="true"
         hidden
-      ></section>
+      >
+        <header
+          id="display-chrome"
+          class="display-chrome"
+          aria-hidden="true"
+          hidden
+        >
+          <div id="logo-frame" class="logo-frame" hidden>
+            <img
+              id="display-logo"
+              class="display-logo"
+              alt=""
+              aria-hidden="true"
+              hidden
+            >
+          </div>
+          <time
+            id="display-clock"
+            class="display-clock"
+            aria-hidden="true"
+            hidden
+          ></time>
+        </header>
+        <section
+          id="page-layer"
+          class="page-layer"
+          aria-hidden="true"
+          hidden
+        ></section>
+      </section>
       <section
         id="fill-layer"
         class="fill-layer"

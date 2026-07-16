@@ -1,24 +1,59 @@
+import { createDisplayClock } from './date-time.mjs';
 import { createDisplayController } from './display-controller.mjs';
-import { findLargestFittingFontSize } from './text-fit.mjs';
+import { createDisplaySettingsController } from './settings-controller.mjs';
+import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
+import {
+  calculateResponsiveFontBounds,
+  findLargestFittingFontSize,
+} from './text-fit.mjs';
 
-const DEFAULT_MINIMUM_FONT_REM = 2.5;
-const DEFAULT_MARQUEE_ENABLED = true;
 const FILL_CELL_COUNT = 24;
 const FIT_PRECISION_PX = 0.25;
+const MESSAGE_LINE_HEIGHT = 1.08;
 
 const elements = Object.freeze({
   stage: document.getElementById('display-stage'),
   announcement: document.getElementById('display-announcement'),
+  normalLayer: document.getElementById('normal-layer'),
+  chrome: document.getElementById('display-chrome'),
+  logoFrame: document.getElementById('logo-frame'),
+  logo: document.getElementById('display-logo'),
+  clock: document.getElementById('display-clock'),
   pageLayer: document.getElementById('page-layer'),
   fillLayer: document.getElementById('fill-layer'),
 });
 
-let controller = null;
-let currentSnapshot = null;
+let presentationController = null;
+let settingsController = null;
+let currentPresentation = null;
+let currentSettings = SAFE_DISPLAY_SETTINGS;
 let renderGeneration = 0;
 let fitFrame = null;
+let expectedLogoUrl = null;
+let logoReady = false;
+let clockHasValue = false;
+let clockSignature = null;
 
 const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+
+const clock = createDisplayClock({
+  render(value) {
+    if (value === null) {
+      elements.clock.textContent = '';
+      elements.clock.removeAttribute('datetime');
+      elements.clock.hidden = true;
+      clockHasValue = false;
+    } else {
+      elements.clock.textContent = value.text;
+      elements.clock.dateTime = value.dateTime;
+      elements.clock.hidden = false;
+      clockHasValue = true;
+    }
+
+    updateChromeVisibility();
+    scheduleFit();
+  },
+});
 
 function cancelPendingFit() {
   renderGeneration += 1;
@@ -35,7 +70,9 @@ function clearVisualLayers() {
   elements.fillLayer.textContent = '';
   elements.pageLayer.removeAttribute('style');
   elements.stage.dataset.fittedRevision = '';
+  elements.stage.dataset.fittedSettingsRevision = '';
   elements.stage.dataset.marqueeCount = '0';
+  elements.stage.dataset.minimumFontClamped = 'false';
 }
 
 function createStaticMessage(row, message) {
@@ -58,32 +95,18 @@ function pageFitsAt(fontSize, rows) {
   elements.pageLayer.style.fontSize = `${fontSize}px`;
 
   return rows.every((row) => {
-    const text = row.querySelector('.message-text');
+    const message = row.querySelector('.message-text');
 
-    if (!text) {
+    if (!message) {
       return false;
     }
 
-    const textBox = text.getBoundingClientRect();
+    const textBox = message.getBoundingClientRect();
     return (
       textBox.width <= row.clientWidth + 0.5 &&
       textBox.height <= row.clientHeight + 0.5
     );
   });
-}
-
-function calculateMaximumFontSize(rows) {
-  const availableWidth = elements.pageLayer.clientWidth;
-  const availableHeight = elements.pageLayer.clientHeight;
-  const rowCount = Math.max(1, rows.length);
-
-  return Math.max(
-    DEFAULT_MINIMUM_FONT_REM * 16,
-    Math.min(
-      availableWidth * 0.24,
-      availableHeight / (rowCount * 1.08),
-    ),
-  );
 }
 
 function activateMarquee(row, message) {
@@ -110,25 +133,12 @@ function activateMarquee(row, message) {
   track.style.setProperty('--marquee-duration', `${durationSeconds}s`);
 }
 
-function fitBelowMinimum(rows, minimumFontSize) {
-  const fallback = findLargestFittingFontSize({
-    minimumFontSize: 1,
-    maximumFontSize: minimumFontSize,
-    precision: FIT_PRECISION_PX,
-    fits: (fontSize) => pageFitsAt(fontSize, rows),
-  });
-  elements.pageLayer.style.fontSize = `${fallback.fontSize}px`;
-
-  if (fallback.fitsAtMinimum) {
-    return;
-  }
-
-  // 極端 10,000 字且停用動態時，以水平壓縮守住「完整、不截斷」優先序。
+function compressOverflowingRows(rows) {
   for (const row of rows) {
-    const text = row.querySelector('.message-text');
-    const textWidth = text?.getBoundingClientRect().width || 0;
+    const message = row.querySelector('.message-text');
+    const textWidth = message?.getBoundingClientRect().width || 0;
 
-    if (text && textWidth > row.clientWidth && textWidth > 0) {
+    if (message && textWidth > row.clientWidth && textWidth > 0) {
       row.classList.add('is-compressed');
       row.style.setProperty(
         '--compression-ratio',
@@ -138,16 +148,21 @@ function fitBelowMinimum(rows, minimumFontSize) {
   }
 }
 
-function fitCurrentPage(revision, generation) {
+function fitCurrentPage(presentationRevision, settingsRevision, generation) {
   if (
     generation !== renderGeneration ||
-    currentSnapshot?.mode !== 'page' ||
-    currentSnapshot.revision !== revision
+    currentPresentation?.mode !== 'page' ||
+    currentPresentation.revision !== presentationRevision ||
+    currentSettings.revision !== settingsRevision
   ) {
     return;
   }
 
   const rows = getRows();
+
+  if (rows.length === 0) {
+    return;
+  }
 
   for (const row of rows) {
     createStaticMessage(row, row.dataset.message || '');
@@ -156,42 +171,65 @@ function fitCurrentPage(revision, generation) {
   const rootFontSize = Number.parseFloat(
     getComputedStyle(document.documentElement).fontSize,
   ) || 16;
-  const minimumFontSize = DEFAULT_MINIMUM_FONT_REM * rootFontSize;
-  const maximumFontSize = calculateMaximumFontSize(rows);
+  const smallestRowHeight = Math.min(
+    ...rows.map((row) => row.clientHeight),
+  );
+  let bounds;
+
+  try {
+    bounds = calculateResponsiveFontBounds({
+      availableWidth: elements.pageLayer.clientWidth,
+      smallestRowHeight,
+      rootFontSize,
+      minimumFontSizeRem: currentSettings.appearance.minimumFontSizeRem,
+      lineHeight: MESSAGE_LINE_HEIGHT,
+    });
+  } catch {
+    // 尚未完成 layout 時等待下一次 ResizeObserver，不在畫面顯示錯誤。
+    return;
+  }
+
   const fit = findLargestFittingFontSize({
-    minimumFontSize,
-    maximumFontSize,
+    minimumFontSize: bounds.minimumFontSize,
+    maximumFontSize: bounds.maximumFontSize,
     precision: FIT_PRECISION_PX,
     fits: (fontSize) => pageFitsAt(fontSize, rows),
   });
   elements.pageLayer.style.fontSize = `${fit.fontSize}px`;
+  elements.stage.dataset.minimumFontClamped = String(
+    bounds.minimumWasClamped,
+  );
 
   if (!fit.fitsAtMinimum) {
-    const canAnimate = DEFAULT_MARQUEE_ENABLED && !reducedMotion.matches;
+    const canAnimate =
+      currentSettings.marquee.enabled && !reducedMotion.matches;
 
     if (canAnimate) {
       for (const row of rows) {
-        const text = row.querySelector('.message-text');
+        const message = row.querySelector('.message-text');
         const overflowsHorizontally =
-          text && text.getBoundingClientRect().width > row.clientWidth + 0.5;
+          message &&
+          message.getBoundingClientRect().width > row.clientWidth + 0.5;
 
         if (overflowsHorizontally) {
           activateMarquee(row, row.dataset.message || '');
         }
       }
     } else {
-      fitBelowMinimum(rows, minimumFontSize);
+      // 停用動態時守住最小字級；以水平縮放確保極端文字仍完整可見。
+      compressOverflowingRows(rows);
     }
   }
 
   elements.stage.dataset.marqueeCount = String(
     elements.pageLayer.querySelectorAll('.is-marquee').length,
   );
-  elements.stage.dataset.fittedRevision = String(revision);
+  elements.stage.dataset.fittedRevision = String(presentationRevision);
+  elements.stage.dataset.fittedSettingsRevision = String(settingsRevision);
 }
 
 function scheduleFit() {
-  if (currentSnapshot?.mode !== 'page') {
+  if (currentPresentation?.mode !== 'page') {
     return;
   }
 
@@ -200,20 +238,155 @@ function scheduleFit() {
   }
 
   const generation = renderGeneration;
-  const revision = currentSnapshot.revision;
+  const presentationRevision = currentPresentation.revision;
+  const settingsRevision = currentSettings.revision;
   fitFrame = requestAnimationFrame(() => {
     fitFrame = null;
-    fitCurrentPage(revision, generation);
+    fitCurrentPage(presentationRevision, settingsRevision, generation);
   });
+}
+
+function updateChromeVisibility() {
+  const pageVisible = currentPresentation?.mode === 'page';
+  const showLogo =
+    pageVisible && currentSettings.logo.enabled && logoReady;
+  const showClock =
+    pageVisible && currentSettings.dateTime.enabled && clockHasValue;
+
+  elements.logoFrame.hidden = !showLogo;
+  elements.logo.hidden = !showLogo;
+  elements.clock.hidden = !showClock;
+  elements.chrome.hidden = !(showLogo || showClock);
+}
+
+function syncClock() {
+  const enabled =
+    currentPresentation?.mode === 'page' && currentSettings.dateTime.enabled;
+  const signature = [
+    enabled,
+    currentSettings.dateTime.locale,
+    currentSettings.dateTime.hour12,
+  ].join('|');
+
+  if (signature === clockSignature) {
+    updateChromeVisibility();
+    return;
+  }
+
+  clockSignature = signature;
+  clock.update({
+    enabled,
+    locale: currentSettings.dateTime.locale,
+    hour12: currentSettings.dateTime.hour12,
+  });
+}
+
+function handleLogoLoad() {
+  if (
+    expectedLogoUrl === null ||
+    elements.logo.getAttribute('src') !== expectedLogoUrl
+  ) {
+    return;
+  }
+
+  logoReady = elements.logo.naturalWidth > 0 && elements.logo.naturalHeight > 0;
+  elements.stage.dataset.logoState = logoReady ? 'ready' : 'error';
+  updateChromeVisibility();
+  scheduleFit();
+}
+
+function handleLogoError() {
+  if (
+    expectedLogoUrl === null ||
+    elements.logo.getAttribute('src') !== expectedLogoUrl
+  ) {
+    return;
+  }
+
+  logoReady = false;
+  elements.stage.dataset.logoState = 'error';
+  updateChromeVisibility();
+  scheduleFit();
+}
+
+function applyLogo() {
+  const nextUrl = currentSettings.logo.enabled
+    ? currentSettings.logo.url
+    : null;
+
+  if (nextUrl === null) {
+    expectedLogoUrl = null;
+    logoReady = false;
+    elements.logo.removeAttribute('src');
+    elements.stage.dataset.logoState = 'disabled';
+    updateChromeVisibility();
+    return;
+  }
+
+  expectedLogoUrl = nextUrl;
+
+  if (
+    elements.logo.getAttribute('src') === nextUrl &&
+    elements.logo.complete &&
+    elements.logo.naturalWidth > 0
+  ) {
+    logoReady = true;
+    elements.stage.dataset.logoState = 'ready';
+    updateChromeVisibility();
+    return;
+  }
+
+  logoReady = false;
+  elements.stage.dataset.logoState = 'loading';
+  elements.logo.src = nextUrl;
+  updateChromeVisibility();
+}
+
+function calculateLogoOutline(backgroundColor) {
+  const red = Number.parseInt(backgroundColor.slice(1, 3), 16);
+  const green = Number.parseInt(backgroundColor.slice(3, 5), 16);
+  const blue = Number.parseInt(backgroundColor.slice(5, 7), 16);
+  const relativeBrightness = (red * 299 + green * 587 + blue * 114) / 1000;
+  return relativeBrightness >= 150
+    ? 'rgb(0 0 0 / 10%)'
+    : 'rgb(255 255 255 / 10%)';
+}
+
+function applyDisplaySettings(snapshot) {
+  cancelPendingFit();
+  currentSettings = snapshot;
+  const rootStyle = document.documentElement.style;
+  rootStyle.setProperty(
+    '--display-background',
+    snapshot.appearance.backgroundColor,
+  );
+  rootStyle.setProperty('--display-ink', snapshot.appearance.fontColor);
+  rootStyle.setProperty(
+    '--display-font-family',
+    snapshot.appearance.fontFamily,
+  );
+  rootStyle.setProperty(
+    '--logo-outline',
+    calculateLogoOutline(snapshot.appearance.backgroundColor),
+  );
+  elements.stage.dataset.settingsRevision = String(snapshot.revision);
+  applyLogo();
+  syncClock();
+  updateChromeVisibility();
+  scheduleFit();
 }
 
 function renderBlank(snapshot) {
   clearVisualLayers();
   elements.announcement.textContent = '';
+  elements.announcement.setAttribute('aria-live', 'polite');
+  elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
   elements.fillLayer.hidden = true;
   elements.stage.dataset.mode = 'blank';
   elements.stage.dataset.revision = String(snapshot.revision);
+  syncClock();
+  updateChromeVisibility();
 }
 
 function renderPage(snapshot) {
@@ -221,7 +394,9 @@ function renderPage(snapshot) {
   elements.announcement.textContent = snapshot.messages
     .map(({ message }) => message)
     .join('\n');
+  elements.announcement.setAttribute('aria-live', 'polite');
   elements.fillLayer.hidden = true;
+  elements.normalLayer.hidden = false;
   elements.pageLayer.hidden = false;
   elements.pageLayer.style.setProperty(
     '--row-count',
@@ -241,6 +416,8 @@ function renderPage(snapshot) {
   elements.pageLayer.append(fragment);
   elements.stage.dataset.mode = 'page';
   elements.stage.dataset.revision = String(snapshot.revision);
+  syncClock();
+  updateChromeVisibility();
   scheduleFit();
 }
 
@@ -248,6 +425,8 @@ function renderEmergency(snapshot) {
   clearVisualLayers();
   const message = snapshot.messages[0].message;
   elements.announcement.textContent = message;
+  elements.announcement.setAttribute('aria-live', 'assertive');
+  elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
   elements.fillLayer.hidden = false;
 
@@ -264,10 +443,12 @@ function renderEmergency(snapshot) {
   elements.stage.dataset.mode = 'emergency';
   elements.stage.dataset.revision = String(snapshot.revision);
   elements.stage.dataset.fittedRevision = String(snapshot.revision);
+  syncClock();
+  updateChromeVisibility();
 }
 
 function renderPresentation(snapshot) {
-  currentSnapshot = snapshot;
+  currentPresentation = snapshot;
 
   if (snapshot.mode === 'blank') {
     renderBlank(snapshot);
@@ -285,14 +466,21 @@ function renderPresentation(snapshot) {
 function hasRequiredBridge(api) {
   return (
     typeof api?.getPresentation === 'function' &&
-    typeof api?.onPresentationChanged === 'function'
+    typeof api?.onPresentationChanged === 'function' &&
+    typeof api?.getSettings === 'function' &&
+    typeof api?.onSettingsChanged === 'function'
   );
 }
+
+elements.logo.addEventListener('load', handleLogoLoad);
+elements.logo.addEventListener('error', handleLogoError);
+applyDisplaySettings(SAFE_DISPLAY_SETTINGS);
 
 const resizeObserver = new ResizeObserver(() => {
   scheduleFit();
 });
 resizeObserver.observe(elements.stage);
+resizeObserver.observe(elements.pageLayer);
 reducedMotion.addEventListener('change', scheduleFit);
 
 async function boot() {
@@ -300,8 +488,19 @@ async function boot() {
 
   if (!hasRequiredBridge(bridge)) {
     document.documentElement.dataset.displayReady = 'false';
+    document.documentElement.dataset.settingsReady = 'false';
     return;
   }
+
+  const settingsApi = Object.freeze({
+    getSettings: () => bridge.getSettings(),
+    onSettingsChanged: (listener) => bridge.onSettingsChanged(listener),
+  });
+  settingsController = createDisplaySettingsController({
+    api: settingsApi,
+    view: Object.freeze({ applyDisplaySettings }),
+  });
+  const settingsStartPromise = settingsController.start();
 
   try {
     await document.fonts.ready;
@@ -309,25 +508,31 @@ async function boot() {
     // 系統字型仍可使用；後續 ResizeObserver 會再次量測。
   }
 
-  const api = Object.freeze({
+  const presentationApi = Object.freeze({
     getPresentation: () => bridge.getPresentation(),
     onPresentationChanged: (listener) =>
       bridge.onPresentationChanged(listener),
   });
-  controller = createDisplayController({
-    api,
+  presentationController = createDisplayController({
+    api: presentationApi,
     view: Object.freeze({ renderPresentation }),
   });
-  const started = await controller.start();
-  document.documentElement.dataset.displayReady = String(started);
+  const presentationStarted = await presentationController.start();
+  const settingsStarted = await settingsStartPromise;
+  document.documentElement.dataset.displayReady = String(presentationStarted);
+  document.documentElement.dataset.settingsReady = String(settingsStarted);
 }
 
 window.addEventListener(
   'beforeunload',
   () => {
-    controller?.dispose();
+    presentationController?.dispose();
+    settingsController?.dispose();
+    clock.dispose();
     resizeObserver.disconnect();
     reducedMotion.removeEventListener('change', scheduleFit);
+    elements.logo.removeEventListener('load', handleLogoLoad);
+    elements.logo.removeEventListener('error', handleLogoError);
     cancelPendingFit();
   },
   { once: true },

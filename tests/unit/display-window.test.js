@@ -18,6 +18,13 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
   assert.match(html, /id="display-announcement"[^>]+role="status"/);
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /aria-atomic="true"/);
+  assert.match(html, /id="normal-layer"[^>]+aria-hidden="true"/);
+  assert.match(html, /id="display-chrome"[^>]+aria-hidden="true"/);
+  assert.match(
+    html,
+    /<img[^>]+id="display-logo"[^>]+alt=""[^>]+aria-hidden="true"/,
+  );
+  assert.match(html, /<time[^>]+id="display-clock"[^>]+aria-hidden="true"/);
   assert.match(html, /id="page-layer"[^>]+aria-hidden="true"/);
   assert.match(html, /id="fill-layer"[^>]+aria-hidden="true"/);
   assert.match(
@@ -30,6 +37,8 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
     /<(?:button|input|select|textarea|a|video|audio)\b/i,
   );
   assert.doesNotMatch(html, /\b(?:tabindex|contenteditable)\s*=/i);
+  assert.match(html, /img-src 'self'/);
+  assert.doesNotMatch(html, /img-src[^;]*(?:data:|file:|blob:|\*)/);
 });
 
 test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，不截斷文字', async () => {
@@ -43,8 +52,16 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /clamp\(/);
   assert.match(css, /(?:vw|vh|vmin|rem|%)/);
   assert.match(css, /\.page-layer\s*{[^}]*display:\s*grid/s);
+  assert.match(
+    css,
+    /\.normal-layer\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\)/s,
+  );
+  assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
+  assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   assert.match(css, /\.message-row\s*{[^}]*white-space:\s*nowrap/s);
   assert.match(css, /\.fill-layer\s*{[^}]*display:\s*grid/s);
+  assert.match(css, /\.fill-layer\s*{[^}]*position:\s*fixed[^}]*inset:\s*0/s);
+  assert.match(css, /--display-font-family/);
   assert.match(css, /\.is-marquee\s+\.marquee-track\s*{[^}]*will-change:\s*transform/s);
   assert.match(css, /font-smoothing:\s*antialiased/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
@@ -58,11 +75,18 @@ test('Display app 僅使用唯讀 bridge 與 textContent，且不解析緊急代
 
   assert.match(source, /window\.displayCoreDisplay/);
   assert.match(source, /createDisplayController/);
+  assert.match(source, /createDisplaySettingsController/);
+  assert.match(source, /createDisplayClock/);
+  assert.match(source, /SAFE_DISPLAY_SETTINGS/);
   assert.match(source, /findLargestFittingFontSize/);
   assert.match(source, /\.textContent\s*=/);
   assert.match(source, /new ResizeObserver/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /document\.fonts\.ready/);
+  assert.match(source, /bridge\.getSettings\(\)/);
+  assert.match(source, /bridge\.onSettingsChanged\(listener\)/);
+  assert.match(source, /\.setProperty\(\s*'--display-background'/);
+  assert.match(source, /\.setProperty\(\s*'--display-font-family'/);
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
   assert.doesNotMatch(source, /\brequire\s*\(|\bprocess\.|\bipcRenderer\b/);
   assert.doesNotMatch(source, /555|888/);
