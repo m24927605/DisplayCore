@@ -393,29 +393,66 @@
         </section>
 
         <section
-          id="future-system-features"
-          class="panel future-panel"
-          aria-labelledby="future-title"
+          id="output-status-panel"
+          class="panel output-panel"
+          aria-labelledby="output-status-title"
+          aria-describedby="output-status-notice output-status-error"
+          aria-busy="true"
         >
           <div class="section-heading compact-heading">
             <div>
-              <p class="section-kicker">後續階段</p>
-              <h2 id="future-title">系統與輸出</h2>
+              <p class="section-kicker">本機輸出</p>
+              <h2 id="output-status-title">螢幕連線與輸出</h2>
             </div>
-            <span class="pending-badge">尚未完成</span>
+            <span
+              id="hdmi-status-badge"
+              class="output-status-badge"
+              data-tone="detecting"
+            >
+              <span class="output-status-dot" aria-hidden="true"></span>
+              <span id="hdmi-status-text">正在偵測 HDMI…</span>
+            </span>
           </div>
-          <ul class="future-list">
-            <li>
-              <span class="future-label">HDMI 狀態：第 9 步啟用偵測</span>
-              <span class="future-state">待建立</span>
-            </li>
-            <li>
-              <span class="future-label">輸出螢幕與全螢幕：第 9 步提供</span>
-              <span class="future-state">待建立</span>
-            </li>
-          </ul>
-          <button class="button button-secondary future-button" type="button" disabled>
-            後續步驟開放
+          <dl id="output-status-summary" class="output-status-summary">
+            <div>
+              <dt>目前輸出</dt>
+              <dd id="output-target">正在取得螢幕資訊…</dd>
+            </div>
+            <div>
+              <dt>顯示模式</dt>
+              <dd id="output-mode">—</dd>
+            </div>
+            <div>
+              <dt>可用螢幕</dt>
+              <dd id="output-display-count">—</dd>
+            </div>
+          </dl>
+          <p
+            id="output-status-notice"
+            class="output-status-notice"
+            data-tone="pending"
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+          >
+            正在偵測輸出裝置…
+          </p>
+          <p
+            id="output-status-error"
+            class="output-status-error"
+            role="alert"
+            aria-live="assertive"
+            aria-atomic="true"
+            hidden
+          ></p>
+          <button
+            id="manage-output-settings-button"
+            class="button button-secondary output-settings-button"
+            data-settings-section="display"
+            type="button"
+            disabled
+          >
+            管理輸出設定
           </button>
         </section>
       </main>
@@ -621,7 +658,7 @@
               <strong id="display-mode-summary">自動選擇，優先外接螢幕</strong>
             </div>
             <p class="settings-fieldset-description">
-              HDMI 狀態、實體螢幕清單與全螢幕切換將在第 9 步啟用。
+              可從控制台查看目前輸出狀態；輸出偏好會安全保留於本機設定。
             </p>
           </fieldset>
         </div>

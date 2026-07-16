@@ -181,13 +181,37 @@ test('第 8 步提供可即時套用的獨立系統設定對話框與完整可�
   assert.doesNotMatch(html, /第 8 步[^<]*才會套用/);
 });
 
-test('尚未進入的 HDMI 與實體螢幕功能明確標示第 9 步且不可操作', async () => {
+test('第 9 步提供獨立 HDMI 狀態與實際輸出摘要', async () => {
   const html = await readControlFile('index.html');
 
-  assert.match(html, /id="future-system-features"/);
-  assert.match(html, /HDMI[^<]*第 9 步/);
-  assert.match(html, /輸出螢幕[^<]*第 9 步/);
-  assert.match(html, /<button[^>]+disabled/);
+  assert.match(html, /<section[^>]+id="output-status-panel"[^>]+aria-busy="true"/);
+  assert.match(html, /id="hdmi-status-badge"[^>]+data-tone="detecting"/);
+  assert.match(html, /id="hdmi-status-text"/);
+  assert.match(html, /<dl[^>]+id="output-status-summary"/);
+
+  for (const valueId of [
+    'output-target',
+    'output-mode',
+    'output-display-count',
+  ]) {
+    assert.match(html, new RegExp(`<dd[^>]+id="${valueId}"`));
+  }
+
+  assert.match(
+    html,
+    /id="output-status-notice"[^>]+role="status"[^>]+aria-live="polite"[^>]+aria-atomic="true"/,
+  );
+  assert.match(
+    html,
+    /id="output-status-error"[^>]+role="alert"[^>]+aria-live="assertive"/,
+  );
+  assert.match(
+    html,
+    /<button[^>]+id="manage-output-settings-button"[^>]+data-settings-section="display"[^>]+type="button"/,
+  );
+  assert.match(html, />\s*管理輸出設定\s*<\/button>/);
+  assert.doesNotMatch(html, /future-system-features|future-list|尚未完成/);
+  assert.doesNotMatch(html, /HDMI[^<]*第 9 步|輸出螢幕[^<]*第 9 步/);
 });
 
 test('Control 只載入本機 module，且 Renderer 僅使用最小權限 bridge', async () => {
@@ -239,6 +263,12 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /\.settings-switch\s*{[^}]*min-block-size:\s*2\.75rem/s);
   assert.match(css, /input\[type="color"\][^{]*{[^}]*min-block-size:\s*2\.75rem/s);
   assert.match(css, /select[^{]*{[^}]*min-block-size:\s*2\.75rem/s);
+  assert.match(css, /\.output-status-summary\s*{[^}]*display:\s*grid/s);
+  assert.match(css, /\.output-settings-button\s*{[^}]*min-block-size:\s*2\.75rem/s);
+  assert.match(
+    css,
+    /@media\s*\([^)]*max-width[^)]*\)[\s\S]*\.output-status-summary\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,
+  );
   assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
   assert.doesNotMatch(css, /will-change:\s*all\b/);
 
