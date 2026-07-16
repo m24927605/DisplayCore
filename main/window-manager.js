@@ -22,9 +22,11 @@ class WindowManager {
    * @param {string} dependencies.displayUrl
    * @param {(contents: Electron.WebContents) => void} dependencies.hardenWebContents
    * @param {() => void} dependencies.onControlClosed
- * @param {(error: Error) => void} dependencies.onRecoveryFailed
- * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} [dependencies.configureDisplayWindow]
- * @param {boolean} dependencies.windowedDisplay
+   * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} dependencies.onDisplayAvailable
+   * @param {() => void} dependencies.onDisplayUnavailable
+   * @param {(error: Error) => void} dependencies.onRecoveryFailed
+   * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} [dependencies.configureDisplayWindow]
+   * @param {boolean} dependencies.windowedDisplay
    * @param {boolean} dependencies.controlDevTools
    */
   constructor({
@@ -37,6 +39,8 @@ class WindowManager {
     displayUrl,
     hardenWebContents,
     onControlClosed = () => {},
+    onDisplayAvailable = () => {},
+    onDisplayUnavailable = () => {},
     onRecoveryFailed = () => {},
     configureDisplayWindow = null,
     windowedDisplay = false,
@@ -51,6 +55,8 @@ class WindowManager {
     this.displayUrl = displayUrl;
     this.hardenWebContents = hardenWebContents;
     this.onControlClosed = onControlClosed;
+    this.onDisplayAvailable = onDisplayAvailable;
+    this.onDisplayUnavailable = onDisplayUnavailable;
     this.onRecoveryFailed = onRecoveryFailed;
     this.configureDisplayWindow = configureDisplayWindow;
     this.windowedDisplay = windowedDisplay;
@@ -61,6 +67,8 @@ class WindowManager {
     this.creationPromise = null;
     this.recoveryPromise = null;
     this.isQuitting = false;
+    this.availableDisplayWindow = null;
+    this.reloadingDisplayWindows = new WeakSet();
     this.suppressedControlCloseWindows = new WeakSet();
     this.suppressedDisplayCloseWindows = new WeakSet();
   }
@@ -172,11 +180,21 @@ class WindowManager {
       }
 
       displayWindow.showInactive();
+      // 最短顯示時間只能從電視視窗真正顯示後的全新 refit 開始計算。
+      this.availableDisplayWindow = displayWindow;
+      await this.onDisplayAvailable(displayWindow);
+
+      if (controlWindow.isDestroyed() || displayWindow.isDestroyed()) {
+        throw new Error('視窗在 Display 可用通知完成前已關閉。');
+      }
+
       controlWindow.show();
       controlWindow.focus();
 
       return this.getWindowState();
     } catch (error) {
+      // 可用通知與撤銷必須成對；建立流程後段失敗時不可留下可計時的幽靈 Display。
+      this.notifyDisplayUnavailable(displayWindow);
       this.destroyWindowPair(controlWindow, displayWindow);
       throw error;
     }
@@ -227,6 +245,37 @@ class WindowManager {
       }
     });
 
+    displayWindow.webContents.on('did-start-loading', () => {
+      if (
+        !this.isQuitting &&
+        this.displayWindow === displayWindow &&
+        this.notifyDisplayUnavailable(displayWindow)
+      ) {
+        // 初次 load 尚未發布可用，因此只有同一 WebContents reload 會進入此集合。
+        this.reloadingDisplayWindows.add(displayWindow);
+      }
+    });
+
+    displayWindow.webContents.on('did-finish-load', () => {
+      if (!this.reloadingDisplayWindows.delete(displayWindow)) {
+        return;
+      }
+
+      void this.restoreDisplayAfterReload(controlWindow, displayWindow);
+    });
+
+    displayWindow.webContents.on(
+      'did-fail-load',
+      (_event, _errorCode, _description, _url, isMainFrame) => {
+        if (
+          isMainFrame &&
+          this.reloadingDisplayWindows.delete(displayWindow)
+        ) {
+          this.scheduleWindowPairRecovery(controlWindow, displayWindow);
+        }
+      },
+    );
+
     for (const browserWindow of [controlWindow, displayWindow]) {
       browserWindow.webContents.on(
         'render-process-gone',
@@ -237,6 +286,38 @@ class WindowManager {
           this.scheduleWindowPairRecovery(controlWindow, displayWindow);
         },
       );
+    }
+  }
+
+  /**
+   * 同一 WebContents reload 完成後重新核發可見世代；失敗則改走原子復原。
+   *
+   * @private
+   */
+  async restoreDisplayAfterReload(controlWindow, displayWindow) {
+    if (
+      this.isQuitting ||
+      this.controlWindow !== controlWindow ||
+      this.displayWindow !== displayWindow ||
+      controlWindow.isDestroyed() ||
+      displayWindow.isDestroyed()
+    ) {
+      return;
+    }
+
+    this.availableDisplayWindow = displayWindow;
+    try {
+      await this.onDisplayAvailable(displayWindow);
+      if (
+        controlWindow.isDestroyed() ||
+        displayWindow.isDestroyed() ||
+        this.displayWindow !== displayWindow
+      ) {
+        throw new Error('Display reload 可用通知完成前視窗已失效。');
+      }
+    } catch {
+      this.notifyDisplayUnavailable(displayWindow);
+      this.scheduleWindowPairRecovery(controlWindow, displayWindow);
     }
   }
 
@@ -258,6 +339,9 @@ class WindowManager {
     ) {
       return;
     }
+
+    // 先使舊 Display 的 timer／動畫閘門失效，再開始非同步重建。
+    this.notifyDisplayUnavailable(displayWindow);
 
     const interruptedCreation = this.creationPromise;
     const recoveryWork = Promise.resolve().then(async () => {
@@ -313,6 +397,21 @@ class WindowManager {
         this.onRecoveryFailed(error);
       }
     });
+  }
+
+  /**
+   * 對特定 Display 最多發布一次不可用通知，避免 close／renderer-gone 競態重複撤銷。
+   *
+   * @private
+   */
+  notifyDisplayUnavailable(displayWindow) {
+    if (this.availableDisplayWindow !== displayWindow) {
+      return false;
+    }
+
+    this.availableDisplayWindow = null;
+    this.onDisplayUnavailable();
+    return true;
   }
 
   /**

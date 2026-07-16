@@ -1,5 +1,6 @@
 import { createDisplayClock } from './date-time.mjs';
 import { createDisplayController } from './display-controller.mjs';
+import { createPageProgressReporter } from './page-progress.mjs';
 import { createDisplaySettingsController } from './settings-controller.mjs';
 import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
 import {
@@ -10,6 +11,7 @@ import {
 const FILL_CELL_COUNT = 24;
 const FIT_PRECISION_PX = 0.25;
 const MESSAGE_LINE_HEIGHT = 1.08;
+const LAYOUT_GENERATION_STORAGE_KEY = 'displaycore-layout-generation';
 
 const elements = Object.freeze({
   stage: document.getElementById('display-stage'),
@@ -25,8 +27,11 @@ const elements = Object.freeze({
 
 let presentationController = null;
 let settingsController = null;
+let pageProgressReporter = null;
+let unsubscribeRefitRequested = null;
 let currentPresentation = null;
 let currentSettings = SAFE_DISPLAY_SETTINGS;
+let currentDisplayEpoch = 0;
 let renderGeneration = 0;
 let fitFrame = null;
 let expectedLogoUrl = null;
@@ -34,8 +39,53 @@ let logoReady = false;
 let clockHasValue = false;
 let clockSignature = null;
 
+function readStoredLayoutGeneration() {
+  try {
+    const value = Number.parseInt(
+      sessionStorage.getItem(LAYOUT_GENERATION_STORAGE_KEY) || '0',
+      10,
+    );
+    return Number.isSafeInteger(value) &&
+      value >= 0 &&
+      value < Number.MAX_SAFE_INTEGER
+      ? value
+      : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function storeLayoutGeneration(value) {
+  try {
+    sessionStorage.setItem(LAYOUT_GENERATION_STORAGE_KEY, String(value));
+  } catch {
+    // 同一 Renderer 仍保留記憶體內單調值；儲存失敗只影響手動 reload。
+  }
+}
+
+/** 只接受 Main 在 Display 真正可見後核發的單欄位 refit 世代。 */
+function handleRefitRequested(payload) {
+  if (
+    payload === null ||
+    typeof payload !== 'object' ||
+    Array.isArray(payload) ||
+    Object.keys(payload).length !== 1 ||
+    !Object.hasOwn(payload, 'displayEpoch') ||
+    !Number.isSafeInteger(payload.displayEpoch) ||
+    payload.displayEpoch < 1 ||
+    payload.displayEpoch < currentDisplayEpoch
+  ) {
+    return;
+  }
+
+  currentDisplayEpoch = payload.displayEpoch;
+  scheduleFit();
+}
+
 const clock = createDisplayClock({
   render(value) {
+    const previousClockHasValue = clockHasValue;
+
     if (value === null) {
       elements.clock.textContent = '';
       elements.clock.removeAttribute('datetime');
@@ -49,12 +99,16 @@ const clock = createDisplayClock({
     }
 
     updateChromeVisibility();
-    scheduleFit();
+    // 每分鐘只更新文字；若 chrome 可見性不變，不重建正在播放的跑馬燈。
+    if (clockHasValue !== previousClockHasValue) {
+      scheduleFit();
+    }
   },
 });
 
 function cancelPendingFit() {
   renderGeneration += 1;
+  pageProgressReporter?.cancel();
 
   if (fitFrame !== null) {
     cancelAnimationFrame(fitFrame);
@@ -69,6 +123,7 @@ function clearVisualLayers() {
   elements.pageLayer.removeAttribute('style');
   elements.stage.dataset.fittedRevision = '';
   elements.stage.dataset.fittedSettingsRevision = '';
+  elements.stage.dataset.layoutGeneration = '';
   elements.stage.dataset.marqueeCount = '0';
   elements.stage.dataset.minimumFontClamped = 'false';
 }
@@ -152,7 +207,12 @@ function compressOverflowingRows(rows) {
   }
 }
 
-function fitCurrentPage(presentationRevision, settingsRevision, generation) {
+function fitCurrentPage(
+  presentationRevision,
+  settingsRevision,
+  generation,
+  layoutToken,
+) {
   if (
     generation !== renderGeneration ||
     currentPresentation?.mode !== 'page' ||
@@ -227,10 +287,20 @@ function fitCurrentPage(presentationRevision, settingsRevision, generation) {
   );
   elements.stage.dataset.fittedRevision = String(presentationRevision);
   elements.stage.dataset.fittedSettingsRevision = String(settingsRevision);
+  elements.stage.dataset.layoutGeneration = String(
+    layoutToken.layoutGeneration,
+  );
+  pageProgressReporter.ready(
+    layoutToken,
+    [...elements.pageLayer.querySelectorAll('.marquee-track')],
+  );
 }
 
 function scheduleFit() {
-  if (currentPresentation?.mode !== 'page') {
+  if (
+    currentPresentation?.mode !== 'page' ||
+    currentDisplayEpoch < 1
+  ) {
     return;
   }
 
@@ -238,12 +308,27 @@ function scheduleFit() {
     cancelAnimationFrame(fitFrame);
   }
 
+  const layoutToken = pageProgressReporter?.begin({
+    revision: currentPresentation.revision,
+    pageNumber: currentPresentation.pageNumber,
+    settingsRevision: currentSettings.revision,
+    displayEpoch: currentDisplayEpoch,
+  });
+  if (!layoutToken) {
+    return;
+  }
+
   const generation = renderGeneration;
   const presentationRevision = currentPresentation.revision;
   const settingsRevision = currentSettings.revision;
   fitFrame = requestAnimationFrame(() => {
     fitFrame = null;
-    fitCurrentPage(presentationRevision, settingsRevision, generation);
+    fitCurrentPage(
+      presentationRevision,
+      settingsRevision,
+      generation,
+      layoutToken,
+    );
   });
 }
 
@@ -468,7 +553,9 @@ function hasRequiredBridge(api) {
     typeof api?.getPresentation === 'function' &&
     typeof api?.onPresentationChanged === 'function' &&
     typeof api?.getSettings === 'function' &&
-    typeof api?.onSettingsChanged === 'function'
+    typeof api?.onSettingsChanged === 'function' &&
+    typeof api?.onRefitRequested === 'function' &&
+    typeof api?.reportPageProgress === 'function'
   );
 }
 
@@ -491,6 +578,19 @@ async function boot() {
     return;
   }
 
+  pageProgressReporter = createPageProgressReporter({
+    report: (...args) => bridge.reportPageProgress(...args),
+    initialLayoutGeneration: readStoredLayoutGeneration(),
+    onLayoutGeneration: storeLayoutGeneration,
+  });
+  unsubscribeRefitRequested = bridge.onRefitRequested(handleRefitRequested);
+  if (typeof unsubscribeRefitRequested !== 'function') {
+    unsubscribeRefitRequested = null;
+    document.documentElement.dataset.displayReady = 'false';
+    document.documentElement.dataset.settingsReady = 'false';
+    return;
+  }
+
   const settingsApi = Object.freeze({
     getSettings: () => bridge.getSettings(),
     onSettingsChanged: (listener) => bridge.onSettingsChanged(listener),
@@ -499,7 +599,7 @@ async function boot() {
     api: settingsApi,
     view: Object.freeze({ applyDisplaySettings }),
   });
-  const settingsStartPromise = settingsController.start();
+  const settingsStarted = await settingsController.start();
 
   try {
     await document.fonts.ready;
@@ -517,7 +617,6 @@ async function boot() {
     view: Object.freeze({ renderPresentation }),
   });
   const presentationStarted = await presentationController.start();
-  const settingsStarted = await settingsStartPromise;
   document.documentElement.dataset.displayReady = String(presentationStarted);
   document.documentElement.dataset.settingsReady = String(settingsStarted);
 }
@@ -527,6 +626,9 @@ window.addEventListener(
   () => {
     presentationController?.dispose();
     settingsController?.dispose();
+    pageProgressReporter?.dispose();
+    unsubscribeRefitRequested?.();
+    unsubscribeRefitRequested = null;
     clock.dispose();
     resizeObserver.disconnect();
     elements.logo.removeEventListener('load', handleLogoLoad);

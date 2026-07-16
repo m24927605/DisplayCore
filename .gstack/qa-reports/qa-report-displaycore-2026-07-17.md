@@ -15,7 +15,32 @@
 | 截圖 | 16 張 |
 | 技術 | Electron 43.1.1、Node.js 24.18.0、HTML／CSS／ES Modules |
 
-> 結論：本輪未發現 Critical／High，軟體 QA gate 通過；已修正三項問題並加入回歸測試，另有三項產品規則／上游項目 deferred。目前可進入 Windows 實機驗收，但最終上線仍受 ISSUE-003／004 的產品決策，以及 Windows 10／11 與 HDMI 電視實機驗收阻擋。
+> 原始 QA 結論：本輪未發現 Critical／High，軟體 QA gate 通過；當時 ISSUE-003／004 仍等待產品決策。其後使用者已確認兩項規則，以下「產品規則追補」為目前狀態，並取代原報告中 ISSUE-003／004 的 deferred 判定。
+
+## 產品規則追補：ISSUE-003／004 已解決
+
+使用者確認採用：
+
+1. 每頁秒數是最短停留時間；跑馬燈頁必須等目前頁所有跑馬燈各完整跑完一輪，且最短時間也到期後才翻頁。
+2. 無人 Display 的跑馬燈遵循 DisplayCore 本機設定，不因 `prefers-reduced-motion` 自動停用。
+
+追補實作採 Main Process 雙閘門。Display 只能透過固定、exact-schema 的 `pending → ready → complete` IPC 回報目前 `revision`、頁碼、設定版本、Display 可見世代與 `layoutGeneration`；Main 仍是唯一能建立 timer、推進頁面與輪次的角色。Resize、顯示設定更新、同一 WebContents reload、Renderer 重建、Display 暫時隱藏、緊急滿屏、清除或新清單都會使舊 timer 與舊動畫事件失效；Display 真正重新顯示後由 Main 核發新世代並要求 refit。暫時性 IPC 失敗會由目前 layout 有界退避重試，`complete` 只在 Main 接受 `ready` 後送出，舊 layout 則以版本墓碑拒絕。沒有可信 ready／complete 時保留目前頁，不設強制逾時。
+
+| Issue | 目前狀態 | 追補驗證 |
+|---|---|---|
+| ISSUE-003 | Verified | 單元測試覆蓋 timer／traversal 任一先完成、兩列跑馬燈、stale revision、refit 與 fail-closed；真實 Electron smoke 驗證兩列各收到 `animationiteration` 後才清空有限播放 |
+| ISSUE-004 | Verified | 移除 JS 與 CSS 的 reduced-motion 停用分支；真實 Electron 以 CDP 模擬 `reduce`，仍確認設定啟用的 `display-marquee` 正常執行 |
+
+目前剩餘上線邊界為 ISSUE-005 的 Electron 上游 warning，以及 Windows 10／11、HDMI 電視與混合 DPI 實機驗收。原報告下方的 ISSUE-003／004 說明與舊 reduced-motion 截圖保留作為修正前證據，不代表目前產品行為。
+
+追補後以 Node.js 24.18.0 與主機 Node 完整重跑，均為 259/259 通過；其中包含 Control、Display、Control→Main→Display 與 Main 雙視窗等真實 Electron smoke。
+
+追補後重新建立 macOS arm64 與 Windows x64 封裝，兩份 ASAR 均包含 `display/page-progress.mjs`，且不含 `.ait`、`ait`、`*.ait` 或 `.gstack`。兩平台實際 fuse 皆維持 ASAR integrity、OnlyLoadAppFromAsar 與 CookieEncryption 啟用，RunAsNode、NODE_OPTIONS 與 CLI inspect 關閉；macOS `codesign --verify --deep --strict` 與 packaged Main smoke 通過。`npm audit`（production 與完整開發相依）皆為 0 vulnerabilities。
+
+追補後 Windows x64 交叉封裝雜湊：
+
+- `DisplayCore.exe`: `2bf5f89c53f1775722e6fd7eb8d004419b09ebcac2d2806e41c93a1c2a617574`
+- `resources/app.asar`: `78db46df9e5897771aa90986263a94044514a06407460ebff11dc591f15c9c45`
 
 ## Health Score：97/100
 
@@ -34,7 +59,7 @@
 
 Visual 分數只評估 standard-motion 下的響應式幾何、裁切、重疊與版面一致性；reduced-motion 的超長文字可讀性另計入 Accessibility。
 
-## 上線前的三項阻擋
+## 原始 QA 時點的三項阻擋
 
 1. **ISSUE-003：超長跑馬燈與固定翻頁秒數衝突** — 需決定每頁秒數是否改為「最短停留時間」，並讓跑馬燈頁至少完成一次後才翻頁。
 2. **ISSUE-004：減少動態效果時的超長文字不可讀** — 需決定無人 Display 是否仍強制跑馬燈，或在 Control 阻擋無法靜態完整顯示的內容。

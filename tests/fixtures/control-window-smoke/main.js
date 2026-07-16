@@ -647,6 +647,25 @@ function createTimerHarness() {
   };
 }
 
+/** Control-only fixture 沒有 Display Window，因此明確模擬靜態頁完成 layout。 */
+function reportStaticDisplayReady(layoutGeneration, settingsRevision) {
+  const snapshot = presentationService.getSnapshot();
+  assert.equal(snapshot.mode, 'page');
+  assert.equal(
+    presentationService.reportPageProgress({
+      rendererId: 1_001,
+      phase: 'ready',
+      displayEpoch: presentationService.getDisplayEpoch(),
+      revision: snapshot.revision,
+      pageNumber: snapshot.pageNumber,
+      settingsRevision,
+      layoutGeneration,
+      marqueeCount: 0,
+    }),
+    true,
+  );
+}
+
 async function selectRepeatMode(mode) {
   return execute(`(() => {
     const input = document.querySelector(
@@ -818,7 +837,7 @@ async function runWorkflow(
     customText: literalHtml,
   }));
 
-  // 七則為兩頁；每頁 3 秒、10 整輪，總時間精確推算為 1 分。
+  // 七則為兩頁；每頁最短 3 秒、10 整輪，最短總時間為 1 分。
   await setTextInput('round-count-input', '10');
   assert.deepEqual(
     await execute(`(() => ({
@@ -856,6 +875,9 @@ async function runWorkflow(
     childCount: 5,
   });
 
+  assert.equal(timers.activeCount(), 0, 'Display ready 前不得啟動 timer');
+  reportStaticDisplayReady(1, settingsManager.getSnapshot().revision);
+  assert.equal(timers.activeCount(), 1);
   timers.fireNext(3_000);
   await waitForRevision(presentationStore, 2);
   await waitForCurrentDom(2);
@@ -877,6 +899,8 @@ async function runWorkflow(
     revision: '#2',
     childCount: 2,
   });
+  reportStaticDisplayReady(2, settingsManager.getSnapshot().revision);
+  assert.equal(timers.activeCount(), 1);
 
   // 555 開啟 dialog 時尚未送出；確認後一次原子切換為滿屏。
   await click('inspection-555-button');

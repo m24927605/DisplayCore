@@ -6,6 +6,7 @@ const test = require('node:test');
 const {
   IPC_CHANNELS,
   IPC_ROLES,
+  PAGE_PROGRESS_PHASES,
   PLAYBACK_MODES,
   PRESENTATION_LAYOUTS,
   PRESENTATION_MODES,
@@ -18,6 +19,7 @@ const {
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
   validateEmergencyPayload,
+  validatePageProgressPayload,
   validateSaveSettingsPayload,
   validateStartProgramPayload,
 } = require('../../ipc/validators');
@@ -52,6 +54,11 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
     CONTINUOUS: 'continuous',
     FINITE: 'finite',
   });
+  assert.deepEqual(PAGE_PROGRESS_PHASES, {
+    PENDING: 'pending',
+    READY: 'ready',
+    COMPLETE: 'complete',
+  });
   assert.equal(
     IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
     'dc:v2:control:output-status:get',
@@ -60,15 +67,91 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
     IPC_CHANNELS.CONTROL_OUTPUT_STATUS_CHANGED,
     'dc:v2:control:output-status:changed',
   );
+  assert.equal(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    'dc:v2:display:page-progress:report',
+  );
+  assert.equal(
+    IPC_CHANNELS.DISPLAY_REFIT_REQUESTED,
+    'dc:v2:display:layout:refit-requested',
+  );
 
   for (const value of [
     IPC_CHANNELS,
     IPC_ROLES,
+    PAGE_PROGRESS_PHASES,
     PRESENTATION_LAYOUTS,
     PRESENTATION_MODES,
     PLAYBACK_MODES,
   ]) {
     assert.equal(Object.isFrozen(value), true);
+  }
+});
+
+test('Display 頁面進度只接受目前版面雙閘門需要的 exact payload', () => {
+  const common = {
+    displayEpoch: 1,
+    revision: 7,
+    pageNumber: 2,
+    settingsRevision: 4,
+    layoutGeneration: 11,
+  };
+  const pending = validatePageProgressPayload({
+    ...common,
+    phase: 'pending',
+  });
+  const ready = validatePageProgressPayload({
+    ...common,
+    phase: 'ready',
+    marqueeCount: 2,
+  });
+  const complete = validatePageProgressPayload({
+    ...common,
+    phase: 'complete',
+  });
+
+  assert.deepEqual(pending, {
+    ok: true,
+    value: { ...common, phase: 'pending' },
+  });
+  assert.deepEqual(ready, {
+    ok: true,
+    value: { ...common, phase: 'ready', marqueeCount: 2 },
+  });
+  assert.deepEqual(complete, {
+    ok: true,
+    value: { ...common, phase: 'complete' },
+  });
+
+  for (const payload of [
+    null,
+    {},
+    { ...common, phase: 'unknown' },
+    { ...common, phase: 'pending', marqueeCount: 0 },
+    { ...common, phase: 'complete', marqueeCount: 1 },
+    { ...common, phase: 'ready' },
+    { ...common, phase: 'ready', marqueeCount: -1 },
+    { ...common, phase: 'ready', marqueeCount: 6 },
+    { ...common, phase: 'ready', marqueeCount: 1.5 },
+    { ...common, phase: 'pending', revision: -1 },
+    { ...common, phase: 'pending', revision: 1.5 },
+    { ...common, phase: 'pending', displayEpoch: 0 },
+    { ...common, phase: 'pending', displayEpoch: 1.5 },
+    { ...common, phase: 'pending', pageNumber: 0 },
+    { ...common, phase: 'pending', pageNumber: 101 },
+    { ...common, phase: 'pending', settingsRevision: -1 },
+    { ...common, phase: 'pending', settingsRevision: 1.5 },
+    { ...common, phase: 'pending', layoutGeneration: 0 },
+    {
+      ...common,
+      phase: 'pending',
+      layoutGeneration: Number.MAX_SAFE_INTEGER + 1,
+    },
+    { ...common, phase: 'pending', nextPage: true },
+  ]) {
+    const result = validatePageProgressPayload(payload);
+    assert.equal(result.ok, false, JSON.stringify(payload));
+    assert.equal(result.error.code, 'VALIDATION_FAILED');
   }
 });
 

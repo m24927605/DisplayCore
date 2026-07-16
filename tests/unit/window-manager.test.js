@@ -113,6 +113,8 @@ class FakeBrowserWindow extends EventEmitter {
 
 function createManager({
   onControlClosed = () => {},
+  onDisplayAvailable = () => {},
+  onDisplayUnavailable = () => {},
   onRecoveryFailed = () => {},
   configureDisplayWindow = null,
 } = {}) {
@@ -128,6 +130,8 @@ function createManager({
     displayUrl: 'displaycore://app/display/index.html',
     hardenWebContents: (webContents) => hardenedWebContents.push(webContents),
     onControlClosed,
+    onDisplayAvailable,
+    onDisplayUnavailable,
     onRecoveryFailed,
     configureDisplayWindow,
     windowedDisplay: false,
@@ -196,6 +200,75 @@ test('託管輸出在 Display 載入與顯示前完成定位及全螢幕切換',
   assert.equal(displayWindow.options.fullscreen, false);
   assert.deepEqual(configuredWindows, [displayWindow]);
   assert.equal(displayWindow.shownInactive, true);
+});
+
+test('Display 只有真正顯示後才通知排程器，重建後亦重新通知', async () => {
+  const availableWindows = [];
+  const { manager } = createManager({
+    onDisplayAvailable(displayWindow) {
+      assert.equal(displayWindow.shownInactive, true);
+      availableWindows.push(displayWindow);
+    },
+  });
+
+  await manager.createWindows();
+  const [, oldDisplayWindow] = FakeBrowserWindow.instances;
+  assert.deepEqual(availableWindows, [oldDisplayWindow]);
+
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'crashed' },
+  );
+  await flushAsyncWork();
+  const replacementDisplay = manager.getDisplayWindow();
+  assert.deepEqual(availableWindows, [oldDisplayWindow, replacementDisplay]);
+});
+
+test('Display 可用通知後若建立流程失敗，會成對撤銷排程器可用狀態', async () => {
+  const availabilityEvents = [];
+  const { manager } = createManager({
+    onDisplayAvailable(displayWindow) {
+      availabilityEvents.push('available');
+      assert.equal(displayWindow.shownInactive, true);
+      FakeBrowserWindow.instances[0].destroy();
+    },
+    onDisplayUnavailable() {
+      availabilityEvents.push('unavailable');
+    },
+  });
+
+  await assert.rejects(
+    () => manager.createWindows(),
+    /Display 可用通知完成前已關閉/,
+  );
+
+  assert.deepEqual(availabilityEvents, ['available', 'unavailable']);
+  assert.equal(manager.hasWindows(), false);
+});
+
+test('同一 Display WebContents reload 期間暫停計時，完成後才重新 refit', async () => {
+  const availabilityEvents = [];
+  const { manager } = createManager({
+    onDisplayAvailable() {
+      availabilityEvents.push('available');
+    },
+    onDisplayUnavailable() {
+      availabilityEvents.push('unavailable');
+    },
+  });
+
+  await manager.createWindows();
+  const [, displayWindow] = FakeBrowserWindow.instances;
+  displayWindow.webContents.emit('did-start-loading');
+  assert.deepEqual(availabilityEvents, ['available', 'unavailable']);
+
+  displayWindow.webContents.emit('did-finish-load');
+  await flushAsyncWork();
+  assert.deepEqual(
+    availabilityEvents,
+    ['available', 'unavailable', 'available'],
+  );
 });
 
 test('Display Renderer 重建後對新視窗重新套用目前輸出位置', async () => {
@@ -317,6 +390,41 @@ test('Display Renderer 崩潰時會原子重建整組視窗', async () => {
   assert.equal(manager.getDisplayWindow(), newDisplayWindow);
   assert.equal(manager.hasWindows(), true);
   assert.equal(closeNotifications, 0);
+});
+
+test('Display 異常失效時先且只通知一次排程 gate，再原子重建', async () => {
+  let unavailableNotifications = 0;
+  const { manager } = createManager({
+    onDisplayUnavailable: () => {
+      unavailableNotifications += 1;
+    },
+  });
+  await manager.createWindows();
+  const [, oldDisplayWindow] = FakeBrowserWindow.instances;
+
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'crashed' },
+  );
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'clean-exit' },
+  );
+  await flushAsyncWork();
+
+  assert.equal(unavailableNotifications, 1);
+  assert.equal(FakeBrowserWindow.instances.length, 4);
+
+  manager.prepareForQuit();
+  const replacementDisplay = manager.getDisplayWindow();
+  replacementDisplay.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'clean-exit' },
+  );
+  assert.equal(unavailableNotifications, 1);
 });
 
 test('目前 Display Renderer 即使回報 clean-exit 也視為意外消失並重建', async () => {

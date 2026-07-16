@@ -42,7 +42,27 @@ function createFakeTimers() {
   };
 }
 
-test('PresentationService 每次只串接一個 page timer 並發布完整狀態序列', () => {
+function createProgress(service, phase, overrides = {}) {
+  const snapshot = service.getSnapshot();
+  const progress = {
+    rendererId: 101,
+    phase,
+    displayEpoch: service.getDisplayEpoch(),
+    revision: snapshot.revision,
+    pageNumber: snapshot.pageNumber,
+    settingsRevision: 0,
+    layoutGeneration: 1,
+    ...overrides,
+  };
+
+  if (phase === 'ready' && !Object.hasOwn(progress, 'marqueeCount')) {
+    progress.marqueeCount = 0;
+  }
+
+  return progress;
+}
+
+test('每頁等待目前 Display ready 後才串接最短停留 timer', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
     store: new PresentationStore(),
@@ -53,14 +73,38 @@ test('PresentationService 每次只串接一個 page timer 並發布完整狀態
   service.subscribe((snapshot) => snapshots.push(snapshot));
 
   service.startProgram(createProgram(6, { mode: 'finite', rounds: 1 }));
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'pending')),
+    true,
+  );
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready')),
+    true,
+  );
   assert.equal(timers.active().length, 1);
   assert.equal(timers.active()[0].delay, 3_000);
   assert.equal(timers.active()[0].unrefCalled, true);
 
-  timers.fire(timers.active()[0]);
-  assert.equal(service.getSnapshot().pageNumber, 2);
-  assert.equal(timers.active().length, 1);
+  const firstTimer = timers.active()[0];
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready')),
+    true,
+  );
+  assert.equal(timers.active()[0], firstTimer, 'duplicate ready 不得重新計時');
 
+  timers.fire(firstTimer);
+  assert.equal(service.getSnapshot().pageNumber, 2);
+  assert.equal(timers.active().length, 0);
+
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
+  assert.equal(timers.active().length, 1);
   timers.fire(timers.active()[0]);
   assert.equal(service.getSnapshot().mode, 'blank');
   assert.equal(timers.active().length, 0);
@@ -78,7 +122,7 @@ test('PresentationService 每次只串接一個 page timer 並發布完整狀態
   );
 });
 
-test('單頁有限一輪仍完整停留每頁秒數後才清空', () => {
+test('跑馬燈頁只有最短時間與所有 traversal 都完成後才前進', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
     store: new PresentationStore(),
@@ -86,19 +130,49 @@ test('單頁有限一輪仍完整停留每頁秒數後才清空', () => {
     clearTimer: timers.clearTimer,
   });
 
-  service.startProgram(createProgram(1, { mode: 'finite', rounds: 1 }));
+  service.startProgram(createProgram(6, { mode: 'finite', rounds: 1 }));
+  const firstLayout = createProgress(service, 'ready', { marqueeCount: 2 });
+  assert.equal(service.reportPageProgress(firstLayout), true);
+  timers.fire(timers.active()[0]);
+  assert.equal(service.getSnapshot().revision, 1);
+  assert.equal(service.getSnapshot().pageNumber, 1);
+
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete')),
+    true,
+  );
+  assert.equal(service.getSnapshot().revision, 2);
+  assert.equal(service.getSnapshot().pageNumber, 2);
+
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready', {
+      layoutGeneration: 2,
+      marqueeCount: 1,
+    })),
+    true,
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
   assert.equal(service.getSnapshot().mode, 'page');
-  assert.equal(service.getSnapshot().roundNumber, 1);
-  assert.equal(timers.active().length, 1);
-  assert.equal(timers.active()[0].delay, 3_000);
+  assert.equal(service.getSnapshot().revision, 2);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete', {
+      layoutGeneration: 2,
+    })),
+    true,
+    'duplicate complete 必須冪等',
+  );
 
   timers.fire(timers.active()[0]);
   assert.equal(service.getSnapshot().mode, 'blank');
-  assert.equal(service.getSnapshot().revision, 2);
-  assert.equal(timers.active().length, 0);
+  assert.equal(service.getSnapshot().revision, 3);
 });
 
-test('舊 timer 即使已進入 callback queue，也不能覆蓋 emergency、clear 或新 program', () => {
+test('新 layout、手動失效與狀態替換使舊 timer 及舊事件失效', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
     store: new PresentationStore(),
@@ -107,31 +181,79 @@ test('舊 timer 即使已進入 callback queue，也不能覆蓋 emergency、cle
   });
 
   service.startProgram(createProgram(6));
+  service.reportPageProgress(createProgress(service, 'ready'));
+  const staleAfterRefit = timers.active()[0];
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'pending', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
+  assert.equal(staleAfterRefit.cleared, true);
+  assert.equal(timers.active().length, 0);
+  timers.fire(staleAfterRefit);
+  assert.equal(service.getSnapshot().revision, 1);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete')),
+    false,
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'pending', {
+      layoutGeneration: 2,
+    })),
+    true,
+    'duplicate pending 必須冪等',
+  );
+
+  service.reportPageProgress(createProgress(service, 'ready', {
+    layoutGeneration: 2,
+    marqueeCount: 1,
+  }));
+  const staleAfterInvalidation = timers.active()[0];
+  const delayedReady = createProgress(service, 'ready', {
+    layoutGeneration: 2,
+    marqueeCount: 1,
+  });
+  assert.equal(service.invalidateCurrentPageLayout(), true);
+  assert.equal(staleAfterInvalidation.cleared, true);
+  assert.equal(
+    service.reportPageProgress(delayedReady),
+    false,
+    '已失效 layout 的在途 ready 不得重新建立 timer',
+  );
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete', {
+      layoutGeneration: 2,
+    })),
+    false,
+  );
+
+  service.reportPageProgress(createProgress(service, 'ready', {
+    rendererId: 202,
+    layoutGeneration: 1,
+  }));
   const staleAfterEmergency = timers.active()[0];
   service.showEmergency('555');
-  const emergencyRevision = service.getSnapshot().revision;
   timers.fire(staleAfterEmergency);
   assert.equal(service.getSnapshot().mode, 'emergency');
-  assert.equal(service.getSnapshot().revision, emergencyRevision);
 
   service.startProgram(createProgram(6));
+  service.reportPageProgress(createProgress(service, 'ready'));
   const staleAfterClear = timers.active()[0];
   service.clearPresentation();
-  const clearRevision = service.getSnapshot().revision;
   timers.fire(staleAfterClear);
   assert.equal(service.getSnapshot().mode, 'blank');
-  assert.equal(service.getSnapshot().revision, clearRevision);
 
   service.startProgram(createProgram(6));
+  service.reportPageProgress(createProgress(service, 'ready'));
   const staleAfterReplacement = timers.active()[0];
   service.startProgram(createProgram(1, { mode: 'continuous' }));
-  const replacementRevision = service.getSnapshot().revision;
   timers.fire(staleAfterReplacement);
   assert.equal(service.getSnapshot().messages[0].message, '訊息1');
-  assert.equal(service.getSnapshot().revision, replacementRevision);
 });
 
-test('單頁持續模式不排 timer；dispose 取消 timer、listener 與後續操作', () => {
+test('錯誤頁面進度、單頁持續模式與 dispose 一律 fail closed', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
     store: new PresentationStore(),
@@ -144,13 +266,111 @@ test('單頁持續模式不排 timer；dispose 取消 timer、listener 與後續
   });
 
   service.startProgram(createProgram(1, { mode: 'continuous' }));
+  const current = createProgress(service, 'ready');
+  assert.equal(service.reportPageProgress(current), true);
   assert.equal(timers.active().length, 0);
-  assert.equal(published, 1);
+  assert.equal(
+    service.reportPageProgress({ ...current, revision: current.revision + 1 }),
+    false,
+  );
+  assert.equal(
+    service.reportPageProgress({ ...current, pageNumber: 2 }),
+    false,
+  );
+  assert.equal(
+    service.reportPageProgress({ ...current, rendererId: -1 }),
+    false,
+  );
+  assert.equal(published, 1, '進度回報不得發布 presentation snapshot');
 
   service.startProgram(createProgram(6));
+  service.reportPageProgress(createProgress(service, 'ready'));
   const activeTimer = timers.active()[0];
   service.dispose();
   assert.equal(activeTimer.cleared, true);
   assert.equal(service.startProgram(createProgram(1)), false);
+  assert.equal(service.invalidateCurrentPageLayout(), false);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready')),
+    false,
+  );
   assert.equal(published, 2);
+});
+
+test('設定 revision 與 Display 可見性都必須符合才接受 ready', () => {
+  const timers = createFakeTimers();
+  const service = new PresentationService({
+    store: new PresentationStore(),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+    displayAvailable: false,
+  });
+
+  service.startProgram(createProgram(6));
+  const hiddenReady = createProgress(service, 'ready');
+  assert.equal(service.reportPageProgress(hiddenReady), false);
+  assert.equal(timers.active().length, 0);
+
+  assert.equal(service.setDisplayAvailable(true), true);
+  assert.equal(timers.active().length, 0, '顯示後仍須等待全新 refit');
+  assert.equal(
+    service.reportPageProgress(hiddenReady),
+    false,
+    '顯示前產生但顯示後才抵達的 ready 不得建立 timer',
+  );
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
+  const visibleTimer = timers.active()[0];
+  assert.ok(visibleTimer);
+
+  assert.equal(service.updateSettingsRevision(1), true);
+  assert.equal(visibleTimer.cleared, true);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready', {
+      layoutGeneration: 2,
+    })),
+    false,
+    '舊設定的在途 ready 不得復活 gate',
+  );
+  assert.equal(timers.active().length, 0);
+
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready', {
+      settingsRevision: 1,
+      layoutGeneration: 3,
+    })),
+    true,
+  );
+  assert.equal(timers.active().length, 1);
+  assert.equal(service.updateSettingsRevision(0), false);
+
+  const delayedVisibleReady = createProgress(service, 'ready', {
+    settingsRevision: 1,
+    layoutGeneration: 4,
+  });
+  assert.equal(service.setDisplayAvailable(false), true);
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(delayedVisibleReady),
+    false,
+  );
+  assert.equal(service.setDisplayAvailable(true), true);
+  assert.equal(service.getDisplayEpoch(), 2);
+  assert.equal(
+    service.reportPageProgress(delayedVisibleReady),
+    false,
+    '上一次可見世代的在途 ready 不得在重新顯示後建立 timer',
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready', {
+      settingsRevision: 1,
+      layoutGeneration: 5,
+    })),
+    true,
+  );
 });

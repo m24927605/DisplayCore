@@ -25,7 +25,7 @@ const {
   DisplayTopologyService,
 } = require('./main/display-topology-service');
 const { HdmiDetector } = require('./main/hdmi-detector');
-const { IPC_ROLES } = require('./ipc/channels');
+const { IPC_CHANNELS, IPC_ROLES } = require('./ipc/channels');
 const { IpcCoordinator } = require('./ipc/ipc-coordinator');
 const { PresentationService } = require('./ipc/presentation-service');
 const { PresentationStore } = require('./ipc/presentation-store');
@@ -75,6 +75,7 @@ async function bootstrap() {
     : path.join(app.getPath('userData'), 'displaycore-data');
   let appSession = null;
   let displayPlacementController = null;
+  let presentationService = null;
 
   const windowManager = new WindowManager({
     BrowserWindow,
@@ -90,6 +91,24 @@ async function bootstrap() {
     displayUrl: DISPLAY_URL,
     hardenWebContents,
     onControlClosed: () => app.quit(),
+    onDisplayAvailable: (displayWindow) => {
+      if (!presentationService?.setDisplayAvailable(true)) {
+        throw new Error('PresentationService 尚未準備接收 Display refit。');
+      }
+
+      try {
+        displayWindow.webContents.send(
+          IPC_CHANNELS.DISPLAY_REFIT_REQUESTED,
+          { displayEpoch: presentationService.getDisplayEpoch() },
+        );
+      } catch (error) {
+        presentationService.setDisplayAvailable(false);
+        throw error;
+      }
+    },
+    onDisplayUnavailable: () => {
+      presentationService?.setDisplayAvailable(false);
+    },
     onRecoveryFailed: (error) => {
       console.error('[DisplayCore] 視窗自動復原失敗。', error);
       app.exit(1);
@@ -110,8 +129,9 @@ async function bootstrap() {
     controlDevTools: !app.isPackaged && !isMainProcessSmokeTest,
   });
   const presentationStore = new PresentationStore();
-  const presentationService = new PresentationService({
+  presentationService = new PresentationService({
     store: presentationStore,
+    displayAvailable: false,
     onListenerError: (error) => {
       console.error('[DisplayCore] 顯示狀態發布失敗。', error);
     },

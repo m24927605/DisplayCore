@@ -19,7 +19,9 @@ const defaultConfig = require(path.join(projectRoot, 'config.json'));
 const { validateConfig } = require(
   path.join(projectRoot, 'config', 'config-schema'),
 );
-const { IPC_ROLES } = require(path.join(projectRoot, 'ipc', 'channels'));
+const { IPC_CHANNELS, IPC_ROLES } = require(
+  path.join(projectRoot, 'ipc', 'channels'),
+);
 const { IpcCoordinator } = require(
   path.join(projectRoot, 'ipc', 'ipc-coordinator'),
 );
@@ -147,6 +149,13 @@ function createFakeTimers() {
     fire(index) {
       handles[index].cleared = true;
       handles[index].callback();
+    },
+    fireHandle(handle) {
+      handle.cleared = true;
+      handle.callback();
+    },
+    active() {
+      return handles.filter((handle) => !handle.cleared);
     },
   };
 }
@@ -325,7 +334,9 @@ async function runWorkflow(timers, expectedLogoUrl) {
       'getPresentation',
       'getSettings',
       'onPresentationChanged',
+      'onRefitRequested',
       'onSettingsChanged',
+      'reportPageProgress',
     ],
     interactiveCount: 0,
     reducedMotion: true,
@@ -345,7 +356,12 @@ async function runWorkflow(timers, expectedLogoUrl) {
     pageDurationSeconds: 1,
     repeat: { mode: 'finite', rounds: 1 },
   });
+  assert.equal(timers.handles.length, 0, 'Display ready 前不得啟動 page timer');
   await waitForRevision(1);
+  await waitFor(
+    () => Promise.resolve(timers.active().length === 1),
+    '第一頁 ready 後啟動最短停留 timer',
+  );
 
   const firstPage = await execute(`(() => {
     const stage = document.getElementById('display-stage');
@@ -434,8 +450,12 @@ async function runWorkflow(timers, expectedLogoUrl) {
 
   await verifyResponsiveResolutions();
 
-  assert.equal(timers.handles[0].delay, 1_000);
-  timers.fire(0);
+  await waitFor(
+    () => Promise.resolve(timers.active().length === 1),
+    '最後一次 responsive refit ready 後重新啟動 timer',
+  );
+  assert.equal(timers.active()[0].delay, 1_000);
+  timers.fireHandle(timers.active()[0]);
   await waitForRevision(2);
   assert.deepEqual(
     await execute(
@@ -445,24 +465,28 @@ async function runWorkflow(timers, expectedLogoUrl) {
   );
 
   const longMessage = '超長訊息'.repeat(1_000);
+  const secondLongMessage = '第二列更長訊息'.repeat(700);
   presentationService.startProgram({
-    messages: [{ message: longMessage }],
-    pageDurationSeconds: 3,
-    repeat: { mode: 'continuous' },
+    messages: [
+      { message: longMessage },
+      { message: secondLongMessage },
+    ],
+    pageDurationSeconds: 1,
+    repeat: { mode: 'finite', rounds: 1 },
   });
   await waitForRevision(3);
   const staticOverflow = await execute(`(() => {
-    const row = document.querySelector('.message-row');
+    const rows = [...document.querySelectorAll('.message-row')];
     return {
-      marquee: row.classList.contains('is-marquee'),
-      compressed: row.classList.contains('is-compressed'),
-      message: row.querySelector('.message-text')?.textContent,
+      marquee: rows.map((row) => row.classList.contains('is-marquee')),
+      compressed: rows.map((row) => row.classList.contains('is-compressed')),
+      messages: rows.map((row) => row.querySelector('.message-text')?.textContent),
     };
   })()`);
   assert.deepEqual(staticOverflow, {
-    marquee: false,
-    compressed: true,
-    message: longMessage,
+    marquee: [false, false],
+    compressed: [true, true],
+    messages: [longMessage, secondLongMessage],
   });
 
   const nextConfig = structuredClone(settingsManager.getSnapshot().config);
@@ -478,17 +502,19 @@ async function runWorkflow(timers, expectedLogoUrl) {
       return stage.dataset.revision === '3' &&
         stage.dataset.settingsRevision === '1' &&
         stage.dataset.fittedSettingsRevision === '1' &&
-        stage.dataset.marqueeCount === '1';
+        stage.dataset.marqueeCount === '2';
     })()`),
     '播放中即時套用設定',
   );
 
   const marquee = await execute(`(() => {
     const stage = document.getElementById('display-stage');
-    const row = document.querySelector('.message-row');
+    const rows = [...document.querySelectorAll('.message-row')];
+    const row = rows[0];
     const copies = [...row.querySelectorAll('.marquee-copy')];
     return {
-      active: row.classList.contains('is-marquee'),
+      active: rows.map((item) => item.classList.contains('is-marquee')),
+      trackCount: document.querySelectorAll('.marquee-track').length,
       copyCount: copies.length,
       copiesMatch: copies.every((copy) => copy.textContent === ${JSON.stringify(longMessage)}),
       ariaHidden: row.querySelector('.marquee-track')?.getAttribute('aria-hidden'),
@@ -508,7 +534,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
     };
   })()`);
   assert.deepEqual(marquee, {
-    active: true,
+    active: [true, true],
+    trackCount: 2,
     copyCount: 2,
     copiesMatch: true,
     ariaHidden: 'true',
@@ -526,8 +553,28 @@ async function runWorkflow(timers, expectedLogoUrl) {
   });
   assert.ok(marquee.animationDuration >= 8);
 
-  presentationService.showEmergency('555');
+  await waitFor(
+    () => Promise.resolve(timers.active().length === 1),
+    '跑馬燈 layout ready 後重新啟動最短停留 timer',
+  );
+  const marqueeTimer = timers.active()[0];
+  assert.equal(marqueeTimer.delay, 1_000);
+  timers.fireHandle(marqueeTimer);
+  assert.equal(presentationService.getSnapshot().revision, 3);
+  assert.equal(presentationService.getSnapshot().mode, 'page');
+
+  await execute(`document.querySelectorAll('.marquee-track')[0]
+    .dispatchEvent(new Event('animationiteration'))`);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(presentationService.getSnapshot().revision, 3);
+
+  await execute(`document.querySelectorAll('.marquee-track')[1]
+    .dispatchEvent(new Event('animationiteration'))`);
   await waitForRevision(4, false);
+  assert.equal(presentationService.getSnapshot().mode, 'blank');
+
+  presentationService.showEmergency('555');
+  await waitForRevision(5, false);
   const inspection = await execute(`(() => ({
     mode: document.getElementById('display-stage').dataset.mode,
     normalHidden: document.getElementById('normal-layer').hidden,
@@ -557,14 +604,14 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
 
   presentationService.showEmergency('888');
-  await waitForRevision(5, false);
+  await waitForRevision(6, false);
   assert.equal(
     await execute(`document.querySelector('.fill-cell').textContent`),
     '888',
   );
 
   presentationService.clearPresentation();
-  await waitForRevision(6, false);
+  await waitForRevision(7, false);
   assert.deepEqual(
     await execute(`(() => ({
       mode: document.getElementById('display-stage').dataset.mode,
@@ -689,6 +736,10 @@ async function run() {
   });
 
   await displayWindow.loadURL(DISPLAY_URL);
+  displayWindow.webContents.send(
+    IPC_CHANNELS.DISPLAY_REFIT_REQUESTED,
+    { displayEpoch: presentationService.getDisplayEpoch() },
+  );
   displayWindow.webContents.debugger.attach('1.3');
   await displayWindow.webContents.debugger.sendCommand(
     'Emulation.setEmulatedMedia',

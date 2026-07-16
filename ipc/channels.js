@@ -25,6 +25,13 @@ const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
 });
 
+/** Display 只能回報目前版面的生命週期，不能要求 Main 翻頁。 */
+const PAGE_PROGRESS_PHASES = Object.freeze({
+  PENDING: 'pending',
+  READY: 'ready',
+  COMPLETE: 'complete',
+});
+
 /**
  * v2 是多訊息、分頁及整輪次數契約；不得與舊的單一 message v1 混用。
  */
@@ -39,6 +46,8 @@ const IPC_CHANNELS = Object.freeze({
   CONTROL_GET_OUTPUT_STATUS: 'dc:v2:control:output-status:get',
   DISPLAY_GET_PRESENTATION: 'dc:v2:display:presentation:get',
   DISPLAY_GET_SETTINGS: 'dc:v2:display:settings:get',
+  DISPLAY_REPORT_PAGE_PROGRESS: 'dc:v2:display:page-progress:report',
+  DISPLAY_REFIT_REQUESTED: 'dc:v2:display:layout:refit-requested',
   CONTROL_PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
   CONTROL_OUTPUT_STATUS_CHANGED: 'dc:v2:control:output-status:changed',
   DISPLAY_PRESENTATION_CHANGED: 'dc:v2:display:presentation:changed',
@@ -48,6 +57,7 @@ const IPC_CHANNELS = Object.freeze({
 module.exports = {
   IPC_CHANNELS,
   IPC_ROLES,
+  PAGE_PROGRESS_PHASES,
   PLAYBACK_MODES,
   PRESENTATION_LAYOUTS,
   PRESENTATION_MODES,

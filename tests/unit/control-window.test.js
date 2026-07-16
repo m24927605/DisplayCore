@@ -70,6 +70,7 @@ test('Control HTML 將單則編輯、待播清單與播放設定分成明確區�
 
   assert.match(html, /<form[^>]+id="playback-form"/);
   assert.match(html, /<label[^>]+for="page-duration-input"/);
+  assert.match(html, /每頁最短顯示秒數/);
   assert.match(
     html,
     /<input[^>]+id="page-duration-input"[^>]+type="number"[^>]+min="1"[^>]+max="3600"/,
@@ -90,6 +91,9 @@ test('Control HTML 將單則編輯、待播清單與播放設定分成明確區�
   );
   assert.match(html, /id="round-duration"/);
   assert.match(html, /id="total-duration"/);
+  assert.match(html, /每輪最短時間/);
+  assert.match(html, /預計最短總播放時間/);
+  assert.match(html, /跑馬燈[^<]*完整跑完一輪[^<]*自動延長/);
   assert.match(html, /<button[^>]+id="start-program-button"[^>]+type="submit"/);
   assert.match(html, /<button[^>]+id="clear-display-button"[^>]+type="button"/);
 });

@@ -30,6 +30,10 @@ test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務',
     source,
     /new IpcCoordinator\(\{[\s\S]*displayTopologyService,[\s\S]*displayPlacementController,/,
   );
+  assert.match(source, /displayAvailable:\s*false/);
+  assert.match(source, /onDisplayUnavailable:[\s\S]*setDisplayAvailable\(false\)/);
+  assert.match(source, /onDisplayAvailable:[\s\S]*setDisplayAvailable\(true\)/);
+  assert.match(source, /DISPLAY_REFIT_REQUESTED/);
 });
 
 test('Main 在設定後初始化拓樸與定位，退出時反向解除資源', async () => {

@@ -219,14 +219,14 @@
           <div class="section-heading compact-heading">
             <div>
               <p class="section-kicker">播放設定</p>
-              <h2 id="playback-title">每頁秒數與整輪次數</h2>
+              <h2 id="playback-title">每頁最短秒數與整輪次數</h2>
             </div>
           </div>
 
           <form id="playback-form" novalidate>
             <div class="playback-fields">
               <div class="field-group compact-field">
-                <label for="page-duration-input">每頁顯示秒數</label>
+                <label for="page-duration-input">每頁最短顯示秒數</label>
                 <div class="number-input-row">
                   <input
                     id="page-duration-input"
@@ -242,7 +242,7 @@
                   >
                   <span aria-hidden="true">秒</span>
                 </div>
-                <p id="page-duration-help" class="field-help">每頁都會完整停留這段時間。</p>
+                <p id="page-duration-help" class="field-help">每頁至少完整停留這段時間。</p>
                 <p id="page-duration-error" class="field-error" hidden></p>
               </div>
 
@@ -300,16 +300,16 @@
                 <dd id="summary-page-count">0 頁</dd>
               </div>
               <div>
-                <dt>每輪時間</dt>
+                <dt>每輪最短時間</dt>
                 <dd id="round-duration">—</dd>
               </div>
               <div>
-                <dt>預計總播放時間</dt>
+                <dt>預計最短總播放時間</dt>
                 <dd id="total-duration">—</dd>
               </div>
             </dl>
             <p class="playback-note">
-              總時間是依頁數與整輪次數推算；不會用另一個 timer 中途截斷頁面。
+              跑馬燈頁會等文字完整跑完一輪才翻頁，必要時自動延長；因此試算為最短時間。
             </p>
 
             <div class="form-actions playback-actions">

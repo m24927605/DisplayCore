@@ -13,6 +13,7 @@ const defaultConfig = require('../../config.json');
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const DISPLAY_URL = 'displaycore://app/display/index.html';
 let nextFrameTreeNodeId = 1;
+let nextWebContentsId = 1;
 
 class FakeIpcMain {
   constructor() {
@@ -56,6 +57,7 @@ function createWindow(url) {
   const mainFrame = createFrame(url);
   const webContents = {
     destroyed: false,
+    id: nextWebContentsId++,
     mainFrame,
     sent: [],
     isDestroyed() {
@@ -97,6 +99,24 @@ function createProgram(messageCount = 1, repeat = { mode: 'continuous' }) {
     pageDurationSeconds: 3,
     repeat,
   };
+}
+
+function createPageProgress(snapshot, phase, overrides = {}) {
+  const payload = {
+    phase,
+    displayEpoch: 1,
+    revision: snapshot.revision,
+    pageNumber: snapshot.pageNumber,
+    settingsRevision: 0,
+    layoutGeneration: 1,
+    ...overrides,
+  };
+
+  if (phase === 'ready' && !Object.hasOwn(payload, 'marqueeCount')) {
+    payload.marqueeCount = 0;
+  }
+
+  return payload;
 }
 
 function createSettingsManager() {
@@ -641,7 +661,7 @@ test('Control 啟動清單、滿屏與清除時，Main 對兩個角色發布相�
   }
 });
 
-test('Main scheduler 翻頁與完成清空也會發布，不需要 Display 回報 timer', async () => {
+test('Main scheduler 等 Display ready 後才計算每頁最短時間並發布翻頁', async () => {
   const { ipcMain, presentationService, timers, windows } = createHarness();
   const result = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_START_PROGRAM,
@@ -650,12 +670,29 @@ test('Main scheduler 翻頁與完成清空也會發布，不需要 Display 回�
   );
 
   assert.equal(result.ok, true);
+  assert.equal(timers.length, 0);
+  const firstReady = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'ready'),
+  );
+  assert.deepEqual(firstReady, { ok: true, data: { accepted: true } });
   assert.equal(timers.length, 1);
   assert.equal(timers[0].delay, 3_000);
 
   timers[0].cleared = true;
   timers[0].callback();
   assert.equal(presentationService.getSnapshot().pageNumber, 2);
+  assert.equal(timers.length, 1);
+
+  const secondReady = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'ready', {
+      layoutGeneration: 2,
+    }),
+  );
+  assert.deepEqual(secondReady, { ok: true, data: { accepted: true } });
   assert.equal(timers.length, 2);
 
   timers[1].cleared = true;
@@ -664,6 +701,131 @@ test('Main scheduler 翻頁與完成清空也會發布，不需要 Display 回�
   assert.deepEqual(
     windows.display.webContents.sent.map(({ payload }) => payload.revision),
     [1, 2, 3],
+  );
+});
+
+test('Display 頁面進度受角色、main frame URL、schema 與目前 revision 限制', async () => {
+  const { ipcMain, presentationService, timers, windows } = createHarness();
+  await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    createEvent(windows.control),
+    createProgram(6, { mode: 'finite', rounds: 1 }),
+  );
+  const valid = createPageProgress(
+    presentationService.getSnapshot(),
+    'ready',
+    { marqueeCount: 1 },
+  );
+
+  const forbiddenControl = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.control),
+    valid,
+  );
+  assert.equal(forbiddenControl.ok, false);
+  assert.equal(forbiddenControl.error.code, 'FORBIDDEN');
+
+  const invalidPayload = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    { ...valid, nextPage: true },
+  );
+  assert.equal(invalidPayload.ok, false);
+  assert.equal(invalidPayload.error.code, 'VALIDATION_FAILED');
+  assert.equal(timers.length, 0);
+
+  const displayFrame = createFrame(
+    DISPLAY_URL,
+    windows.display.webContents.mainFrame.frameTreeNodeId,
+  );
+  windows.display.webContents.mainFrame.url = CONTROL_URL;
+  const wrongCurrentUrl = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display, displayFrame),
+    valid,
+  );
+  assert.equal(wrongCurrentUrl.ok, false);
+  assert.equal(wrongCurrentUrl.error.code, 'FORBIDDEN');
+  windows.display.webContents.mainFrame.url = DISPLAY_URL;
+
+  const stale = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    { ...valid, revision: valid.revision - 1 },
+  );
+  assert.deepEqual(stale, { ok: true, data: { accepted: false } });
+
+  const accepted = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    valid,
+  );
+  assert.deepEqual(accepted, { ok: true, data: { accepted: true } });
+  assert.equal(timers.length, 1);
+
+  const oldDisplay = windows.display;
+  windows.display = createWindow(DISPLAY_URL);
+  const forbiddenOldWindow = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(oldDisplay),
+    valid,
+  );
+  assert.equal(forbiddenOldWindow.ok, false);
+  assert.equal(forbiddenOldWindow.error.code, 'FORBIDDEN');
+});
+
+test('設定更新先使目前頁面 gate 失效，再通知 Display 重新 fit', async () => {
+  const { ipcMain, presentationService, timers, windows } = createHarness();
+  await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    createEvent(windows.control),
+    createProgram(6, { mode: 'finite', rounds: 1 }),
+  );
+  await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'ready'),
+  );
+  const activeTimer = timers[0];
+  const delayedOldReady = createPageProgress(
+    presentationService.getSnapshot(),
+    'ready',
+  );
+  const config = structuredClone(defaultConfig);
+  config.appearance.backgroundColor = '#123456';
+
+  const saved = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    createEvent(windows.control),
+    { config, expectedRevision: 0 },
+  );
+
+  assert.equal(saved.ok, true);
+  assert.equal(activeTimer.cleared, true);
+  activeTimer.callback();
+  assert.equal(presentationService.getSnapshot().revision, 1);
+  assert.equal(presentationService.getSnapshot().pageNumber, 1);
+  const delayed = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    delayedOldReady,
+  );
+  assert.deepEqual(delayed, { ok: true, data: { accepted: false } });
+  assert.equal(timers.filter(({ cleared }) => !cleared).length, 0);
+
+  const refitted = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'ready', {
+      settingsRevision: 1,
+      layoutGeneration: 2,
+    }),
+  );
+  assert.deepEqual(refitted, { ok: true, data: { accepted: true } });
+  assert.equal(timers.filter(({ cleared }) => !cleared).length, 1);
+  assert.equal(
+    windows.display.webContents.sent.at(-1).channel,
+    IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
 });
 
@@ -832,6 +994,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
   ];
 
   assert.deepEqual([...ipcMain.handlers.keys()].sort(), requestChannels.sort());

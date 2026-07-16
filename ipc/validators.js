@@ -1,6 +1,6 @@
 'use strict';
 
-const { PLAYBACK_MODES } = require('./channels');
+const { PAGE_PROGRESS_PHASES, PLAYBACK_MODES } = require('./channels');
 const { validateConfig } = require('../config/config-schema');
 
 // 所有限制都由 Main 再驗證，Renderer 的欄位狀態不能視為安全邊界。
@@ -19,6 +19,23 @@ const PROGRAM_KEYS = Object.freeze([
 const MESSAGE_KEYS = Object.freeze(['message']);
 const EMERGENCY_KEYS = Object.freeze(['code']);
 const SAVE_SETTINGS_KEYS = Object.freeze(['config', 'expectedRevision']);
+const PAGE_PROGRESS_KEYS = Object.freeze([
+  'displayEpoch',
+  'layoutGeneration',
+  'pageNumber',
+  'phase',
+  'revision',
+  'settingsRevision',
+]);
+const READY_PAGE_PROGRESS_KEYS = Object.freeze([
+  'displayEpoch',
+  'layoutGeneration',
+  'marqueeCount',
+  'pageNumber',
+  'phase',
+  'revision',
+  'settingsRevision',
+]);
 const EMERGENCY_CODES = new Set(['555', '888']);
 
 function isPlainObject(value) {
@@ -220,6 +237,84 @@ function validateSaveSettingsPayload(payload) {
   };
 }
 
+/**
+ * 驗證 Display 對目前版面的受限回報。
+ *
+ * Renderer 不得攜帶 next page、時間或 message；Main 只接受足以判斷目前
+ * layout 是否 ready，以及所有跑馬燈是否已各完成一輪的最小欄位。
+ */
+function validatePageProgressPayload(payload) {
+  const ready = payload?.phase === PAGE_PROGRESS_PHASES.READY;
+  const expectedKeys = ready
+    ? READY_PAGE_PROGRESS_KEYS
+    : PAGE_PROGRESS_KEYS;
+
+  if (!hasExactKeys(payload, expectedKeys)) {
+    return validationFailure('頁面進度資料包含缺少或不允許的欄位。');
+  }
+
+  if (!Object.values(PAGE_PROGRESS_PHASES).includes(payload.phase)) {
+    return validationFailure('頁面進度階段不在允許清單中。', 'phase');
+  }
+
+  if (!Number.isSafeInteger(payload.displayEpoch) || payload.displayEpoch < 1) {
+    return validationFailure(
+      'Display 可見世代必須是正整數。',
+      'displayEpoch',
+    );
+  }
+
+  if (!Number.isSafeInteger(payload.revision) || payload.revision < 0) {
+    return validationFailure('頁面狀態版本必須是非負整數。', 'revision');
+  }
+
+  if (
+    !Number.isSafeInteger(payload.settingsRevision) ||
+    payload.settingsRevision < 0
+  ) {
+    return validationFailure(
+      '顯示設定版本必須是非負整數。',
+      'settingsRevision',
+    );
+  }
+
+  const maximumPageNumber = MAX_MESSAGE_COUNT / MESSAGES_PER_PAGE;
+  if (
+    !Number.isSafeInteger(payload.pageNumber) ||
+    payload.pageNumber < 1 ||
+    payload.pageNumber > maximumPageNumber
+  ) {
+    return validationFailure(
+      `頁碼必須是 1 至 ${maximumPageNumber} 的整數。`,
+      'pageNumber',
+    );
+  }
+
+  if (
+    !Number.isSafeInteger(payload.layoutGeneration) ||
+    payload.layoutGeneration < 1
+  ) {
+    return validationFailure(
+      '版面版本必須是正整數。',
+      'layoutGeneration',
+    );
+  }
+
+  if (
+    ready &&
+    (!Number.isSafeInteger(payload.marqueeCount) ||
+      payload.marqueeCount < 0 ||
+      payload.marqueeCount > MESSAGES_PER_PAGE)
+  ) {
+    return validationFailure(
+      `跑馬燈列數必須是 0 至 ${MESSAGES_PER_PAGE} 的整數。`,
+      'marqueeCount',
+    );
+  }
+
+  return { ok: true, value: { ...payload } };
+}
+
 module.exports = {
   MAX_CYCLE_COUNT,
   MAX_MESSAGE_CODE_POINTS,
@@ -228,6 +323,7 @@ module.exports = {
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
   validateEmergencyPayload,
+  validatePageProgressPayload,
   validateSaveSettingsPayload,
   validateStartProgramPayload,
 };

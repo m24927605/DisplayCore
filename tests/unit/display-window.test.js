@@ -74,13 +74,14 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.doesNotMatch(css, /will-change:\s*all\b/);
 });
 
-test('Display app 僅使用唯讀 bridge 與 textContent，且不解析緊急代碼語意', async () => {
+test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊急代碼語意', async () => {
   const source = await readDisplayFile('app.mjs');
 
   assert.match(source, /window\.displayCoreDisplay/);
   assert.match(source, /createDisplayController/);
   assert.match(source, /createDisplaySettingsController/);
   assert.match(source, /createDisplayClock/);
+  assert.match(source, /createPageProgressReporter/);
   assert.match(source, /SAFE_DISPLAY_SETTINGS/);
   assert.match(source, /findLargestFittingFontSize/);
   assert.match(source, /\.textContent\s*=/);
@@ -89,6 +90,10 @@ test('Display app 僅使用唯讀 bridge 與 textContent，且不解析緊急代
   assert.match(source, /document\.fonts\.ready/);
   assert.match(source, /bridge\.getSettings\(\)/);
   assert.match(source, /bridge\.onSettingsChanged\(listener\)/);
+  assert.match(source, /bridge\.reportPageProgress\(\.\.\.args\)/);
+  assert.match(source, /bridge\.onRefitRequested\(handleRefitRequested\)/);
+  assert.match(source, /sessionStorage\.getItem/);
+  assert.match(source, /sessionStorage\.setItem/);
   assert.doesNotMatch(source, /prefers-reduced-motion/);
   assert.match(source, /\.setProperty\(\s*'--display-background'/);
   assert.match(source, /\.setProperty\(\s*'--display-font-family'/);

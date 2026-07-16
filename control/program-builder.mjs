@@ -175,8 +175,8 @@ export function removeMessage(messages, index) {
 /**
  * 建立 Main Process 可驗證的完整 program，並推算頁數與播放時間。
  *
- * 有限模式的總秒數＝頁數 × 每頁秒數 × 整輪次數。它只是顯示給使用者
- * 的派生值，不會成為另一個可中途截斷的 timer。
+ * 有限模式的最短總秒數＝頁數 × 每頁最短秒數 × 整輪次數。跑馬燈可能
+ * 自動延長單頁，因此這只是下限試算，不會成為中途截斷 page 的 timer。
  */
 export function buildProgram({
   messages,

@@ -130,7 +130,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   );
 });
 
-test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => {
+test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報能力', async () => {
   const harness = await loadPreload('preload/display-preload.js');
   const api = harness.exposed.get('displayCoreDisplay');
 
@@ -139,7 +139,9 @@ test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => 
     'getPresentation',
     'getSettings',
     'onPresentationChanged',
+    'onRefitRequested',
     'onSettingsChanged',
+    'reportPageProgress',
   ]);
   assert.deepEqual(harness.requiredModules, ['electron/renderer']);
   assert.equal(api.startProgram, undefined);
@@ -150,6 +152,9 @@ test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => 
 
   await api.getPresentation();
   await api.getSettings();
+  await api.reportPageProgress('pending', 7, 2, 4, 9, 11);
+  await api.reportPageProgress('ready', 7, 2, 4, 9, 11, 3);
+  await api.reportPageProgress('complete', 7, 2, 4, 9, 11);
   assert.equal(
     harness.invocations[0].channel,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
@@ -158,6 +163,50 @@ test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => 
     harness.invocations[1].channel,
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
   );
+  assert.deepEqual(
+    harness.invocations.slice(2).map(({ channel, args }) => ({
+      channel,
+      payload: JSON.parse(JSON.stringify(args[0])),
+    })),
+    [
+      {
+        channel: IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+        payload: {
+          phase: 'pending',
+          revision: 7,
+          pageNumber: 2,
+          settingsRevision: 4,
+          displayEpoch: 9,
+          layoutGeneration: 11,
+        },
+      },
+      {
+        channel: IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+        payload: {
+          phase: 'ready',
+          revision: 7,
+          pageNumber: 2,
+          settingsRevision: 4,
+          displayEpoch: 9,
+          layoutGeneration: 11,
+          marqueeCount: 3,
+        },
+      },
+      {
+        channel: IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+        payload: {
+          phase: 'complete',
+          revision: 7,
+          pageNumber: 2,
+          settingsRevision: 4,
+          displayEpoch: 9,
+          layoutGeneration: 11,
+        },
+      },
+    ],
+  );
+  assert.equal(api.invoke, undefined);
+  assert.equal(api.send, undefined);
 });
 
 test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async () => {
@@ -184,6 +233,12 @@ test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async ()
       apiName: 'displayCoreDisplay',
       channel: IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
       subscribeMethod: 'onSettingsChanged',
+    },
+    {
+      file: 'preload/display-preload.js',
+      apiName: 'displayCoreDisplay',
+      channel: IPC_CHANNELS.DISPLAY_REFIT_REQUESTED,
+      subscribeMethod: 'onRefitRequested',
     },
   ]) {
     const harness = await loadPreload(scenario.file);

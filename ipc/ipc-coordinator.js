@@ -5,6 +5,7 @@ const { createDisplaySettingsSnapshot } = require('./display-settings');
 const { createControlOutputSnapshot } = require('./output-status');
 const {
   validateEmergencyPayload,
+  validatePageProgressPayload,
   validateSaveSettingsPayload,
   validateStartProgramPayload,
 } = require('./validators');
@@ -20,6 +21,7 @@ const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
   IPC_CHANNELS.DISPLAY_GET_SETTINGS,
+  IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
 ]);
 
 function success(data) {
@@ -80,9 +82,9 @@ function knownOperationError(error) {
 /**
  * Main Process 的 v2 IPC 路由與角色授權中心。
  *
- * Control 只能啟動清單、顯示固定緊急代碼及清除；Display 只能讀取 snapshot。
- * Main scheduler 發布的自動翻頁也透過同一 subscription 廣播，Renderer 不需
- * 也不能回報 next page。
+ * Control 只能啟動清單、顯示固定緊急代碼及清除；Display 可讀取 snapshot，
+ * 並回報受限的目前 layout 進度。Main 仍是唯一能推進頁面的角色，Renderer
+ * 不能回報 next page、timer 或任何顯示內容。
  */
 class IpcCoordinator {
   constructor({
@@ -117,12 +119,29 @@ class IpcCoordinator {
       return;
     }
 
+    if (typeof this.settingsManager?.getSnapshot === 'function') {
+      const initialSettingsRevision = this.settingsManager.getSnapshot().revision;
+      if (
+        !this.presentationService.updateSettingsRevision(
+          initialSettingsRevision,
+        )
+      ) {
+        throw new Error('PresentationService 無法同步目前設定版本。');
+      }
+    }
+
     this.presentationUnsubscribe = this.presentationService.subscribe((snapshot) => {
       this.broadcast(snapshot);
     });
 
     if (typeof this.settingsManager?.subscribe === 'function') {
       this.settingsUnsubscribe = this.settingsManager.subscribe((snapshot) => {
+        // 新設定可能改變字型、Logo 與跑馬燈；先切換 revision 並封鎖在途舊回報。
+        if (!this.presentationService.updateSettingsRevision(snapshot.revision)) {
+          this.logger.warn('[DisplayCore] 忽略非單調的顯示設定版本。');
+          return;
+        }
+
         try {
           this.broadcastSettings(createDisplaySettingsSnapshot(snapshot));
         } catch (error) {
@@ -214,6 +233,14 @@ class IpcCoordinator {
         ),
       ),
     );
+    this.ipcMain.handle(
+      IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+      (event, payload) => this.handleRequest(
+        IPC_ROLES.DISPLAY,
+        event,
+        () => this.reportPageProgress(event, payload),
+      ),
+    );
     this.registered = true;
   }
 
@@ -299,7 +326,10 @@ class IpcCoordinator {
         return false;
       }
 
-      return senderFrame.url === this.allowedUrls[role];
+      return (
+        senderFrame.url === this.allowedUrls[role] &&
+        mainFrame.url === this.allowedUrls[role]
+      );
     } catch (error) {
       this.logger.warn('[DisplayCore] IPC sender 驗證無法完成。', error);
       return false;
@@ -326,6 +356,22 @@ class IpcCoordinator {
     return success(
       this.presentationService.showEmergency(validation.value.code),
     );
+  }
+
+  reportPageProgress(event, payload) {
+    const validation = validatePageProgressPayload(payload);
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    return success({
+      accepted: this.presentationService.reportPageProgress({
+        ...validation.value,
+        // rendererId 只取自已授權的 WebContents，不信任 Renderer payload。
+        rendererId: event.sender.id,
+      }),
+    });
   }
 
   async saveSettings(payload) {
