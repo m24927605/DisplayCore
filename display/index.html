@@ -8,11 +8,36 @@
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DisplayCore 顯示畫面</title>
-    <link rel="stylesheet" href="./scaffold.css">
+    <link rel="stylesheet" href="./display.css">
   </head>
   <body>
-    <main aria-label="DisplayCore 顯示視窗">
-      <p>DisplayCore</p>
+    <main
+      id="display-stage"
+      class="display-stage"
+      data-mode="blank"
+      aria-label="DisplayCore 顯示視窗"
+    >
+      <p
+        id="display-announcement"
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      ></p>
+      <section
+        id="page-layer"
+        class="page-layer"
+        aria-hidden="true"
+        hidden
+      ></section>
+      <section
+        id="fill-layer"
+        class="fill-layer"
+        aria-hidden="true"
+        hidden
+      ></section>
     </main>
+
+    <script type="module" src="./app.mjs"></script>
   </body>
 </html>

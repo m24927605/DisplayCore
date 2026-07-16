@@ -38,7 +38,11 @@ test('Control 與 Display 頁面只載入本機資源並設定嚴格 CSP', async
     /<script[^>]+type="module"[^>]+src="\.\/app\.mjs"[^>]*><\/script>/i,
   );
   assert.doesNotMatch(controlHtml, /<script(?![^>]+src=)[^>]*>/i);
-  assert.doesNotMatch(displayHtml, /<script[\s>]/i);
+  assert.match(
+    displayHtml,
+    /<script[^>]+type="module"[^>]+src="\.\/app\.mjs"[^>]*><\/script>/i,
+  );
+  assert.doesNotMatch(displayHtml, /<script(?![^>]+src=)[^>]*>/i);
 });
 
 test('Display preload 只使用 sandbox 允許的 Electron bridge', async () => {
