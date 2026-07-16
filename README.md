@@ -27,7 +27,7 @@ npm run make
 - `npm run package`：產生目前作業系統的未安裝應用程式封裝。
 - `npm run make`：產生安裝檔；Squirrel.Windows 應於 Windows 10／11 環境執行。
 
-## 目前進度：第 7 步設定管理
+## 目前進度：第 8 步響應式畫面
 
 本階段已完成：
 
@@ -51,9 +51,9 @@ npm run make
 - 有限模式播完最後一輪、最後一頁的完整秒數後才自動清空。
 - 新清單、清除畫面、555 或 888 會使舊 timer 失效，不會自動恢復舊播放。
 - Display 只接收目前頁面的 1～5 則完整 `message`，不接收整份草稿清單。
-- Display 以彈性排版、viewport 單位與有界二分搜尋自動縮放單行字體。
-- 到達最小字級仍放不下時使用水平跑馬燈；不換行、不分段、不省略。
-- `555` 臨檢與 `888` 解除臨檢使用獨立 IPC、確認對話框與 6×4 滿屏排版，不受單行限制。
+- Display 以 Flexbox、CSS Grid、viewport 單位與有界二分搜尋自動縮放單行字體。
+- 一般訊息固定為每頁 1～5 行，每則維持單行、不換行、不分段、不省略；到達有效最小字級仍放不下時，依設定使用水平跑馬燈或水平壓縮。
+- `555` 臨檢與 `888` 解除臨檢使用獨立 IPC、確認對話框與 6×4 滿屏排版，不受單行限制，並固定採黑底白字以維持緊急狀態辨識度。
 - 啟動時先訂閱再取得 snapshot，並以 revision 防止舊狀態覆蓋新事件。
 - Control、Display、IPC、排程器、安全邊界與真實 Electron Renderer 的自動化測試。
 - 封裝內 `config.json` 作為唯讀、版本化的原廠預設值；執行期不會寫回應用程式目錄。
@@ -64,7 +64,12 @@ npm run make
 - Logo 由 Main Process 原生選檔，只接受 PNG、JPEG、WebP 與真實檔案簽章。
 - Logo 會複製至受管理的 `userData/displaycore-data/logos`；Renderer 不會取得來源絕對路徑。
 - Control 提供獨立設定對話框、未儲存狀態、載入預設值、欄位錯誤與安全儲存流程。
-- 第 7 步只保存設定；Logo、顏色、字型、日期時間與跑馬燈將於第 8 步套用至 Display。
+- Main 只將 Display 所需的唯讀設定白名單投影至專用 IPC，不會傳送預設設定、警告內容、本機路徑或 Control 寫入能力。
+- Logo 透過同源的 `displaycore://app/managed/logo/...` 受限路由載入；每次請求都重新核對目前設定、檔案類型、大小、簽章與內容雜湊。
+- Logo、背景色、字型、字色、最小字級、日期時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
+- 日期時間依設定語系與 12／24 小時制格式化，更新排程對齊下一個整分鐘，避免長時間運作累積漂移。
+- 一般畫面會為 Logo 與日期時間保留比例式安全區；空白畫面與臨檢滿屏會隱藏所有裝飾資訊。
+- 真實 Electron Renderer 自動驗證 1366×768、1600×900、1920×1080、2560×1440 與 3840×2160，包含溢位、重疊、字體縮放、跑馬燈切換及即時設定更新。
 
 ## 播放模型
 
@@ -87,7 +92,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 6. 確認頁數、每輪時間與預計總時間，按「顯示清單到電視」。
 7. `555` 與 `888` 會先開啟確認對話框；確認後立即覆蓋一般清單。
 8. 「清空待播清單」只刪除未送出草稿；「清除電視畫面」只清除 Main 目前播放。
-9. 按「開啟系統設定」可調整本機設定；「載入預設值」只改草稿，仍須按「儲存設定」。
+9. 按「開啟系統設定」可調整本機設定；「載入預設值」只改草稿，按「儲存設定」後才會保存並即時更新 Display。
 
 所有輸入都以純文字預覽與呈現，不會解析 HTML。編號／花名、自定義內容及前後空白不會被 trim、正規化或轉換。Main 會再次套用最多 500 則與合計 10,000 Unicode code point 的資源保護上限。
 
@@ -103,7 +108,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 - 最小字體仍放不下時是否使用水平跑馬燈。
 - 預設顯示模式與全螢幕偏好；實體螢幕選擇於第 9 步啟用。
 
-Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到受管理目錄；設定只保存 `logos/...` 相對名稱。即使設定檔或 IPC payload 被竄改，Main 端仍會重新驗證。
+Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到受管理目錄；設定只保存 `logos/...` 相對名稱。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
 
 ## 模組位置
 
@@ -113,7 +118,7 @@ Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案�
 - `main/window-manager.js`：雙視窗建立、聚焦、關閉與異常復原。
 - `main/window-options.js`：BrowserWindow 安全選項。
 - `main/security-policy.js`：Session 與 WebContents 安全政策。
-- `main/local-protocol.js`：受限的本機靜態資源協定。
+- `main/local-protocol.js`：受限的本機靜態資源與目前啟用 Logo 同源協定。
 
 IPC：
 
@@ -121,9 +126,10 @@ IPC：
 - `ipc/validators.js`：Main 端 payload 白名單與資源上限。
 - `ipc/presentation-store.js`：不可變播放狀態機、分頁投影與 revision。
 - `ipc/presentation-service.js`：翻頁 timer、整輪推進與狀態發布。
+- `ipc/display-settings.js`：將完整設定投影為 Display 所需的唯讀安全白名單。
 - `ipc/ipc-coordinator.js`：sender 授權、request handler 與雙視窗廣播。
 - `preload.js`：Control 的顯示操作、設定讀寫與 Logo 選擇固定用途 API。
-- `preload/display-preload.js`：Display 的唯讀 snapshot API。
+- `preload/display-preload.js`：Display 的唯讀播放與顯示設定 snapshot API。
 
 設定：
 
@@ -148,17 +154,19 @@ Control：
 Display：
 
 - `display/index.html`：無互動元素的唯讀顯示舞台。
-- `display/display.css`：單行分頁、跑馬燈與 6×4 滿屏響應式排版。
+- `display/display.css`：Logo／時鐘安全區、單行分頁、跑馬燈與 6×4 滿屏響應式排版。
 - `display/presentation-state.mjs`：Display snapshot 白名單與 revision 驗證。
 - `display/display-controller.mjs`：先訂閱後查詢與亂序防護。
-- `display/text-fit.mjs`：有界二分搜尋字體適配。
-- `display/app.mjs`：純文字呈現、字體適配、跑馬燈與 ResizeObserver。
+- `display/settings-state.mjs`：Display 設定白名單、型別驗證、安全預設值與 revision 防亂序規則。
+- `display/settings-controller.mjs`：獨立於播放狀態的設定訂閱、查詢與錯誤復原。
+- `display/date-time.mjs`：本機日期時間格式化與整分鐘對齊排程。
+- `display/text-fit.mjs`：依實際列高計算有效字級範圍並執行有界二分搜尋。
+- `display/app.mjs`：純文字呈現、即時視覺設定、Logo、時鐘、字體適配、跑馬燈與 ResizeObserver。
 
 Presentation 中每個項目只有一個完整 `message`，不會拆成 title、編號、花名或動作欄位。Main 與 Display 不依一般文字內容判斷 555／888。
 
 ## 尚未進入的步驟
 
-- 第 8 步：將 Logo、日期時間、顏色、字型與跑馬燈設定完整套用到多解析度畫面。
 - 第 9 步：HDMI 自動偵測、輸出螢幕選擇與 Display 全螢幕切換。
 - 第 10 步：Windows 10／11 實機與目標解析度的完整驗收。
 

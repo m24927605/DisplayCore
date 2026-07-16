@@ -234,9 +234,15 @@ async function serveManagedLogo({
 /**
  * 建立 Electron protocol.handle 使用的本機資源處理器。
  *
+ * 公開靜態資源只允許專案白名單目錄；受管理 Logo 則使用獨立精確路由，
+ * 並在每次讀取時重新驗證目前設定、普通檔案、大小、簽章與內容雜湊。
+ *
  * @param {object} dependencies
  * @param {string} dependencies.appRoot
  * @param {typeof Electron.net} dependencies.net
+ * @param {string|null} [dependencies.managedLogoDirectory]
+ * @param {(() => string|null)|null} [dependencies.getAllowedLogoPath]
+ * @param {typeof defaultFileSystem} [dependencies.fileSystem]
  * @returns {(request: GlobalRequest) => Promise<Response>}
  */
 function createLocalProtocolHandler({
@@ -286,6 +292,8 @@ function createLocalProtocolHandler({
  * @param {Electron.Protocol} dependencies.protocol
  * @param {typeof Electron.net} dependencies.net
  * @param {string} dependencies.appRoot
+ * @param {string} dependencies.managedLogoDirectory
+ * @param {() => string|null} dependencies.getAllowedLogoPath
  */
 function installLocalProtocol({
   protocol,
