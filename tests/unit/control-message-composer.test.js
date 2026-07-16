@@ -79,7 +79,7 @@ test('自定義動作可加編號／花名，也可直接顯示公告', async ()
   );
 });
 
-test('組合時只清除編號／花名外側空白，自定義內容原樣保留', async () => {
+test('編號／花名與自定義內容皆原樣保留，不做 trim 或 HTML 解析', async () => {
   const { ACTIONS, composeMessage } = await loadComposer();
   const customText = '  <script>僅作文字</script>  ';
 
@@ -92,19 +92,19 @@ test('組合時只清除編號／花名外側空白，自定義內容原樣保�
     {
       ok: true,
       presentation: {
-        message: `Nancy${customText}`,
+        message: `  Nancy  ${customText}`,
         layout: 'single-line',
       },
     },
   );
 });
 
-test('固定動作需要編號／花名，自定義需要非空白內容', async () => {
+test('固定動作需要編號／花名，自定義需要非空字串', async () => {
   const { ACTIONS, composeMessage } = await loadComposer();
 
   assert.deepEqual(
     composeMessage({
-      recipient: '   ',
+      recipient: '',
       action: ACTIONS.GO_TO_LOBBY,
       customText: '',
     }),
@@ -120,13 +120,28 @@ test('固定動作需要編號／花名，自定義需要非空白內容', async
     composeMessage({
       recipient: '',
       action: ACTIONS.CUSTOM,
-      customText: '   ',
+      customText: '',
     }),
     {
       ok: false,
       error: {
         field: 'customText',
         message: '請輸入自定義內容。',
+      },
+    },
+  );
+
+  assert.deepEqual(
+    composeMessage({
+      recipient: '   ',
+      action: ACTIONS.GO_TO_LOBBY,
+      customText: '',
+    }),
+    {
+      ok: true,
+      presentation: {
+        message: '   請至前廳',
+        layout: 'single-line',
       },
     },
   );

@@ -30,8 +30,8 @@ function failure(field, message) {
 /**
  * 將 Control 表單資料組合成單一 presentation。
  *
- * 編號／花名只移除外側誤輸入的空白；自定義內容不 trim、不解析 HTML，
- * 確保送入 IPC 的 message 與管理人員輸入一致。
+ * 編號／花名及自定義內容皆不 trim、不正規化、不解析 HTML，確保送入
+ * IPC 的 message 與管理人員輸入完全一致。
  *
  * @param {object} input
  * @param {unknown} input.recipient 編號或花名
@@ -51,17 +51,16 @@ export function composeMessage({ recipient, action, customText }) {
     return failure('action', '請選擇有效的動作指令。');
   }
 
-  const normalizedRecipient = recipient.trim();
   let actionText;
 
   if (action === ACTIONS.CUSTOM) {
-    if (customText.trim().length === 0) {
+    if (customText.length === 0) {
       return failure('customText', '請輸入自定義內容。');
     }
 
     actionText = customText;
   } else {
-    if (normalizedRecipient.length === 0) {
+    if (recipient.length === 0) {
       return failure('recipient', '請輸入編號或花名。');
     }
 
@@ -71,7 +70,7 @@ export function composeMessage({ recipient, action, customText }) {
   return {
     ok: true,
     presentation: {
-      message: `${normalizedRecipient}${actionText}`,
+      message: `${recipient}${actionText}`,
       layout: 'single-line',
     },
   };
