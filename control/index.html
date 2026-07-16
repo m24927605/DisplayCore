@@ -654,12 +654,75 @@
           <fieldset id="display-settings-fieldset" class="settings-fieldset">
             <legend>輸出偏好</legend>
             <div class="settings-readonly-summary">
-              <span>預設模式</span>
-              <strong id="display-mode-summary">自動選擇，優先外接螢幕</strong>
+              <span>目前實際輸出</span>
+              <strong id="display-mode-summary">正在取得螢幕資訊…</strong>
             </div>
             <p class="settings-fieldset-description">
-              可從控制台查看目前輸出狀態；輸出偏好會安全保留於本機設定。
+              自動模式優先使用外接螢幕；指定螢幕中斷時會暫用主螢幕，原設定不會遺失。
             </p>
+
+            <div class="display-choice-list">
+              <label class="display-choice" for="display-auto-input">
+                <input
+                  id="display-auto-input"
+                  name="display-selection-mode"
+                  value="auto"
+                  type="radio"
+                  checked
+                >
+                <span>
+                  <strong>自動選擇（建議）</strong>
+                  <small>優先外接螢幕；沒有外接螢幕時使用主螢幕。</small>
+                </span>
+              </label>
+              <label class="display-choice" for="display-manual-input">
+                <input
+                  id="display-manual-input"
+                  name="display-selection-mode"
+                  value="manual"
+                  type="radio"
+                >
+                <span>
+                  <strong>指定螢幕</strong>
+                  <small>固定使用清單中的螢幕，重新連接後會自動恢復。</small>
+                </span>
+              </label>
+            </div>
+            <p id="display-mode-error" class="field-error" hidden></p>
+
+            <div class="settings-field settings-field-wide display-select-field">
+              <label for="default-display-select">指定輸出螢幕</label>
+              <select
+                id="default-display-select"
+                aria-describedby="default-display-help default-display-error"
+                disabled
+              >
+                <option value="">正在取得可用螢幕…</option>
+              </select>
+              <p id="default-display-help" class="field-help">
+                解析度為 Windows 縮放比例換算的約略值；清單不代表特定 HDMI 接頭。
+              </p>
+              <p id="default-display-error" class="field-error" hidden></p>
+            </div>
+
+            <div class="settings-switch-list display-fullscreen-setting">
+              <label class="settings-switch" for="display-fullscreen-input">
+                <span>
+                  <strong>Display 全螢幕顯示（建議）</strong>
+                  <small>關閉後會在所選螢幕中央，以可用區 80% 的 16:9 視窗顯示。</small>
+                </span>
+                <input id="display-fullscreen-input" type="checkbox" checked>
+              </label>
+            </div>
+            <p id="display-fullscreen-error" class="field-error" hidden></p>
+            <p
+              id="display-output-notice"
+              class="display-output-notice"
+              role="status"
+              aria-live="polite"
+              aria-atomic="true"
+              hidden
+            ></p>
           </fieldset>
         </div>
 

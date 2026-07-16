@@ -214,6 +214,28 @@ test('第 9 步提供獨立 HDMI 狀態與實際輸出摘要', async () => {
   assert.doesNotMatch(html, /HDMI[^<]*第 9 步|輸出螢幕[^<]*第 9 步/);
 });
 
+test('第 9 步設定對話框可編輯自動／指定螢幕與 Display 全螢幕', async () => {
+  const html = await readControlFile('index.html');
+
+  assert.match(
+    html,
+    /<input[^>]+id="display-auto-input"[^>]+name="display-selection-mode"[^>]+value="auto"/,
+  );
+  assert.match(
+    html,
+    /<input[^>]+id="display-manual-input"[^>]+name="display-selection-mode"[^>]+value="manual"/,
+  );
+  assert.match(html, /<select[^>]+id="default-display-select"/);
+  assert.match(html, /id="default-display-error"[^>]+class="field-error"/);
+  assert.match(
+    html,
+    /<input[^>]+id="display-fullscreen-input"[^>]+type="checkbox"/,
+  );
+  assert.match(html, /id="display-output-notice"[^>]+role="status"/);
+  assert.match(html, /關閉後[^<]*80%[^<]*16:9/);
+  assert.doesNotMatch(html, /HDMI 狀態、實體螢幕清單與全螢幕切換將在第 9 步/);
+});
+
 test('Control 只載入本機 module，且 Renderer 僅使用最小權限 bridge', async () => {
   const [html, appSource] = await Promise.all([
     readControlFile('index.html'),
@@ -265,6 +287,7 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /select[^{]*{[^}]*min-block-size:\s*2\.75rem/s);
   assert.match(css, /\.output-status-summary\s*{[^}]*display:\s*grid/s);
   assert.match(css, /\.output-settings-button\s*{[^}]*min-block-size:\s*2\.75rem/s);
+  assert.match(css, /\.display-choice\s*{[^}]*min-block-size:\s*2\.75rem/s);
   assert.match(
     css,
     /@media\s*\([^)]*max-width[^)]*\)[\s\S]*\.output-status-summary\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/,

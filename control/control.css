@@ -1501,6 +1501,91 @@ input[readonly] {
   margin-block-start: 0.875rem;
 }
 
+.display-choice-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.625rem;
+  margin-block-start: 0.875rem;
+}
+
+.display-choice {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  min-block-size: 2.75rem;
+  gap: 0.625rem;
+  padding: 0.75rem;
+  border-radius: var(--radius-control);
+  background: #ffffff;
+  box-shadow: var(--shadow-control);
+  cursor: pointer;
+  transition-property: background-color, box-shadow, transform;
+  transition-duration: 150ms;
+  transition-timing-function: ease-out;
+}
+
+.display-choice:active {
+  transform: scale(0.96);
+}
+
+.display-choice:has(input:checked) {
+  background: var(--primary-soft);
+  box-shadow:
+    0 0 0 0.125rem var(--primary),
+    0 0.25rem 0.75rem rgb(21 87 213 / 8%);
+}
+
+.display-choice:has(input:focus-visible) {
+  outline: 0.1875rem solid rgb(44 107 237 / 24%);
+  outline-offset: 0.125rem;
+}
+
+.display-choice:has(input:disabled) {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.display-choice input {
+  inline-size: 1.125rem;
+  block-size: 1.125rem;
+  margin: 0.125rem 0 0;
+  accent-color: var(--primary);
+}
+
+.display-choice > span {
+  display: grid;
+  gap: 0.25rem;
+  min-inline-size: 0;
+}
+
+.display-choice strong {
+  color: #26354b;
+  font-size: 0.875rem;
+}
+
+.display-choice small {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.45;
+}
+
+.display-select-field,
+.display-fullscreen-setting {
+  margin-block-start: 0.875rem;
+}
+
+.display-output-notice {
+  margin: 0.875rem 0 0;
+  padding: 0.75rem;
+  border-radius: var(--radius-control);
+  color: var(--warning);
+  background: var(--warning-soft);
+  font-size: 0.75rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
 .settings-readonly-summary {
   display: flex;
   align-items: baseline;
@@ -1546,6 +1631,12 @@ input[readonly] {
   }
 
   .emergency-panel {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 34rem) {
+  .display-choice-list {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -1676,6 +1767,7 @@ input[readonly] {
 
   .button:active:not(:disabled),
   .action-option:active,
+  .display-choice:active,
   .queue-remove-button:active:not(:disabled) {
     transform: none;
   }
