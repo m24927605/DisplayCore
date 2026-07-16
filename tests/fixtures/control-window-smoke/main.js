@@ -33,6 +33,7 @@ const {
 const { createControlWindowOptions } = require(
   path.join(projectRoot, 'main', 'window-options'),
 );
+const defaultConfig = require(path.join(projectRoot, 'config.json'));
 
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const DISPLAY_URL = 'displaycore://app/display/index.html';
@@ -227,6 +228,140 @@ function expectedBlank(revision) {
   };
 }
 
+function createSettingsManager() {
+  let snapshot = {
+    config: structuredClone(defaultConfig),
+    defaults: structuredClone(defaultConfig),
+    revision: 0,
+    notice: null,
+  };
+
+  return {
+    getSnapshot() {
+      return structuredClone(snapshot);
+    },
+    async saveConfig(config, expectedRevision) {
+      assert.equal(expectedRevision, snapshot.revision);
+      snapshot = {
+        config: structuredClone(config),
+        defaults: snapshot.defaults,
+        revision: snapshot.revision + 1,
+        notice: null,
+      };
+      return this.getSnapshot();
+    },
+  };
+}
+
+async function runSettingsWorkflow(settingsManager, presentationStore) {
+  const presentationBefore = structuredClone(presentationStore.getSnapshot());
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('settings-status').textContent === '設定已載入。'
+    )()`),
+    '設定對話框載入',
+  );
+
+  const initial = await execute(`(() => ({
+    background: document.getElementById('background-color-input').value,
+    fontColor: document.getElementById('font-color-input').value,
+    minimumFontSize: document.getElementById('minimum-font-size-input').value,
+    dirty: document.getElementById('settings-dirty-status').textContent,
+    saveDisabled: document.getElementById('save-settings-button').disabled,
+  }))()`);
+  assert.deepEqual(initial, {
+    background: '#000000',
+    fontColor: '#FFFFFF',
+    minimumFontSize: '2.5',
+    dirty: '所有變更皆已儲存',
+    saveDisabled: true,
+  });
+
+  await setTextInput('background-color-input', '#123456');
+  await click('choose-logo-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('logo-path-input').value === 'logos/smoke-logo.png' &&
+      document.getElementById('logo-enabled-input').checked
+    )()`),
+    'Logo 匯入結果',
+  );
+  assert.equal(
+    await execute(`document.getElementById('background-color-picker').value`),
+    '#123456',
+  );
+  assert.equal(
+    await execute(`document.getElementById('settings-dirty-status').textContent`),
+    '有未儲存變更',
+  );
+
+  await setTextInput('minimum-font-size-input', '2.6');
+  await execute(`document.getElementById('settings-form').requestSubmit()`);
+  await waitFor(
+    () => execute(
+      `document.getElementById('minimum-font-size-error').hidden === false`,
+    ),
+    '設定欄位錯誤',
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 0);
+  assert.equal(
+    await execute(`document.getElementById('settings-dialog').open`),
+    true,
+  );
+
+  await setTextInput('minimum-font-size-input', '3.25');
+  await execute(`document.getElementById('settings-form').requestSubmit()`);
+  await waitFor(
+    () => execute(`document.getElementById('settings-dialog').open === false`),
+    '設定儲存後關閉',
+  );
+
+  const saved = settingsManager.getSnapshot();
+  assert.equal(saved.revision, 1);
+  assert.equal(saved.config.appearance.backgroundColor, '#123456');
+  assert.equal(saved.config.appearance.minimumFontSizeRem, 3.25);
+  assert.deepEqual(saved.config.logo, {
+    enabled: true,
+    path: 'logos/smoke-logo.png',
+  });
+  assert.deepEqual(presentationStore.getSnapshot(), presentationBefore);
+
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('background-color-input').value === '#123456' &&
+      document.getElementById('settings-status').textContent === '設定已載入。' &&
+      document.getElementById('load-defaults-button').disabled === false
+    )()`),
+    '重新載入已儲存設定',
+  );
+  await click('load-defaults-button');
+  assert.equal(
+    await execute(`document.getElementById('background-color-input').value`),
+    '#000000',
+  );
+  assert.equal(
+    await execute(`document.getElementById('settings-close-button').textContent`),
+    '捨棄變更',
+  );
+  await click('settings-close-button');
+  assert.equal(settingsManager.getSnapshot().revision, 1);
+
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('background-color-input').value === '#123456' &&
+      document.getElementById('settings-status').textContent === '設定已載入。'
+    )()`),
+    '捨棄預設草稿後重新載入',
+  );
+  await click('settings-close-button');
+}
+
 function createTimerHarness() {
   const timers = [];
 
@@ -305,7 +440,7 @@ async function addDraftMessage({ recipient, action, customText = '' }) {
   return expectedMessage;
 }
 
-async function runWorkflow(presentationStore, timers) {
+async function runWorkflow(presentationStore, timers, settingsManager) {
   await waitFor(
     () => execute(
       `document.getElementById('clear-display-button').disabled === false`,
@@ -336,6 +471,8 @@ async function runWorkflow(presentationStore, timers) {
       'startProgram',
     ],
   });
+
+  await runSettingsWorkflow(settingsManager, presentationStore);
 
   // 輸入七則完整 message；加入草稿不可提前修改 Main 畫面。
   const literalHtml =
@@ -706,9 +843,21 @@ async function run() {
     return startProgram(program);
   };
 
+  const settingsManager = createSettingsManager();
+  const logoImporter = {
+    async chooseAndImport() {
+      return {
+        canceled: false,
+        assetPath: 'logos/smoke-logo.png',
+      };
+    },
+  };
+
   coordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
+    settingsManager,
+    logoImporter,
     getWindow: (role) =>
       role === IPC_ROLES.CONTROL ? controlWindow : null,
     allowedUrls: {
@@ -742,7 +891,7 @@ async function run() {
   });
 
   await controlWindow.loadURL(CONTROL_URL);
-  await runWorkflow(presentationStore, timers);
+  await runWorkflow(presentationStore, timers, settingsManager);
   finish(0, '[DisplayCore] Control window workflow succeeded.');
 }
 

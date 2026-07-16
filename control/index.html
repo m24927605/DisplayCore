@@ -368,6 +368,31 @@
         </section>
 
         <section
+          id="settings-launch"
+          class="panel settings-launch-panel"
+          aria-labelledby="settings-launch-title"
+        >
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">本機設定</p>
+              <h2 id="settings-launch-title">顯示外觀與行為</h2>
+            </div>
+            <span class="step-badge">第 7 步</span>
+          </div>
+          <p class="section-description">
+            管理 Logo、色彩、字型與顯示行為。儲存後會保留於本機；第 8 步才會套用到電視畫面。
+          </p>
+          <button
+            id="open-settings-button"
+            class="button button-secondary settings-launch-button"
+            type="button"
+            disabled
+          >
+            開啟系統設定
+          </button>
+        </section>
+
+        <section
           id="future-system-features"
           class="panel future-panel"
           aria-labelledby="future-title"
@@ -388,10 +413,6 @@
               <span class="future-label">輸出螢幕與全螢幕：第 9 步提供</span>
               <span class="future-state">待建立</span>
             </li>
-            <li>
-              <span class="future-label">系統設定：第 7 步提供</span>
-              <span class="future-state">待建立</span>
-            </li>
           </ul>
           <button class="button button-secondary future-button" type="button" disabled>
             後續步驟開放
@@ -407,6 +428,231 @@
         <p id="operation-error" role="alert" aria-live="assertive" hidden></p>
       </footer>
     </div>
+
+    <dialog
+      id="settings-dialog"
+      aria-labelledby="settings-dialog-title"
+      aria-describedby="settings-dialog-description"
+    >
+      <form id="settings-form" class="settings-dialog-surface" novalidate>
+        <header class="settings-dialog-header">
+          <div>
+            <p class="section-kicker">DisplayCore 本機設定</p>
+            <h2 id="settings-dialog-title">顯示外觀與行為</h2>
+          </div>
+          <output
+            id="settings-dirty-status"
+            class="settings-dirty-status"
+            role="status"
+            aria-live="polite"
+          >所有變更皆已儲存</output>
+          <p id="settings-dialog-description" class="dialog-description">
+            設定會保存於這台電腦；第 8 步才會套用到 Display Window。
+          </p>
+          <p id="settings-notice" class="settings-notice" role="alert" hidden></p>
+          <p
+            id="settings-error"
+            class="settings-error"
+            role="alert"
+            aria-live="assertive"
+            hidden
+          ></p>
+          <p id="settings-status" class="settings-status" role="status" aria-live="polite"></p>
+        </header>
+
+        <div class="settings-dialog-body">
+          <fieldset id="logo-settings-fieldset" class="settings-fieldset">
+            <legend>Logo</legend>
+            <p class="settings-fieldset-description">
+              僅接受 PNG、JPEG 或 WebP；圖片會複製到 DisplayCore 管理的本機目錄。
+            </p>
+            <label class="settings-switch" for="logo-enabled-input">
+              <span>
+                <strong>顯示 Logo</strong>
+                <small>保留圖片時可隨時停用或重新啟用。</small>
+              </span>
+              <input id="logo-enabled-input" type="checkbox">
+            </label>
+            <div class="settings-field">
+              <label for="logo-path-input">已匯入圖片</label>
+              <input
+                id="logo-path-input"
+                type="text"
+                readonly
+                aria-describedby="logo-path-help logo-path-error"
+                placeholder="尚未選擇 Logo"
+              >
+              <p id="logo-path-help" class="field-help">只顯示受管理的相對資產名稱。</p>
+              <p id="logo-path-error" class="field-error" hidden></p>
+            </div>
+            <div class="settings-inline-actions">
+              <button
+                id="choose-logo-button"
+                class="button button-secondary"
+                type="button"
+              >
+                選擇 Logo
+              </button>
+              <button
+                id="remove-logo-button"
+                class="button button-quiet"
+                type="button"
+              >
+                移除 Logo
+              </button>
+            </div>
+          </fieldset>
+
+          <fieldset id="appearance-settings-fieldset" class="settings-fieldset">
+            <legend>顯示外觀</legend>
+            <p class="settings-fieldset-description">
+              色彩與字型在第 8 步接上 Display Window 前只會儲存，不會改動目前電視畫面。
+            </p>
+            <div class="settings-control-grid">
+              <div class="settings-field">
+                <label for="background-color-input">背景顏色</label>
+                <div class="settings-color-control">
+                  <input
+                    id="background-color-picker"
+                    type="color"
+                    aria-label="選擇背景顏色"
+                    value="#000000"
+                  >
+                  <input
+                    id="background-color-input"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-describedby="background-color-error"
+                    value="#000000"
+                  >
+                </div>
+                <p id="background-color-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="settings-field">
+                <label for="font-color-input">字體顏色</label>
+                <div class="settings-color-control">
+                  <input
+                    id="font-color-picker"
+                    type="color"
+                    aria-label="選擇字體顏色"
+                    value="#ffffff"
+                  >
+                  <input
+                    id="font-color-input"
+                    type="text"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-describedby="font-color-error"
+                    value="#FFFFFF"
+                  >
+                </div>
+                <p id="font-color-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="settings-field settings-field-wide">
+                <label for="font-family-select">顯示字型</label>
+                <select id="font-family-select" aria-describedby="font-family-error">
+                  <option value="Microsoft JhengHei UI, Microsoft JhengHei, sans-serif">
+                    微軟正黑體（建議）
+                  </option>
+                  <option value="Microsoft JhengHei, sans-serif">微軟正黑體</option>
+                  <option value="Arial, sans-serif">Arial</option>
+                  <option value="sans-serif">系統無襯線字體</option>
+                </select>
+                <p id="font-family-error" class="field-error" hidden></p>
+              </div>
+
+              <div class="settings-field settings-field-wide">
+                <label for="minimum-font-size-input">最小字體大小</label>
+                <div class="settings-unit-control">
+                  <input
+                    id="minimum-font-size-input"
+                    type="number"
+                    min="1"
+                    max="12"
+                    step="0.25"
+                    inputmode="decimal"
+                    aria-describedby="minimum-font-size-help minimum-font-size-error"
+                  >
+                  <span aria-hidden="true">rem</span>
+                </div>
+                <p id="minimum-font-size-help" class="field-help">
+                  字體縮至此大小仍放不下時，才依設定使用跑馬燈。
+                </p>
+                <p id="minimum-font-size-error" class="field-error" hidden></p>
+              </div>
+            </div>
+          </fieldset>
+
+          <fieldset id="behavior-settings-fieldset" class="settings-fieldset">
+            <legend>顯示行為</legend>
+            <div class="settings-switch-list">
+              <label class="settings-switch" for="date-time-enabled-input">
+                <span>
+                  <strong>顯示日期時間</strong>
+                  <small>使用本機時間與設定語系。</small>
+                </span>
+                <input id="date-time-enabled-input" type="checkbox">
+              </label>
+              <label class="settings-switch" for="hour12-input">
+                <span>
+                  <strong>使用 12 小時制</strong>
+                  <small>停用時使用 24 小時制。</small>
+                </span>
+                <input id="hour12-input" type="checkbox">
+              </label>
+              <label class="settings-switch" for="marquee-enabled-input">
+                <span>
+                  <strong>必要時啟用水平跑馬燈</strong>
+                  <small>只有一般單行訊息在最小字體仍放不下時使用。</small>
+                </span>
+                <input id="marquee-enabled-input" type="checkbox">
+              </label>
+            </div>
+          </fieldset>
+
+          <fieldset id="display-settings-fieldset" class="settings-fieldset">
+            <legend>輸出偏好</legend>
+            <div class="settings-readonly-summary">
+              <span>預設模式</span>
+              <strong id="display-mode-summary">自動選擇，優先外接螢幕</strong>
+            </div>
+            <p class="settings-fieldset-description">
+              HDMI 狀態、實體螢幕清單與全螢幕切換將在第 9 步啟用。
+            </p>
+          </fieldset>
+        </div>
+
+        <footer class="settings-dialog-footer">
+          <button
+            id="load-defaults-button"
+            class="button button-quiet settings-defaults-button"
+            type="button"
+          >
+            載入預設值
+          </button>
+          <div class="dialog-actions">
+            <button
+              id="settings-close-button"
+              class="button button-secondary"
+              type="button"
+            >
+              關閉
+            </button>
+            <button
+              id="save-settings-button"
+              class="button button-primary"
+              type="submit"
+              disabled
+            >
+              儲存設定
+            </button>
+          </div>
+        </footer>
+      </form>
+    </dialog>
 
     <dialog
       id="inspection-confirm-dialog"

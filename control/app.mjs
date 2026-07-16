@@ -14,6 +14,8 @@ import {
   formatDuration,
   removeMessage,
 } from './program-builder.mjs';
+import { createSettingsController } from './settings-controller.mjs';
+import { createSettingsView } from './settings-view.mjs';
 
 const elements = Object.freeze({
   messageForm: document.getElementById('message-form'),
@@ -733,6 +735,9 @@ function hasRequiredBridge(api) {
     'startProgram',
     'showEmergency',
     'clearPresentation',
+    'getSettings',
+    'saveSettings',
+    'chooseLogo',
   ].every((methodName) => typeof api?.[methodName] === 'function');
 }
 
@@ -761,7 +766,22 @@ async function boot() {
     ),
     showEmergency: (code) => bridge.showEmergency(code),
     clearPresentation: () => bridge.clearPresentation(),
+    getSettings: () => bridge.getSettings(),
+    saveSettings: (config, expectedRevision) =>
+      bridge.saveSettings(config, expectedRevision),
+    chooseLogo: () => bridge.chooseLogo(),
   });
+
+  const settingsView = createSettingsView({
+    document,
+    onGlobalStatus: renderStatus,
+  });
+  const settingsController = createSettingsController({
+    api,
+    view: settingsView,
+  });
+  settingsView.connectController(settingsController);
+  settingsView.bind();
 
   uiState.controller = createControlController({ api, view: createView() });
   const started = await uiState.controller.start();
@@ -772,6 +792,8 @@ async function boot() {
     'beforeunload',
     () => {
       uiState.controller?.dispose();
+      settingsController.dispose();
+      settingsView.dispose();
     },
     { once: true },
   );

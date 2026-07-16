@@ -132,13 +132,60 @@ test('555 與 888 使用獨立按鈕及原生確認對話框防止誤觸', async
   assert.match(html, /id="inspection-cancel-button"[^>]+autofocus/);
 });
 
-test('尚未進入的設定與螢幕功能明確標示步驟且不可操作', async () => {
+test('第 7 步提供獨立系統設定對話框與完整可存取欄位', async () => {
+  const html = await readControlFile('index.html');
+
+  assert.match(html, /<section[^>]+id="settings-launch"/);
+  assert.match(html, /<button[^>]+id="open-settings-button"[^>]+type="button"/);
+  assert.match(html, /<dialog[^>]+id="settings-dialog"/);
+  assert.match(html, /<form[^>]+id="settings-form"[^>]+novalidate/);
+
+  for (const fieldsetId of [
+    'logo-settings-fieldset',
+    'appearance-settings-fieldset',
+    'behavior-settings-fieldset',
+    'display-settings-fieldset',
+  ]) {
+    assert.match(html, new RegExp(`<fieldset[^>]+id="${fieldsetId}"`));
+  }
+
+  for (const inputId of [
+    'logo-enabled-input',
+    'logo-path-input',
+    'background-color-input',
+    'font-family-select',
+    'font-color-input',
+    'minimum-font-size-input',
+    'date-time-enabled-input',
+    'hour12-input',
+    'marquee-enabled-input',
+  ]) {
+    assert.match(html, new RegExp(`<label[^>]+for="${inputId}"`));
+    assert.match(html, new RegExp(`id="${inputId}"`));
+  }
+
+  assert.match(
+    html,
+    /id="minimum-font-size-input"[^>]+min="1"[^>]+max="12"[^>]+step="0\.25"/,
+  );
+  assert.match(html, /id="logo-path-input"[^>]+readonly/);
+  assert.match(html, /id="settings-dirty-status"[^>]+role="status"/);
+  assert.match(html, /id="settings-notice"[^>]+role="alert"/);
+  assert.match(html, /id="settings-error"[^>]+role="alert"/);
+  assert.match(html, /<button[^>]+id="choose-logo-button"[^>]+type="button"/);
+  assert.match(html, /<button[^>]+id="remove-logo-button"[^>]+type="button"/);
+  assert.match(html, /<button[^>]+id="load-defaults-button"[^>]+type="button"/);
+  assert.match(html, /<button[^>]+id="settings-close-button"[^>]+type="button"/);
+  assert.match(html, /<button[^>]+id="save-settings-button"[^>]+type="submit"/);
+  assert.match(html, /第 8 步[^<]*套用/);
+});
+
+test('尚未進入的 HDMI 與實體螢幕功能明確標示第 9 步且不可操作', async () => {
   const html = await readControlFile('index.html');
 
   assert.match(html, /id="future-system-features"/);
   assert.match(html, /HDMI[^<]*第 9 步/);
   assert.match(html, /輸出螢幕[^<]*第 9 步/);
-  assert.match(html, /系統設定[^<]*第 7 步/);
   assert.match(html, /<button[^>]+disabled/);
 });
 
@@ -185,6 +232,12 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /\.current-message\.is-fill-screen\s*{[^}]*white-space:\s*pre-wrap/s);
   assert.match(css, /\.queue-pages\s*{[^}]*overflow(?:-y)?:\s*auto/s);
   assert.match(css, /\.playback-summary\s*{[^}]*display:\s*grid/s);
+  assert.match(css, /#settings-dialog\s*{[^}]*max-block-size:/s);
+  assert.match(css, /\.settings-dialog-body\s*{[^}]*overflow-y:\s*auto/s);
+  assert.match(css, /\.settings-control-grid\s*{[^}]*display:\s*grid/s);
+  assert.match(css, /\.settings-switch\s*{[^}]*min-block-size:\s*2\.75rem/s);
+  assert.match(css, /input\[type="color"\][^{]*{[^}]*min-block-size:\s*2\.75rem/s);
+  assert.match(css, /select[^{]*{[^}]*min-block-size:\s*2\.75rem/s);
   assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
   assert.doesNotMatch(css, /will-change:\s*all\b/);
 
