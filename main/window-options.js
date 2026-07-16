@@ -83,13 +83,21 @@ function createControlWindowOptions({ preloadPath, session, devTools = false }) 
  * @param {string} options.preloadPath
  * @param {Electron.Session} options.session
  * @param {boolean} options.windowed
+ * @param {boolean} options.managedOutput 是否由第 9 步定位控制器接管
  * @returns {Electron.BrowserWindowConstructorOptions}
  */
-function createDisplayWindowOptions({ preloadPath, session, windowed = false }) {
+function createDisplayWindowOptions({
+  preloadPath,
+  session,
+  windowed = false,
+  managedOutput = false,
+}) {
   const options = {
     show: false,
     frame: false,
-    fullscreen: !windowed,
+    // 託管模式先建立隱藏的普通視窗，定位控制器套用正確螢幕 bounds 後
+    // 才進入全螢幕，避免作業系統先在主螢幕閃現。
+    fullscreen: !windowed && !managedOutput,
     alwaysOnTop: true,
     focusable: false,
     skipTaskbar: true,

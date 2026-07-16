@@ -22,8 +22,9 @@ class WindowManager {
    * @param {string} dependencies.displayUrl
    * @param {(contents: Electron.WebContents) => void} dependencies.hardenWebContents
    * @param {() => void} dependencies.onControlClosed
-   * @param {(error: Error) => void} dependencies.onRecoveryFailed
-   * @param {boolean} dependencies.windowedDisplay
+ * @param {(error: Error) => void} dependencies.onRecoveryFailed
+ * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} [dependencies.configureDisplayWindow]
+ * @param {boolean} dependencies.windowedDisplay
    * @param {boolean} dependencies.controlDevTools
    */
   constructor({
@@ -37,6 +38,7 @@ class WindowManager {
     hardenWebContents,
     onControlClosed = () => {},
     onRecoveryFailed = () => {},
+    configureDisplayWindow = null,
     windowedDisplay = false,
     controlDevTools = false,
   }) {
@@ -50,6 +52,7 @@ class WindowManager {
     this.hardenWebContents = hardenWebContents;
     this.onControlClosed = onControlClosed;
     this.onRecoveryFailed = onRecoveryFailed;
+    this.configureDisplayWindow = configureDisplayWindow;
     this.windowedDisplay = windowedDisplay;
     this.controlDevTools = controlDevTools;
 
@@ -135,6 +138,7 @@ class WindowManager {
         preloadPath: this.displayPreloadPath,
         session: appSession,
         windowed: this.windowedDisplay,
+        managedOutput: Boolean(this.configureDisplayWindow),
       }),
     );
 
@@ -143,6 +147,10 @@ class WindowManager {
     this.bindWindowLifecycle(controlWindow, displayWindow);
 
     try {
+      if (this.configureDisplayWindow) {
+        await this.configureDisplayWindow(displayWindow);
+      }
+
       this.hardenWebContents(controlWindow.webContents);
       this.hardenWebContents(displayWindow.webContents);
 

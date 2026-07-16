@@ -33,6 +33,9 @@ class FakeBrowserWindow extends EventEmitter {
     this.destroyedPromise = new Promise((resolve, reject) => {
       this.rejectDestroyedLoad = reject;
     });
+    // 定位可能在 loadURL 前失敗；此時 destroy 仍會拒絕 gate，但尚無
+    // Promise.race 消費它，測試雙必須先安裝安全 rejection handler。
+    void this.destroyedPromise.catch(() => undefined);
     FakeBrowserWindow.instances.push(this);
   }
 
@@ -111,6 +114,7 @@ class FakeBrowserWindow extends EventEmitter {
 function createManager({
   onControlClosed = () => {},
   onRecoveryFailed = () => {},
+  configureDisplayWindow = null,
 } = {}) {
   const hardenedWebContents = [];
   const projectRoot = path.resolve(__dirname, '..', '..');
@@ -125,6 +129,7 @@ function createManager({
     hardenWebContents: (webContents) => hardenedWebContents.push(webContents),
     onControlClosed,
     onRecoveryFailed,
+    configureDisplayWindow,
     windowedDisplay: false,
   });
 
@@ -173,6 +178,63 @@ test('WindowManager 建立並載入安全的 Control 與 Display Window', async 
   assert.equal(manager.getControlWindow(), controlWindow);
   assert.equal(manager.getDisplayWindow(), displayWindow);
   assert.equal(manager.hasWindows(), true);
+});
+
+test('託管輸出在 Display 載入與顯示前完成定位及全螢幕切換', async () => {
+  const configuredWindows = [];
+  const { manager } = createManager({
+    configureDisplayWindow(displayWindow) {
+      assert.equal(displayWindow.loadedUrl, undefined);
+      assert.equal(displayWindow.shownInactive, undefined);
+      configuredWindows.push(displayWindow);
+    },
+  });
+
+  await manager.createWindows();
+  const [, displayWindow] = FakeBrowserWindow.instances;
+
+  assert.equal(displayWindow.options.fullscreen, false);
+  assert.deepEqual(configuredWindows, [displayWindow]);
+  assert.equal(displayWindow.shownInactive, true);
+});
+
+test('Display Renderer 重建後對新視窗重新套用目前輸出位置', async () => {
+  const configuredWindows = [];
+  const { manager } = createManager({
+    configureDisplayWindow(displayWindow) {
+      configuredWindows.push(displayWindow);
+    },
+  });
+  await manager.createWindows();
+  const [, oldDisplayWindow] = FakeBrowserWindow.instances;
+
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'crashed' },
+  );
+  await flushAsyncWork();
+
+  const [, , , replacementDisplayWindow] = FakeBrowserWindow.instances;
+  assert.deepEqual(configuredWindows, [oldDisplayWindow, replacementDisplayWindow]);
+  assert.equal(replacementDisplayWindow.options.fullscreen, false);
+  assert.equal(replacementDisplayWindow.shownInactive, true);
+});
+
+test('輸出位置初始化失敗時原子清除雙視窗且不顯示錯誤位置', async () => {
+  const { manager } = createManager({
+    configureDisplayWindow() {
+      throw new Error('測試用定位失敗');
+    },
+  });
+
+  await assert.rejects(() => manager.createWindows(), /測試用定位失敗/);
+  const [controlWindow, displayWindow] = FakeBrowserWindow.instances;
+
+  assert.equal(controlWindow.destroyed, true);
+  assert.equal(displayWindow.destroyed, true);
+  assert.equal(controlWindow.shown, undefined);
+  assert.equal(displayWindow.shownInactive, undefined);
 });
 
 test('併發建立請求共用同一組視窗', async () => {

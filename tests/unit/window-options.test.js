@@ -68,6 +68,19 @@ test('Display Window 預設為全螢幕、無框、置頂且不可操作', () =>
   assert.equal(options.webPreferences.backgroundThrottling, false);
 });
 
+test('第 9 步託管輸出先建立隱藏的非全螢幕視窗，等待定位後再切換', () => {
+  const options = createDisplayWindowOptions({
+    preloadPath: displayPreloadPath,
+    session: appSession,
+    managedOutput: true,
+  });
+
+  assert.equal(options.show, false);
+  assert.equal(options.fullscreen, false);
+  assert.equal(options.frame, false);
+  assert.equal(options.focusable, false);
+});
+
 test('視窗煙霧測試模式將 Display 限制為 16:9 視窗', () => {
   const options = createDisplayWindowOptions({
     preloadPath: displayPreloadPath,
