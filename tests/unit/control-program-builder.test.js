@@ -166,6 +166,15 @@ test('清單上限與 Unicode code point 總量上限在 Control 先行擋下', 
   assert.equal(appendMessage(createMessages(500), '超量').ok, false);
   assert.equal(appendMessage([], '😀'.repeat(10_000)).ok, true);
   assert.equal(appendMessage([], '😀'.repeat(10_001)).ok, false);
+  assert.equal(
+    appendMessage(
+      [{ message: '甲'.repeat(6_000) }],
+      '乙'.repeat(4_001),
+    ).ok,
+    false,
+  );
+  assert.equal(appendMessage([], '').ok, false);
+  assert.equal(appendMessage([], 555).ok, false);
 
   const malformedMessages = createMessages(1);
   malformedMessages[0].extra = true;
@@ -178,6 +187,26 @@ test('清單上限與 Unicode code point 總量上限在 Control 先行擋下', 
     }).ok,
     false,
   );
+});
+
+test('每頁秒數與整輪次數的最小、最大邊界都可建立', async () => {
+  const { buildProgram } = await loadBuilder();
+
+  for (const [pageDurationSeconds, rounds] of [
+    [1, 1],
+    [3_600, 999],
+  ]) {
+    const result = buildProgram({
+      messages: createMessages(500),
+      pageDurationSeconds,
+      repeatMode: 'finite',
+      rounds,
+    });
+    assert.equal(result.ok, true);
+    assert.equal(result.program.pageDurationSeconds, pageDurationSeconds);
+    assert.deepEqual(result.program.repeat, { mode: 'finite', rounds });
+    assert.equal(result.summary.pageCount, 100);
+  }
 });
 
 test('播放時間以中文小時、分、秒顯示', async () => {

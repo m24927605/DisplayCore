@@ -78,6 +78,26 @@ test('PresentationService 每次只串接一個 page timer 並發布完整狀態
   );
 });
 
+test('單頁有限一輪仍完整停留每頁秒數後才清空', () => {
+  const timers = createFakeTimers();
+  const service = new PresentationService({
+    store: new PresentationStore(),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
+
+  service.startProgram(createProgram(1, { mode: 'finite', rounds: 1 }));
+  assert.equal(service.getSnapshot().mode, 'page');
+  assert.equal(service.getSnapshot().roundNumber, 1);
+  assert.equal(timers.active().length, 1);
+  assert.equal(timers.active()[0].delay, 3_000);
+
+  timers.fire(timers.active()[0]);
+  assert.equal(service.getSnapshot().mode, 'blank');
+  assert.equal(service.getSnapshot().revision, 2);
+  assert.equal(timers.active().length, 0);
+});
+
 test('舊 timer 即使已進入 callback queue，也不能覆蓋 emergency、clear 或新 program', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({

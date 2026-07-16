@@ -40,7 +40,7 @@ function contrastRatio(firstColor, secondColor) {
   return (luminances[0] + 0.05) / (luminances[1] + 0.05);
 }
 
-test('Control HTML 提供語意化的一般訊息操作與精確預覽', async () => {
+test('Control HTML 將單則編輯、待播清單與播放設定分成明確區域', async () => {
   const html = await readControlFile('index.html');
 
   assert.match(html, /<form[^>]+id="message-form"/);
@@ -59,7 +59,38 @@ test('Control HTML 提供語意化的一般訊息操作與精確預覽', async (
   assert.match(html, /<label[^>]+for="custom-message-input"/);
   assert.match(html, /<textarea[^>]+id="custom-message-input"/);
   assert.match(html, /<output[^>]+id="message-preview"/);
-  assert.match(html, /<button[^>]+id="show-message-button"[^>]+type="submit"/);
+  assert.match(html, /<button[^>]+id="add-message-button"[^>]+type="submit"/);
+
+  assert.match(html, /<section[^>]+id="message-queue"/);
+  assert.match(html, /id="queue-pages"/);
+  assert.match(html, /id="queue-empty-state"[^>]+role="status"/);
+  assert.match(html, /id="queue-message-count"/);
+  assert.match(html, /id="queue-page-count"/);
+  assert.match(html, /<button[^>]+id="clear-queue-button"[^>]+type="button"/);
+
+  assert.match(html, /<form[^>]+id="playback-form"/);
+  assert.match(html, /<label[^>]+for="page-duration-input"/);
+  assert.match(
+    html,
+    /<input[^>]+id="page-duration-input"[^>]+type="number"[^>]+min="1"[^>]+max="3600"/,
+  );
+  assert.match(html, /<fieldset[^>]+id="repeat-mode-fieldset"/);
+
+  for (const mode of ['finite', 'continuous']) {
+    assert.match(
+      html,
+      new RegExp(`<input[^>]+name="repeat-mode"[^>]+value="${mode}"`),
+    );
+  }
+
+  assert.match(html, /<label[^>]+for="round-count-input"/);
+  assert.match(
+    html,
+    /<input[^>]+id="round-count-input"[^>]+type="number"[^>]+min="1"[^>]+max="999"/,
+  );
+  assert.match(html, /id="round-duration"/);
+  assert.match(html, /id="total-duration"/);
+  assert.match(html, /<button[^>]+id="start-program-button"[^>]+type="submit"/);
   assert.match(html, /<button[^>]+id="clear-display-button"[^>]+type="button"/);
 });
 
@@ -70,6 +101,8 @@ test('Control 將目前 Main 狀態與尚未送出的預覽清楚分開', async 
   assert.match(html, /id="current-message"/);
   assert.match(html, /id="current-layout"/);
   assert.match(html, /id="current-revision"/);
+  assert.match(html, /id="current-page-progress"/);
+  assert.match(html, /id="current-round-progress"/);
   assert.match(html, /id="operation-status"[^>]+role="status"/);
   assert.match(html, /aria-live="polite"/);
 });
@@ -148,8 +181,10 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /scale\(0\.96\)/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
   assert.match(css, /\.operation-footer\s*{[^}]*position:\s*fixed/s);
-  assert.match(css, /\.message-preview\s*,\s*\.current-message\.is-single-line\s*{[^}]*white-space:\s*nowrap/s);
+  assert.match(css, /\.message-preview\s*,\s*\.queue-message-text\s*,\s*\.current-message-row\s*{[^}]*white-space:\s*nowrap/s);
   assert.match(css, /\.current-message\.is-fill-screen\s*{[^}]*white-space:\s*pre-wrap/s);
+  assert.match(css, /\.queue-pages\s*{[^}]*overflow(?:-y)?:\s*auto/s);
+  assert.match(css, /\.playback-summary\s*{[^}]*display:\s*grid/s);
   assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
   assert.doesNotMatch(css, /will-change:\s*all\b/);
 

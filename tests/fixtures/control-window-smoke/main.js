@@ -164,7 +164,11 @@ async function waitForIdle() {
 async function assertCurrentDom(expected) {
   const state = await execute(`(() => ({
     message: document.getElementById('current-message').textContent,
+    rows: [...document.querySelectorAll('.current-message-row')]
+      .map((element) => element.textContent),
     layout: document.getElementById('current-layout').textContent,
+    page: document.getElementById('current-page-progress').textContent,
+    round: document.getElementById('current-round-progress').textContent,
     revision: document.getElementById('current-revision').textContent,
     childCount: document.getElementById('current-message').children.length,
   }))()`);
@@ -172,16 +176,25 @@ async function assertCurrentDom(expected) {
   assert.deepEqual(state, expected);
 }
 
-function expectedPage(message, revision) {
+function expectedPage(
+  messages,
+  revision,
+  {
+    pageNumber,
+    pageCount,
+    roundNumber,
+    totalRounds,
+  },
+) {
   return {
     mode: 'page',
-    messages: [{ message }],
+    messages: messages.map((message) => ({ message })),
     layout: 'single-line',
     pageDurationSeconds: 3,
-    pageNumber: 1,
-    pageCount: 1,
-    roundNumber: null,
-    totalRounds: null,
+    pageNumber,
+    pageCount,
+    roundNumber,
+    totalRounds,
     revision,
   };
 }
@@ -214,7 +227,85 @@ function expectedBlank(revision) {
   };
 }
 
-async function runWorkflow(presentationStore) {
+function createTimerHarness() {
+  const timers = [];
+
+  return {
+    setTimer(callback, delay) {
+      const timer = {
+        callback,
+        delay,
+        cleared: false,
+        fired: false,
+        unref() {},
+      };
+      timers.push(timer);
+      return timer;
+    },
+    clearTimer(timer) {
+      timer.cleared = true;
+    },
+    fireNext(expectedDelay) {
+      const timer = timers.find((candidate) =>
+        !candidate.cleared && !candidate.fired,
+      );
+      assert.ok(timer, '應有一個等待中的翻頁 timer');
+      assert.equal(timer.delay, expectedDelay);
+      timer.fired = true;
+      timer.callback();
+    },
+    activeCount() {
+      return timers.filter((timer) => !timer.cleared && !timer.fired).length;
+    },
+  };
+}
+
+async function selectRepeatMode(mode) {
+  return execute(`(() => {
+    const input = document.querySelector(
+      'input[name="repeat-mode"][value=${JSON.stringify(mode)}]'
+    );
+    input.checked = true;
+    input.dispatchEvent(new Event('change', { bubbles: true }));
+    return input.checked;
+  })()`);
+}
+
+async function addDraftMessage({ recipient, action, customText = '' }) {
+  await selectAction(action);
+  await setTextInput('recipient-input', recipient);
+
+  if (action === 'custom') {
+    await setTextInput('custom-message-input', customText);
+  }
+
+  const expectedMessage = action === 'go-to-lobby'
+    ? `${recipient}請至前廳`
+    : action === 'lobby-code'
+      ? `${recipient}前廳000`
+      : `${recipient}${customText}`;
+
+  assert.equal(
+    await execute(`document.getElementById('message-preview').textContent`),
+    expectedMessage,
+  );
+
+  const previousCount = Number(await execute(
+    `document.getElementById('message-queue').dataset.messageCount || 0`,
+  ));
+  await execute(`document.getElementById('message-form').requestSubmit()`);
+  await waitFor(
+    () => execute(
+      `Number(document.getElementById('message-queue').dataset.messageCount) === ${previousCount + 1}`,
+    ),
+    '訊息加入待播清單',
+  );
+  assert.equal(await execute('document.activeElement.id'), 'recipient-input');
+
+  return expectedMessage;
+}
+
+async function runWorkflow(presentationStore, timers) {
   await waitFor(
     () => execute(
       `document.getElementById('clear-display-button').disabled === false`,
@@ -243,87 +334,144 @@ async function runWorkflow(presentationStore) {
     ],
   });
 
-  // 固定動作：001 + 請至前廳。
-  await setTextInput('recipient-input', '001');
-  assert.equal(
-    await execute(`document.getElementById('message-preview').textContent`),
-    '001請至前廳',
-  );
-  await execute(`(() => {
-    document.getElementById('recipient-input').focus();
-    document.getElementById('message-form').requestSubmit();
-  })()`);
-  await waitForRevision(presentationStore, 1);
-  await waitForIdle();
-  assert.equal(
-    await execute('document.activeElement.id'),
-    'recipient-input',
-  );
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedPage('001請至前廳', 1),
-  );
-
-  // 固定動作：Nancy + 前廳000。
-  await setTextInput('recipient-input', 'Nancy');
-  await selectAction('lobby-code');
-  assert.equal(
-    await execute(`document.getElementById('message-preview').textContent`),
-    'Nancy前廳000',
-  );
-  await click('show-message-button');
-  await waitForRevision(presentationStore, 2);
-  await waitForIdle();
-  assert.deepEqual(
-    presentationStore.getSnapshot(),
-    expectedPage('Nancy前廳000', 2),
-  );
-
-  // 自定義內容必須保留為文字，不可建立任何 HTML 節點。
+  // 輸入七則完整 message；加入草稿不可提前修改 Main 畫面。
   const literalHtml =
     '公告\n<img src=x onerror="globalThis.displayCorePwned=true">';
-  await selectAction('custom');
-  await setTextInput('recipient-input', '');
-  await setTextInput('custom-message-input', literalHtml);
+  const messages = [];
+  messages.push(await addDraftMessage({
+    recipient: '001',
+    action: 'go-to-lobby',
+  }));
+  messages.push(await addDraftMessage({
+    recipient: '002',
+    action: 'go-to-lobby',
+  }));
+  messages.push(await addDraftMessage({
+    recipient: '003',
+    action: 'lobby-code',
+  }));
+  messages.push(await addDraftMessage({
+    recipient: '004',
+    action: 'custom',
+    customText: '請至櫃檯',
+  }));
+  messages.push(await addDraftMessage({
+    recipient: '005',
+    action: 'go-to-lobby',
+  }));
+  messages.push(await addDraftMessage({
+    recipient: '006',
+    action: 'go-to-lobby',
+  }));
+  messages.push(await addDraftMessage({
+    recipient: '',
+    action: 'custom',
+    customText: literalHtml,
+  }));
+  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(0));
+
   const previewState = await execute(`(() => ({
-    text: document.getElementById('message-preview').textContent,
-    childCount: document.getElementById('message-preview').children.length,
-    whiteSpace: getComputedStyle(
-      document.getElementById('message-preview')
-    ).whiteSpace,
+    pageTitles: [...document.querySelectorAll('.queue-page-title')]
+      .map((element) => element.textContent),
+    messages: [...document.querySelectorAll('.queue-message-text')]
+      .map((element) => element.textContent),
+    literalChildCount: document.querySelectorAll('.queue-message-text')[6]
+      .children.length,
+    messageCount: document.getElementById('queue-message-count').textContent,
+    pageCount: document.getElementById('queue-page-count').textContent,
+    roundDuration: document.getElementById('round-duration').textContent,
+    totalDuration: document.getElementById('total-duration').textContent,
+    removeButtonCount: document.querySelectorAll('.queue-remove-button').length,
     pwnedType: typeof globalThis.displayCorePwned,
   }))()`);
   assert.deepEqual(previewState, {
-    text: literalHtml,
-    childCount: 0,
-    whiteSpace: 'nowrap',
+    pageTitles: ['第 1 頁', '第 2 頁'],
+    messages,
+    literalChildCount: 0,
+    messageCount: '7 則',
+    pageCount: '2 頁',
+    roundDuration: '6 秒',
+    totalDuration: '6 秒',
+    removeButtonCount: 7,
     pwnedType: 'undefined',
   });
-  await click('show-message-button');
-  await waitForRevision(presentationStore, 3);
-  await waitForCurrentDom(3);
+
+  // 按索引刪除後重新加入，重複文字也不會刪錯項目。
+  await execute(`document.querySelector(
+    '.queue-remove-button[data-message-index="6"]'
+  ).click()`);
+  await waitFor(
+    () => execute(
+      `document.getElementById('queue-message-count').textContent === '6 則'`,
+    ),
+    '刪除待播訊息',
+  );
+  messages.pop();
+  messages.push(await addDraftMessage({
+    recipient: '',
+    action: 'custom',
+    customText: literalHtml,
+  }));
+
+  // 七則為兩頁；每頁 3 秒、10 整輪，總時間精確推算為 1 分。
+  await setTextInput('round-count-input', '10');
+  assert.deepEqual(
+    await execute(`(() => ({
+      roundDuration: document.getElementById('round-duration').textContent,
+      totalDuration: document.getElementById('total-duration').textContent,
+      startDisabled: document.getElementById('start-program-button').disabled,
+    }))()`),
+    { roundDuration: '6 秒', totalDuration: '1 分', startDisabled: false },
+  );
+  await execute(`(() => {
+    const button = document.getElementById('start-program-button');
+    button.focus();
+    button.click();
+  })()`);
+  await waitForRevision(presentationStore, 1);
+  await waitForCurrentDom(1);
   await waitForIdle();
+  assert.equal(await execute('document.activeElement.id'), 'start-program-button');
   assert.deepEqual(
     presentationStore.getSnapshot(),
-    expectedPage(literalHtml, 3),
+    expectedPage(messages.slice(0, 5), 1, {
+      pageNumber: 1,
+      pageCount: 2,
+      roundNumber: 1,
+      totalRounds: 10,
+    }),
   );
   await assertCurrentDom({
-    message: literalHtml,
+    message: messages.slice(0, 5).join(''),
+    rows: messages.slice(0, 5),
     layout: '單行',
-    revision: '#3',
-    childCount: 0,
+    page: '第 1 / 2 頁',
+    round: '第 1 / 10 輪',
+    revision: '#1',
+    childCount: 5,
   });
+
+  timers.fireNext(3_000);
+  await waitForRevision(presentationStore, 2);
+  await waitForCurrentDom(2);
   assert.deepEqual(
-    await execute(`(() => {
-      const element = document.getElementById('current-message');
-      return {
-        whiteSpace: getComputedStyle(element).whiteSpace,
-        singleLine: element.classList.contains('is-single-line'),
-        fillScreen: element.classList.contains('is-fill-screen'),
-      };
-    })()`),
-    { whiteSpace: 'nowrap', singleLine: true, fillScreen: false },
+    presentationStore.getSnapshot(),
+    expectedPage(messages.slice(5), 2, {
+      pageNumber: 2,
+      pageCount: 2,
+      roundNumber: 1,
+      totalRounds: 10,
+    }),
   );
+  await assertCurrentDom({
+    message: messages.slice(5).join(''),
+    rows: messages.slice(5),
+    layout: '單行',
+    page: '第 2 / 2 頁',
+    round: '第 1 / 10 輪',
+    revision: '#2',
+    childCount: 2,
+  });
 
   // 555 開啟 dialog 時尚未送出；確認後一次原子切換為滿屏。
   await click('inspection-555-button');
@@ -339,7 +487,7 @@ async function runWorkflow(presentationStore) {
     confirmText: '確認顯示 555',
     cancelFocused: true,
   });
-  assert.equal(presentationStore.getSnapshot().revision, 3);
+  assert.equal(presentationStore.getSnapshot().revision, 2);
   await click('inspection-confirm-button');
   await waitFor(
     () => execute(`(() =>
@@ -348,7 +496,7 @@ async function runWorkflow(presentationStore) {
     )()`),
     '555 失敗後恢復確認操作',
   );
-  assert.equal(presentationStore.getSnapshot().revision, 3);
+  assert.equal(presentationStore.getSnapshot().revision, 2);
   assert.deepEqual(
     await execute(`(() => ({
       dialogOpen: document.getElementById('inspection-confirm-dialog').open,
@@ -371,24 +519,27 @@ async function runWorkflow(presentationStore) {
     button.click();
     button.click();
   })()`);
-  await waitForRevision(presentationStore, 4);
-  await waitForCurrentDom(4);
+  await waitForRevision(presentationStore, 3);
+  await waitForCurrentDom(3);
   await waitForIdle();
   assert.deepEqual(
     presentationStore.getSnapshot(),
-    expectedEmergency('555', 4),
+    expectedEmergency('555', 3),
   );
-  assert.deepEqual(
-    await execute(`(() => {
-      const element = document.getElementById('current-message');
-      return {
-        whiteSpace: getComputedStyle(element).whiteSpace,
-        singleLine: element.classList.contains('is-single-line'),
-        fillScreen: element.classList.contains('is-fill-screen'),
-      };
-    })()`),
-    { whiteSpace: 'pre-wrap', singleLine: false, fillScreen: true },
+  await assertCurrentDom({
+    message: '555',
+    rows: [],
+    layout: '滿屏',
+    page: '—',
+    round: '—',
+    revision: '#3',
+    childCount: 0,
+  });
+  assert.equal(
+    await execute(`document.getElementById('queue-message-count').textContent`),
+    '7 則',
   );
+  assert.equal(timers.activeCount(), 0, '滿屏必須取消原播放 timer');
 
   // 888 的取消流程不改狀態；再次確認才送出。
   await click('inspection-888-button');
@@ -397,16 +548,16 @@ async function runWorkflow(presentationStore) {
     await execute(`document.getElementById('inspection-confirm-dialog').open`),
     false,
   );
-  assert.equal(presentationStore.getSnapshot().revision, 4);
+  assert.equal(presentationStore.getSnapshot().revision, 3);
 
   await click('inspection-888-button');
   await click('inspection-confirm-button');
-  await waitForRevision(presentationStore, 5);
-  await waitForCurrentDom(5);
+  await waitForRevision(presentationStore, 4);
+  await waitForCurrentDom(4);
   await waitForIdle();
   assert.deepEqual(
     presentationStore.getSnapshot(),
-    expectedEmergency('888', 5),
+    expectedEmergency('888', 4),
   );
 
   // 清除必須回到空白 single-line，不能把 888 誤當 clear。
@@ -415,24 +566,71 @@ async function runWorkflow(presentationStore) {
     button.focus();
     button.click();
   })()`);
-  await waitForRevision(presentationStore, 6);
-  await waitForCurrentDom(6);
+  await waitForRevision(presentationStore, 5);
+  await waitForCurrentDom(5);
   await waitForIdle();
   assert.equal(
     await execute('document.activeElement.id'),
     'clear-display-button',
   );
-  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(6));
+  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(5));
   await assertCurrentDom({
     message: '目前為空白畫面',
+    rows: [],
     layout: '單行',
-    revision: '#6',
+    page: '—',
+    round: '—',
+    revision: '#5',
     childCount: 0,
   });
 
-  // Main 內部例外只能顯示固定錯誤，不得洩漏路徑或改變既有狀態。
-  await setTextInput('custom-message-input', ERROR_SENTINEL);
-  await click('show-message-button');
+  // 清空本機草稿與清除電視是完全獨立的操作。
+  await click('clear-queue-button');
+  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(5));
+  assert.deepEqual(
+    await execute(`(() => ({
+      count: document.getElementById('queue-message-count').textContent,
+      emptyHidden: document.getElementById('queue-empty-state').hidden,
+    }))()`),
+    { count: '0 則', emptyHidden: false },
+  );
+
+  // 持續模式不得夾帶舊的 rounds，單頁也不排無意義 timer。
+  await addDraftMessage({
+    recipient: '',
+    action: 'custom',
+    customText: '公告持續顯示',
+  });
+  await selectRepeatMode('continuous');
+  await click('start-program-button');
+  await waitForRevision(presentationStore, 6);
+  await waitForCurrentDom(6);
+  await waitForIdle();
+  assert.deepEqual(
+    presentationStore.getSnapshot(),
+    expectedPage(['公告持續顯示'], 6, {
+      pageNumber: 1,
+      pageCount: 1,
+      roundNumber: null,
+      totalRounds: null,
+    }),
+  );
+  assert.equal(timers.activeCount(), 0);
+  await click('clear-display-button');
+  await waitForRevision(presentationStore, 7);
+  await waitForCurrentDom(7);
+  await waitForIdle();
+  await click('clear-queue-button');
+
+  // Main 內部例外只能顯示固定錯誤，草稿不消失也不改變畫面。
+  await selectRepeatMode('finite');
+  await setTextInput('round-count-input', '1');
+  await addDraftMessage({
+    recipient: '',
+    action: 'custom',
+    customText: ERROR_SENTINEL,
+  });
+  await click('start-program-button');
   await waitFor(
     () => execute(
       `document.getElementById('operation-error').hidden === false`,
@@ -444,7 +642,11 @@ async function runWorkflow(presentationStore) {
   );
   assert.equal(errorText, '操作失敗，請稍後再試。');
   assert.doesNotMatch(errorText, /private|config|stack/i);
-  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(6));
+  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(7));
+  assert.equal(
+    await execute(`document.getElementById('queue-message-count').textContent`),
+    '1 則',
+  );
 }
 
 async function run() {
@@ -471,7 +673,12 @@ async function run() {
   hardenWebContents(controlWindow.webContents);
 
   const presentationStore = new PresentationStore();
-  presentationService = new PresentationService({ store: presentationStore });
+  const timers = createTimerHarness();
+  presentationService = new PresentationService({
+    store: presentationStore,
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
   const startProgram = presentationService.startProgram.bind(
     presentationService,
   );
@@ -489,7 +696,7 @@ async function run() {
   };
 
   presentationService.startProgram = (program) => {
-    if (program.messages[0]?.message === ERROR_SENTINEL) {
+    if (program.messages.some(({ message }) => message === ERROR_SENTINEL)) {
       throw new Error('/private/config.json: simulated internal stack');
     }
 
@@ -532,7 +739,7 @@ async function run() {
   });
 
   await controlWindow.loadURL(CONTROL_URL);
-  await runWorkflow(presentationStore);
+  await runWorkflow(presentationStore, timers);
   finish(0, '[DisplayCore] Control window workflow succeeded.');
 }
 

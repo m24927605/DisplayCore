@@ -5,9 +5,18 @@ import {
   composeMessage,
   createEmergencyPresentation,
 } from './message-composer.mjs';
+import {
+  PLAYBACK_MODES,
+  PROGRAM_LIMITS,
+  appendMessage,
+  buildProgram,
+  countPages,
+  formatDuration,
+  removeMessage,
+} from './program-builder.mjs';
 
 const elements = Object.freeze({
-  form: document.getElementById('message-form'),
+  messageForm: document.getElementById('message-form'),
   recipientInput: document.getElementById('recipient-input'),
   recipientError: document.getElementById('recipient-error'),
   actionFieldset: document.getElementById('action-fieldset'),
@@ -16,10 +25,31 @@ const elements = Object.freeze({
   customInput: document.getElementById('custom-message-input'),
   customError: document.getElementById('custom-message-error'),
   preview: document.getElementById('message-preview'),
-  showButton: document.getElementById('show-message-button'),
-  clearButton: document.getElementById('clear-display-button'),
+  addMessageButton: document.getElementById('add-message-button'),
+  queue: document.getElementById('message-queue'),
+  queuePages: document.getElementById('queue-pages'),
+  queueEmptyState: document.getElementById('queue-empty-state'),
+  queueError: document.getElementById('queue-error'),
+  queueMessageCount: document.getElementById('queue-message-count'),
+  queuePageCount: document.getElementById('queue-page-count'),
+  clearQueueButton: document.getElementById('clear-queue-button'),
+  playbackForm: document.getElementById('playback-form'),
+  pageDurationInput: document.getElementById('page-duration-input'),
+  pageDurationError: document.getElementById('page-duration-error'),
+  repeatModeFieldset: document.getElementById('repeat-mode-fieldset'),
+  repeatError: document.getElementById('repeat-error'),
+  roundCountField: document.getElementById('round-count-field'),
+  roundCountInput: document.getElementById('round-count-input'),
+  roundCountError: document.getElementById('round-count-error'),
+  summaryPageCount: document.getElementById('summary-page-count'),
+  roundDuration: document.getElementById('round-duration'),
+  totalDuration: document.getElementById('total-duration'),
+  startProgramButton: document.getElementById('start-program-button'),
+  clearDisplayButton: document.getElementById('clear-display-button'),
   currentMessage: document.getElementById('current-message'),
   currentLayout: document.getElementById('current-layout'),
+  currentPageProgress: document.getElementById('current-page-progress'),
+  currentRoundProgress: document.getElementById('current-round-progress'),
   currentRevision: document.getElementById('current-revision'),
   inspectionButtons: Object.freeze([
     document.getElementById('inspection-555-button'),
@@ -39,21 +69,38 @@ const elements = Object.freeze({
 const uiState = {
   busy: false,
   ready: false,
-  validationVisible: false,
+  draftValidationVisible: false,
+  playbackValidationVisible: false,
+  messages: Object.freeze([]),
+  queueErrorMessage: null,
   pendingEmergency: null,
   focusBeforeBusy: null,
   controller: null,
 };
 
 function getActionInputs() {
-  return [...elements.form.querySelectorAll('input[name="action"]')];
+  return [...elements.messageForm.querySelectorAll('input[name="action"]')];
+}
+
+function getRepeatModeInputs() {
+  return [...elements.playbackForm.querySelectorAll(
+    'input[name="repeat-mode"]',
+  )];
 }
 
 function getSelectedAction() {
-  return elements.form.querySelector('input[name="action"]:checked')?.value;
+  return elements.messageForm.querySelector(
+    'input[name="action"]:checked',
+  )?.value;
 }
 
-function readDraft() {
+function getSelectedRepeatMode() {
+  return elements.playbackForm.querySelector(
+    'input[name="repeat-mode"]:checked',
+  )?.value;
+}
+
+function readMessageDraft() {
   return {
     recipient: elements.recipientInput.value,
     action: getSelectedAction(),
@@ -61,7 +108,16 @@ function readDraft() {
   };
 }
 
-function clearFieldErrors() {
+function readPlaybackDraft() {
+  return {
+    messages: uiState.messages,
+    pageDurationSeconds: elements.pageDurationInput.value,
+    repeatMode: getSelectedRepeatMode(),
+    rounds: elements.roundCountInput.value,
+  };
+}
+
+function clearDraftFieldErrors() {
   for (const [control, errorElement] of [
     [elements.recipientInput, elements.recipientError],
     [elements.actionFieldset, elements.actionError],
@@ -73,8 +129,8 @@ function clearFieldErrors() {
   }
 }
 
-function renderFieldError(error, focusInvalidField = false) {
-  clearFieldErrors();
+function renderDraftFieldError(error, focusInvalidField = false) {
+  clearDraftFieldErrors();
 
   const errorTargets = {
     recipient: [elements.recipientInput, elements.recipientError],
@@ -97,26 +153,75 @@ function renderFieldError(error, focusInvalidField = false) {
   }
 }
 
+function clearPlaybackFieldErrors() {
+  for (const [control, errorElement] of [
+    [elements.pageDurationInput, elements.pageDurationError],
+    [elements.repeatModeFieldset, elements.repeatError],
+    [elements.roundCountInput, elements.roundCountError],
+  ]) {
+    control.removeAttribute('aria-invalid');
+    errorElement.textContent = '';
+    errorElement.hidden = true;
+  }
+}
+
+function renderPlaybackFieldError(error, focusInvalidField = false) {
+  clearPlaybackFieldErrors();
+
+  const errorTargets = {
+    pageDurationSeconds: [
+      elements.pageDurationInput,
+      elements.pageDurationError,
+    ],
+    repeat: [elements.repeatModeFieldset, elements.repeatError],
+    rounds: [elements.roundCountInput, elements.roundCountError],
+  };
+  const target = errorTargets[error.field];
+
+  if (!target) {
+    return;
+  }
+
+  const [control, errorElement] = target;
+  control.setAttribute('aria-invalid', 'true');
+  errorElement.textContent = error.message;
+  errorElement.hidden = false;
+
+  if (focusInvalidField) {
+    if (control === elements.repeatModeFieldset) {
+      getRepeatModeInputs()[0]?.focus();
+    } else {
+      control.focus();
+    }
+  }
+}
+
+function renderQueueError() {
+  const hasError = typeof uiState.queueErrorMessage === 'string';
+  elements.queueError.textContent = hasError ? uiState.queueErrorMessage : '';
+  elements.queueError.hidden = !hasError;
+}
+
 /**
- * 同步草稿、動作區與精確預覽。
+ * 同步單則草稿、自定義欄位與精確預覽。
  *
  * 預覽不是 live region，避免每次 IME 組字或按鍵都打斷螢幕閱讀器。
  */
-function updateDraftView() {
+function updateMessageDraftView() {
   const selectedAction = getSelectedAction();
   const usesCustomText = selectedAction === ACTIONS.CUSTOM;
 
   elements.customField.hidden = !usesCustomText;
   elements.customInput.disabled = uiState.busy || !usesCustomText;
 
-  const result = composeMessage(readDraft());
+  const result = composeMessage(readMessageDraft());
 
   if (result.ok) {
     elements.preview.textContent = result.presentation.message;
     elements.preview.classList.remove('is-placeholder');
 
-    if (uiState.validationVisible) {
-      clearFieldErrors();
+    if (uiState.draftValidationVisible) {
+      clearDraftFieldErrors();
     }
   } else {
     elements.preview.textContent = usesCustomText
@@ -124,13 +229,147 @@ function updateDraftView() {
       : '請先輸入編號或花名';
     elements.preview.classList.add('is-placeholder');
 
-    if (uiState.validationVisible) {
-      renderFieldError(result.error);
+    if (uiState.draftValidationVisible) {
+      renderDraftFieldError(result.error);
     }
   }
 
-  elements.showButton.disabled =
+  elements.addMessageButton.disabled =
+    uiState.busy ||
+    !uiState.ready ||
+    !result.ok ||
+    uiState.messages.length >= PROGRAM_LIMITS.MAX_MESSAGE_COUNT;
+
+  return result;
+}
+
+function createQueueMessageItem(message, messageIndex) {
+  const item = document.createElement('li');
+  item.className = 'queue-message-item';
+
+  const sequence = document.createElement('span');
+  sequence.className = 'queue-sequence';
+  sequence.textContent = String(messageIndex + 1).padStart(2, '0');
+  sequence.setAttribute('aria-hidden', 'true');
+
+  const messageText = document.createElement('span');
+  messageText.className = 'queue-message-text';
+  messageText.textContent = message;
+
+  const removeButton = document.createElement('button');
+  removeButton.className = 'queue-remove-button';
+  removeButton.type = 'button';
+  removeButton.dataset.messageIndex = String(messageIndex);
+  removeButton.disabled = uiState.busy;
+  removeButton.setAttribute(
+    'aria-label',
+    `刪除第 ${messageIndex + 1} 則訊息`,
+  );
+  removeButton.textContent = '×';
+
+  item.append(sequence, messageText, removeButton);
+  return item;
+}
+
+function createQueuePage(pageNumber, pageMessages, startIndex) {
+  const page = document.createElement('section');
+  page.className = 'queue-page';
+  page.setAttribute('aria-labelledby', `queue-page-title-${pageNumber}`);
+
+  const header = document.createElement('div');
+  header.className = 'queue-page-header';
+
+  const title = document.createElement('h3');
+  title.id = `queue-page-title-${pageNumber}`;
+  title.className = 'queue-page-title';
+  title.textContent = `第 ${pageNumber} 頁`;
+
+  const capacity = document.createElement('span');
+  capacity.className = 'queue-page-capacity';
+  capacity.textContent = `${pageMessages.length} / ${PROGRAM_LIMITS.MESSAGES_PER_PAGE} 則`;
+
+  header.append(title, capacity);
+
+  const list = document.createElement('ol');
+  list.className = 'queue-message-list';
+
+  pageMessages.forEach(({ message }, pageIndex) => {
+    list.append(createQueueMessageItem(message, startIndex + pageIndex));
+  });
+
+  page.append(header, list);
+  return page;
+}
+
+/** 依每頁五則將本機草稿清單投影成可編輯的分頁預覽。 */
+function renderQueue() {
+  const messageCount = uiState.messages.length;
+  const pageCount = countPages(messageCount);
+  elements.queue.dataset.messageCount = String(messageCount);
+  elements.queueMessageCount.textContent = `${messageCount} 則`;
+  elements.queuePageCount.textContent = `${pageCount} 頁`;
+  elements.queueEmptyState.hidden = messageCount > 0;
+  elements.queuePages.hidden = messageCount === 0;
+  elements.clearQueueButton.disabled = uiState.busy || messageCount === 0;
+  elements.queuePages.replaceChildren();
+
+  for (let pageIndex = 0; pageIndex < pageCount; pageIndex += 1) {
+    const startIndex = pageIndex * PROGRAM_LIMITS.MESSAGES_PER_PAGE;
+    const pageMessages = uiState.messages.slice(
+      startIndex,
+      startIndex + PROGRAM_LIMITS.MESSAGES_PER_PAGE,
+    );
+    elements.queuePages.append(
+      createQueuePage(pageIndex + 1, pageMessages, startIndex),
+    );
+  }
+
+  renderQueueError();
+}
+
+/** 驗證播放設定，並只以派生值顯示每輪與總播放時間。 */
+function updatePlaybackView({ focusInvalidField = false } = {}) {
+  const repeatMode = getSelectedRepeatMode();
+  const usesFiniteRounds = repeatMode === PLAYBACK_MODES.FINITE;
+  const pageCount = countPages(uiState.messages.length);
+
+  elements.pageDurationInput.disabled = uiState.busy || !uiState.ready;
+  elements.roundCountInput.disabled =
+    uiState.busy || !uiState.ready || !usesFiniteRounds;
+  elements.roundCountField.classList.toggle('is-disabled', !usesFiniteRounds);
+
+  for (const input of getRepeatModeInputs()) {
+    input.disabled = uiState.busy || !uiState.ready;
+  }
+
+  elements.summaryPageCount.textContent = `${pageCount} 頁`;
+  const result = buildProgram(readPlaybackDraft());
+
+  if (result.ok) {
+    elements.roundDuration.textContent = formatDuration(
+      result.summary.secondsPerRound,
+    );
+    elements.totalDuration.textContent = formatDuration(
+      result.summary.totalSeconds,
+    );
+  } else if (uiState.messages.length === 0) {
+    elements.roundDuration.textContent = '—';
+    elements.totalDuration.textContent = '—';
+  } else {
+    elements.roundDuration.textContent = '設定有誤';
+    elements.totalDuration.textContent = '設定有誤';
+  }
+
+  elements.startProgramButton.disabled =
     uiState.busy || !uiState.ready || !result.ok;
+
+  if (uiState.playbackValidationVisible) {
+    clearPlaybackFieldErrors();
+
+    if (!result.ok) {
+      renderPlaybackFieldError(result.error, focusInvalidField);
+    }
+  }
 
   return result;
 }
@@ -142,7 +381,7 @@ function setMutationControls() {
     actionInput.disabled = uiState.busy;
   }
 
-  elements.clearButton.disabled = uiState.busy || !uiState.ready;
+  elements.clearDisplayButton.disabled = uiState.busy || !uiState.ready;
 
   for (const button of elements.inspectionButtons) {
     button.disabled = uiState.busy || !uiState.ready;
@@ -150,7 +389,9 @@ function setMutationControls() {
 
   elements.dialogConfirmButton.disabled = uiState.busy;
   elements.dialogCancelButton.disabled = uiState.busy;
-  updateDraftView();
+  updateMessageDraftView();
+  renderQueue();
+  updatePlaybackView();
 }
 
 function renderStatus(message) {
@@ -167,20 +408,36 @@ function renderError(message) {
   elements.operationError.hidden = false;
 }
 
+/** Main 只傳現在這一頁；Control 也以逐列純文字顯示。 */
 function renderPresentation(snapshot) {
   const isEmpty = snapshot.mode === 'blank';
   const isFillScreen = snapshot.mode === 'emergency';
-  const visibleMessage = snapshot.messages
-    .map(({ message }) => message)
-    .join('\n');
-
-  elements.currentMessage.textContent = isEmpty
-    ? '目前為空白畫面'
-    : visibleMessage;
+  elements.currentMessage.replaceChildren();
   elements.currentMessage.classList.toggle('is-placeholder', isEmpty);
-  elements.currentMessage.classList.toggle('is-single-line', !isFillScreen);
   elements.currentMessage.classList.toggle('is-fill-screen', isFillScreen);
+
+  if (isEmpty) {
+    elements.currentMessage.textContent = '目前為空白畫面';
+  } else if (isFillScreen) {
+    elements.currentMessage.textContent = snapshot.messages[0].message;
+  } else {
+    for (const { message } of snapshot.messages) {
+      const row = document.createElement('span');
+      row.className = 'current-message-row';
+      row.textContent = message;
+      elements.currentMessage.append(row);
+    }
+  }
+
   elements.currentLayout.textContent = isFillScreen ? '滿屏' : '單行';
+  elements.currentPageProgress.textContent = snapshot.mode === 'page'
+    ? `第 ${snapshot.pageNumber} / ${snapshot.pageCount} 頁`
+    : '—';
+  elements.currentRoundProgress.textContent = snapshot.mode !== 'page'
+    ? '—'
+    : snapshot.totalRounds === null
+      ? '持續循環'
+      : `第 ${snapshot.roundNumber} / ${snapshot.totalRounds} 輪`;
   elements.currentRevision.textContent = `#${snapshot.revision}`;
 }
 
@@ -221,29 +478,107 @@ function createView() {
   });
 }
 
-async function submitDraft() {
+function addMessageDraft() {
+  uiState.draftValidationVisible = true;
+  const composed = updateMessageDraftView();
+
+  if (!composed.ok) {
+    renderDraftFieldError(composed.error, true);
+    return;
+  }
+
+  const appended = appendMessage(
+    uiState.messages,
+    composed.presentation.message,
+  );
+
+  if (!appended.ok) {
+    uiState.queueErrorMessage = appended.error.message;
+    renderQueue();
+    return;
+  }
+
+  uiState.messages = appended.messages;
+  uiState.queueErrorMessage = null;
+  uiState.draftValidationVisible = false;
+  uiState.playbackValidationVisible = false;
+  elements.recipientInput.value = '';
+  elements.customInput.value = '';
+  clearDraftFieldErrors();
+  clearPlaybackFieldErrors();
+  updateMessageDraftView();
+  renderQueue();
+  updatePlaybackView();
+  renderStatus(`已加入第 ${uiState.messages.length} 則訊息，尚未送到電視。`);
+  elements.recipientInput.focus();
+}
+
+function removeQueuedMessage(index) {
+  const removed = removeMessage(uiState.messages, index);
+
+  if (!removed.ok) {
+    uiState.queueErrorMessage = removed.error.message;
+    renderQueue();
+    return;
+  }
+
+  uiState.messages = removed.messages;
+  uiState.queueErrorMessage = null;
+  uiState.playbackValidationVisible = false;
+  renderQueue();
+  updatePlaybackView();
+  renderStatus('已從待播清單刪除訊息，電視畫面未改變。');
+
+  queueMicrotask(() => {
+    const nextIndex = Math.min(index, uiState.messages.length - 1);
+    const focusTarget = nextIndex >= 0
+      ? elements.queuePages.querySelector(
+        `.queue-remove-button[data-message-index="${nextIndex}"]`,
+      )
+      : elements.recipientInput;
+    focusTarget?.focus();
+  });
+}
+
+function clearMessageQueue() {
+  if (uiState.busy || uiState.messages.length === 0) {
+    return;
+  }
+
+  uiState.messages = Object.freeze([]);
+  uiState.queueErrorMessage = null;
+  uiState.playbackValidationVisible = false;
+  renderQueue();
+  updatePlaybackView();
+  renderStatus('待播清單已清空，電視畫面未改變。');
+  elements.recipientInput.focus();
+}
+
+async function startProgram() {
   if (!uiState.ready || !uiState.controller || uiState.busy) {
     renderError('控制介面尚未就緒，請稍後再試。');
     return;
   }
 
-  uiState.validationVisible = true;
-  const result = updateDraftView();
+  uiState.playbackValidationVisible = true;
+  const result = updatePlaybackView({ focusInvalidField: true });
 
   if (!result.ok) {
-    renderFieldError(result.error, true);
     return;
   }
 
-  clearFieldErrors();
-  await uiState.controller.startProgram(
-    {
-      messages: [{ message: result.presentation.message }],
-      pageDurationSeconds: 3,
-      repeat: { mode: 'continuous' },
-    },
-    '一般訊息已顯示到電視。',
+  clearPlaybackFieldErrors();
+  const succeeded = await uiState.controller.startProgram(
+    result.program,
+    result.program.repeat.mode === PLAYBACK_MODES.FINITE
+      ? `訊息清單已開始顯示 ${result.program.repeat.rounds} 整輪。`
+      : '訊息清單已開始持續顯示。',
   );
+
+  // 無論成功或失敗都保留草稿，便於重播或修正。
+  if (!succeeded) {
+    renderQueue();
+  }
 }
 
 function openEmergencyDialog(triggerButton) {
@@ -259,11 +594,7 @@ function openEmergencyDialog(triggerButton) {
     return;
   }
 
-  uiState.pendingEmergency = Object.freeze({
-    code,
-    presentation: Object.freeze({ ...result.presentation }),
-    triggerButton,
-  });
+  uiState.pendingEmergency = Object.freeze({ code, triggerButton });
 
   const isInspection = code === EMERGENCY_CODES.INSPECTION;
   elements.dialog.dataset.tone = isInspection ? 'inspection' : 'clear';
@@ -309,19 +640,55 @@ async function confirmEmergency() {
 }
 
 function bindUiEvents() {
-  elements.form.addEventListener('submit', (event) => {
+  elements.messageForm.addEventListener('submit', (event) => {
     event.preventDefault();
-    void submitDraft();
+    addMessageDraft();
   });
 
-  elements.recipientInput.addEventListener('input', updateDraftView);
-  elements.customInput.addEventListener('input', updateDraftView);
+  elements.recipientInput.addEventListener('input', updateMessageDraftView);
+  elements.customInput.addEventListener('input', updateMessageDraftView);
 
   for (const actionInput of getActionInputs()) {
-    actionInput.addEventListener('change', updateDraftView);
+    actionInput.addEventListener('change', updateMessageDraftView);
   }
 
-  elements.clearButton.addEventListener('click', () => {
+  elements.queuePages.addEventListener('click', (event) => {
+    const target = event.target;
+
+    if (!(target instanceof Element)) {
+      return;
+    }
+
+    const removeButton = target.closest('.queue-remove-button');
+
+    if (!removeButton || uiState.busy) {
+      return;
+    }
+
+    removeQueuedMessage(Number(removeButton.dataset.messageIndex));
+  });
+
+  elements.clearQueueButton.addEventListener('click', clearMessageQueue);
+
+  elements.pageDurationInput.addEventListener('input', () => {
+    updatePlaybackView();
+  });
+  elements.roundCountInput.addEventListener('input', () => {
+    updatePlaybackView();
+  });
+
+  for (const repeatModeInput of getRepeatModeInputs()) {
+    repeatModeInput.addEventListener('change', () => {
+      updatePlaybackView();
+    });
+  }
+
+  elements.playbackForm.addEventListener('submit', (event) => {
+    event.preventDefault();
+    void startProgram();
+  });
+
+  elements.clearDisplayButton.addEventListener('click', () => {
     void uiState.controller.clearPresentation();
   });
 
@@ -371,7 +738,9 @@ function hasRequiredBridge(api) {
 
 async function boot() {
   bindUiEvents();
-  updateDraftView();
+  updateMessageDraftView();
+  renderQueue();
+  updatePlaybackView();
 
   const bridge = window.displayCoreControl;
 

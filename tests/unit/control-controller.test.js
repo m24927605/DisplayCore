@@ -135,9 +135,11 @@ test('啟動播放只傳完整 program，並同步阻擋重複提交', async () 
   const controller = createControlController({ api, view });
   await controller.start();
   const program = {
-    messages: [{ message: '001請至前廳' }],
+    messages: Array.from({ length: 7 }, (_value, index) => ({
+      message: `${String(index + 1).padStart(3, '0')}請至前廳`,
+    })),
     pageDurationSeconds: 3,
-    repeat: { mode: 'continuous' },
+    repeat: { mode: 'finite', rounds: 10 },
   };
 
   const firstOperation = controller.startProgram(program, '清單已顯示。');

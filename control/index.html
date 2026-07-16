@@ -40,7 +40,7 @@
             <span class="emergency-symbol" aria-hidden="true">!</span>
           </div>
           <p class="section-description">
-            代碼會立即覆蓋目前訊息，並以不受單行限制的滿屏模式顯示。
+            代碼會立即覆蓋播放中的清單，並以不受單行限制的滿屏模式顯示。
           </p>
           <div class="emergency-actions">
             <button
@@ -69,10 +69,10 @@
         <section class="panel composer-panel" aria-labelledby="composer-title">
           <div class="section-heading">
             <div>
-              <p class="section-kicker">一般顯示</p>
+              <p class="section-kicker">編輯單則</p>
               <h2 id="composer-title">建立顯示訊息</h2>
             </div>
-            <span class="step-badge">第 5 步</span>
+            <span class="step-badge">第 6 步</span>
           </div>
 
           <form id="message-form" novalidate>
@@ -155,100 +155,254 @@
             <div class="preview-block" aria-labelledby="preview-title">
               <div class="preview-heading">
                 <div>
-                  <p class="section-kicker">送出前確認</p>
-                  <h3 id="preview-title">完整訊息預覽</h3>
+                  <p class="section-kicker">加入前確認</p>
+                  <h3 id="preview-title">完整 message 預覽</h3>
                 </div>
-                <span id="preview-layout" class="layout-badge">單行</span>
+                <span class="layout-badge">單行</span>
               </div>
               <output
                 id="message-preview"
                 class="message-preview is-placeholder"
                 for="recipient-input action-fieldset custom-message-input"
               >請先輸入編號、花名或自定義內容</output>
-              <p class="preview-note">預覽與 Main 目前狀態分開，送出成功後才會更新電視。</p>
+              <p class="preview-note">加入待播清單不會立即改變電視畫面。</p>
             </div>
 
             <div class="form-actions">
               <button
-                id="show-message-button"
+                id="add-message-button"
                 class="button button-primary button-wide"
                 type="submit"
                 disabled
               >
-                顯示到電視
-              </button>
-              <button
-                id="clear-display-button"
-                class="button button-secondary"
-                type="button"
-                disabled
-              >
-                清除畫面
+                加入顯示清單
               </button>
             </div>
           </form>
         </section>
 
         <section
-            id="current-presentation"
-            class="panel current-panel"
-            aria-labelledby="current-title"
-          >
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="section-kicker">Main Process</p>
-                <h2 id="current-title">目前顯示狀態</h2>
-              </div>
-              <span id="current-layout" class="layout-badge">單行</span>
+          id="message-queue"
+          class="panel queue-panel"
+          data-message-count="0"
+          aria-labelledby="queue-title"
+        >
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">送出前可編輯</p>
+              <h2 id="queue-title">待播訊息清單</h2>
             </div>
-            <p
-              id="current-message"
-              class="current-message is-placeholder is-single-line"
+            <output id="queue-message-count" class="count-badge">0 則</output>
+          </div>
+          <p class="section-description">
+            依加入順序播放，每頁最多 5 則；第 6 則起會自動分到下一頁。
+          </p>
+          <p id="queue-error" class="queue-error" role="alert" hidden></p>
+          <p id="queue-empty-state" class="queue-empty" role="status">
+            尚未加入訊息。請先建立一則 message。
+          </p>
+          <div id="queue-pages" class="queue-pages" hidden></div>
+          <div class="queue-footer">
+            <span>共 <output id="queue-page-count">0 頁</output></span>
+            <button
+              id="clear-queue-button"
+              class="button button-secondary button-compact"
+              type="button"
+              disabled
             >
-              正在取得目前畫面…
-            </p>
-            <div class="state-meta">
-              <span>狀態版本</span>
-              <span id="current-revision" class="revision-value">—</span>
+              清空待播清單
+            </button>
+          </div>
+        </section>
+
+        <section class="panel playback-panel" aria-labelledby="playback-title">
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">播放設定</p>
+              <h2 id="playback-title">每頁秒數與整輪次數</h2>
             </div>
+          </div>
+
+          <form id="playback-form" novalidate>
+            <div class="playback-fields">
+              <div class="field-group compact-field">
+                <label for="page-duration-input">每頁顯示秒數</label>
+                <div class="number-input-row">
+                  <input
+                    id="page-duration-input"
+                    name="pageDurationSeconds"
+                    type="number"
+                    min="1"
+                    max="3600"
+                    step="1"
+                    value="3"
+                    inputmode="numeric"
+                    aria-describedby="page-duration-help page-duration-error"
+                    disabled
+                  >
+                  <span aria-hidden="true">秒</span>
+                </div>
+                <p id="page-duration-help" class="field-help">每頁都會完整停留這段時間。</p>
+                <p id="page-duration-error" class="field-error" hidden></p>
+              </div>
+
+              <fieldset id="repeat-mode-fieldset" class="field-group repeat-fieldset">
+                <legend>播放模式</legend>
+                <div class="repeat-options">
+                  <label class="repeat-option">
+                    <input
+                      type="radio"
+                      name="repeat-mode"
+                      value="finite"
+                      checked
+                      disabled
+                    >
+                    <span>指定整輪次數</span>
+                  </label>
+                  <label class="repeat-option">
+                    <input
+                      type="radio"
+                      name="repeat-mode"
+                      value="continuous"
+                      disabled
+                    >
+                    <span>持續顯示</span>
+                  </label>
+                </div>
+                <p id="repeat-error" class="field-error" hidden></p>
+              </fieldset>
+
+              <div id="round-count-field" class="field-group compact-field">
+                <label for="round-count-input">整輪顯示次數</label>
+                <div class="number-input-row">
+                  <input
+                    id="round-count-input"
+                    name="rounds"
+                    type="number"
+                    min="1"
+                    max="999"
+                    step="1"
+                    value="1"
+                    inputmode="numeric"
+                    aria-describedby="round-count-help round-count-error"
+                    disabled
+                  >
+                  <span aria-hidden="true">輪</span>
+                </div>
+                <p id="round-count-help" class="field-help">從第 1 頁播到最後一頁算 1 輪。</p>
+                <p id="round-count-error" class="field-error" hidden></p>
+              </div>
+            </div>
+
+            <dl class="playback-summary" aria-label="播放時間試算">
+              <div>
+                <dt>頁數</dt>
+                <dd id="summary-page-count">0 頁</dd>
+              </div>
+              <div>
+                <dt>每輪時間</dt>
+                <dd id="round-duration">—</dd>
+              </div>
+              <div>
+                <dt>預計總播放時間</dt>
+                <dd id="total-duration">—</dd>
+              </div>
+            </dl>
+            <p class="playback-note">
+              總時間是依頁數與整輪次數推算；不會用另一個 timer 中途截斷頁面。
+            </p>
+
+            <div class="form-actions playback-actions">
+              <button
+                id="clear-display-button"
+                class="button button-secondary"
+                type="button"
+                disabled
+              >
+                清除電視畫面
+              </button>
+              <button
+                id="start-program-button"
+                class="button button-primary button-wide"
+                type="submit"
+                disabled
+              >
+                顯示清單到電視
+              </button>
+            </div>
+          </form>
         </section>
 
         <section
-            id="future-system-features"
-            class="panel future-panel"
-            aria-labelledby="future-title"
-          >
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="section-kicker">後續階段</p>
-                <h2 id="future-title">系統與輸出</h2>
-              </div>
-              <span class="pending-badge">尚未完成</span>
+          id="current-presentation"
+          class="panel current-panel"
+          aria-labelledby="current-title"
+        >
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">Main Process</p>
+              <h2 id="current-title">目前電視畫面</h2>
             </div>
-            <ul class="future-list">
-              <li>
-                <span class="future-label">HDMI 狀態：第 9 步啟用偵測</span>
-                <span class="future-state">待建立</span>
-              </li>
-              <li>
-                <span class="future-label">輸出螢幕與全螢幕：第 9 步提供</span>
-                <span class="future-state">待建立</span>
-              </li>
-              <li>
-                <span class="future-label">系統設定：第 7 步提供</span>
-                <span class="future-state">待建立</span>
-              </li>
-            </ul>
-            <button class="button button-secondary future-button" type="button" disabled>
-              後續步驟開放
-            </button>
+            <span id="current-layout" class="layout-badge">單行</span>
+          </div>
+          <div
+            id="current-message"
+            class="current-message is-placeholder"
+          >
+            正在取得目前畫面…
+          </div>
+          <dl class="state-meta">
+            <div>
+              <dt>頁面</dt>
+              <dd id="current-page-progress">—</dd>
+            </div>
+            <div>
+              <dt>整輪</dt>
+              <dd id="current-round-progress">—</dd>
+            </div>
+            <div>
+              <dt>狀態版本</dt>
+              <dd id="current-revision" class="revision-value">—</dd>
+            </div>
+          </dl>
+        </section>
+
+        <section
+          id="future-system-features"
+          class="panel future-panel"
+          aria-labelledby="future-title"
+        >
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker">後續階段</p>
+              <h2 id="future-title">系統與輸出</h2>
+            </div>
+            <span class="pending-badge">尚未完成</span>
+          </div>
+          <ul class="future-list">
+            <li>
+              <span class="future-label">HDMI 狀態：第 9 步啟用偵測</span>
+              <span class="future-state">待建立</span>
+            </li>
+            <li>
+              <span class="future-label">輸出螢幕與全螢幕：第 9 步提供</span>
+              <span class="future-state">待建立</span>
+            </li>
+            <li>
+              <span class="future-label">系統設定：第 7 步提供</span>
+              <span class="future-state">待建立</span>
+            </li>
+          </ul>
+          <button class="button button-secondary future-button" type="button" disabled>
+            後續步驟開放
+          </button>
         </section>
       </main>
 
       <footer class="operation-footer">
         <span class="footer-indicator" aria-hidden="true"></span>
         <p id="operation-status" role="status" aria-live="polite">
-          正在連接主程序…
+          正在連接主程式…
         </p>
         <p id="operation-error" role="alert" aria-live="assertive" hidden></p>
       </footer>
