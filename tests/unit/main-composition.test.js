@@ -21,6 +21,10 @@ test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務',
     source,
     /configureDisplayWindow:[\s\S]*displayPlacementController\.applyToWindow/,
   );
+  assert.match(
+    source,
+    /new IpcCoordinator\(\{[\s\S]*displayTopologyService,[\s\S]*displayPlacementController,/,
+  );
 });
 
 test('Main 在設定後初始化拓樸與定位，退出時反向解除資源', async () => {

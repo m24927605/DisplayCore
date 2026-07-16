@@ -2,6 +2,7 @@
 
 const { IPC_CHANNELS, IPC_ROLES } = require('./channels');
 const { createDisplaySettingsSnapshot } = require('./display-settings');
+const { createControlOutputSnapshot } = require('./output-status');
 const {
   validateEmergencyPayload,
   validateSaveSettingsPayload,
@@ -16,6 +17,7 @@ const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.CONTROL_GET_SETTINGS,
   IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
   IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+  IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
   IPC_CHANNELS.DISPLAY_GET_SETTINGS,
 ]);
@@ -88,6 +90,8 @@ class IpcCoordinator {
     presentationService,
     settingsManager = null,
     logoImporter = null,
+    displayTopologyService = null,
+    displayPlacementController = null,
     getWindow,
     allowedUrls,
     logger = console,
@@ -96,12 +100,16 @@ class IpcCoordinator {
     this.presentationService = presentationService;
     this.settingsManager = settingsManager;
     this.logoImporter = logoImporter;
+    this.displayTopologyService = displayTopologyService;
+    this.displayPlacementController = displayPlacementController;
     this.getWindow = getWindow;
     this.allowedUrls = allowedUrls;
     this.logger = logger;
     this.registered = false;
     this.presentationUnsubscribe = null;
     this.settingsUnsubscribe = null;
+    this.outputUnsubscribes = [];
+    this.lastOutputStatusSignature = null;
   }
 
   register() {
@@ -121,6 +129,17 @@ class IpcCoordinator {
           this.logger.error('[DisplayCore] Display 設定投影失敗。', error);
         }
       });
+    }
+
+    if (
+      typeof this.displayTopologyService?.subscribe === 'function' &&
+      typeof this.displayPlacementController?.subscribe === 'function'
+    ) {
+      const publishOutputStatus = () => this.broadcastOutputStatus();
+      this.outputUnsubscribes = [
+        this.displayTopologyService.subscribe(publishOutputStatus),
+        this.displayPlacementController.subscribe(publishOutputStatus),
+      ];
     }
 
     this.ipcMain.handle(
@@ -176,6 +195,12 @@ class IpcCoordinator {
       ),
     );
     this.ipcMain.handle(
+      IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
+      (event) => this.handleRequest(IPC_ROLES.CONTROL, event, () =>
+        success(this.createOutputStatusSnapshot()),
+      ),
+    );
+    this.ipcMain.handle(
       IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
       (event) => this.handleRequest(IPC_ROLES.DISPLAY, event, () =>
         success(this.presentationService.getSnapshot()),
@@ -203,8 +228,13 @@ class IpcCoordinator {
 
     this.presentationUnsubscribe?.();
     this.settingsUnsubscribe?.();
+    for (const unsubscribe of this.outputUnsubscribes) {
+      unsubscribe();
+    }
     this.presentationUnsubscribe = null;
     this.settingsUnsubscribe = null;
+    this.outputUnsubscribes = [];
+    this.lastOutputStatusSignature = null;
     this.registered = false;
   }
 
@@ -332,6 +362,50 @@ class IpcCoordinator {
       IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
       snapshot,
     );
+  }
+
+  /**
+   * 每次都從兩個 Main 服務讀取同一時刻的最新狀態，再交由安全投影器逐欄複製。
+   * Renderer 不會取得 Electron Display、bounds 或其他原生裝置資料。
+   */
+  createOutputStatusSnapshot() {
+    if (
+      typeof this.displayTopologyService?.getSnapshot !== 'function' ||
+      typeof this.displayPlacementController?.getStatus !== 'function'
+    ) {
+      throw new Error('Control 輸出狀態服務尚未初始化。');
+    }
+
+    return createControlOutputSnapshot(
+      this.displayTopologyService.getSnapshot(),
+      this.displayPlacementController.getStatus(),
+    );
+  }
+
+  /**
+   * Topology 更新時，Placement 也可能同步發布一次。以完整安全快照去重，確保
+   * Control 對同一組 revision 只收到一個 changed 事件。
+   */
+  broadcastOutputStatus() {
+    try {
+      const snapshot = this.createOutputStatusSnapshot();
+      const signature = JSON.stringify(snapshot);
+
+      if (signature === this.lastOutputStatusSignature) {
+        return false;
+      }
+
+      this.lastOutputStatusSignature = signature;
+      this.sendToRole(
+        IPC_ROLES.CONTROL,
+        IPC_CHANNELS.CONTROL_OUTPUT_STATUS_CHANGED,
+        snapshot,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error('[DisplayCore] Control 輸出狀態投影失敗。', error);
+      return false;
+    }
   }
 
   sendToRole(role, channel, snapshot) {

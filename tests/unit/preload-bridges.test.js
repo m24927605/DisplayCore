@@ -72,8 +72,10 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   assert.deepEqual(Object.keys(api).sort(), [
     'chooseLogo',
     'clearPresentation',
+    'getOutputStatus',
     'getPresentation',
     'getSettings',
+    'onOutputStatusChanged',
     'onPresentationChanged',
     'saveSettings',
     'showEmergency',
@@ -95,6 +97,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   await api.getSettings();
   await api.saveSettings({ configVersion: 1 }, 7);
   await api.chooseLogo();
+  await api.getOutputStatus();
 
   assert.deepEqual(
     harness.invocations.map(({ channel }) => channel),
@@ -106,6 +109,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
       IPC_CHANNELS.CONTROL_GET_SETTINGS,
       IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
       IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+      IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
     ],
   );
   assert.equal(
@@ -162,6 +166,12 @@ test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async ()
       file: 'preload.js',
       apiName: 'displayCoreControl',
       channel: IPC_CHANNELS.CONTROL_PRESENTATION_CHANGED,
+    },
+    {
+      file: 'preload.js',
+      apiName: 'displayCoreControl',
+      channel: IPC_CHANNELS.CONTROL_OUTPUT_STATUS_CHANGED,
+      subscribeMethod: 'onOutputStatusChanged',
     },
     {
       file: 'preload/display-preload.js',

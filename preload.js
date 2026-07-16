@@ -11,10 +11,13 @@ const CHANNELS = Object.freeze({
   GET_SETTINGS: 'dc:v2:control:settings:get',
   SAVE_SETTINGS: 'dc:v2:control:settings:save',
   CHOOSE_LOGO: 'dc:v2:control:settings:logo:choose',
+  GET_OUTPUT_STATUS: 'dc:v2:control:output-status:get',
   PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
+  OUTPUT_STATUS_CHANGED: 'dc:v2:control:output-status:changed',
 });
 
-function onPresentationChanged(listener) {
+/** 封裝固定 channel 的安全事件訂閱，不把 Electron event 傳入 Renderer。 */
+function subscribe(channel, listener) {
   if (typeof listener !== 'function') {
     throw new TypeError('listener 必須是函式。');
   }
@@ -23,11 +26,19 @@ function onPresentationChanged(listener) {
     listener(snapshot);
   };
 
-  ipcRenderer.on(CHANNELS.PRESENTATION_CHANGED, wrappedListener);
+  ipcRenderer.on(channel, wrappedListener);
 
   return () => {
-    ipcRenderer.removeListener(CHANNELS.PRESENTATION_CHANGED, wrappedListener);
+    ipcRenderer.removeListener(channel, wrappedListener);
   };
+}
+
+function onPresentationChanged(listener) {
+  return subscribe(CHANNELS.PRESENTATION_CHANGED, listener);
+}
+
+function onOutputStatusChanged(listener) {
+  return subscribe(CHANNELS.OUTPUT_STATUS_CHANGED, listener);
 }
 
 /** Control Renderer 只能呼叫固定用途的 v2 API，不能取得 raw ipcRenderer。 */
@@ -52,6 +63,8 @@ contextBridge.exposeInMainWorld(
         expectedRevision,
       }),
     chooseLogo: () => ipcRenderer.invoke(CHANNELS.CHOOSE_LOGO),
+    getOutputStatus: () => ipcRenderer.invoke(CHANNELS.GET_OUTPUT_STATUS),
     onPresentationChanged,
+    onOutputStatusChanged,
   }),
 );

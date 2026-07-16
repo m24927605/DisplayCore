@@ -138,10 +138,78 @@ function createSettingsManager() {
   };
 }
 
+function createTopologySnapshot(overrides = {}) {
+  return Object.freeze({
+    schemaVersion: 1,
+    topologyStatus: 'ready',
+    hdmiConnectionStatus: 'detecting',
+    displays: Object.freeze([Object.freeze({
+      id: 1,
+      label: '主螢幕',
+      width: 1920,
+      height: 1080,
+      scaleFactor: 1,
+      isPrimary: true,
+      isInternal: true,
+    })]),
+    effectiveDisplayId: 1,
+    configuredDisplayId: null,
+    selectionMode: 'auto',
+    fullscreen: true,
+    usingFallback: false,
+    secondDisplayConnected: false,
+    configRevision: 0,
+    revision: 0,
+    ...overrides,
+  });
+}
+
+function createPlacementSnapshot(overrides = {}) {
+  return Object.freeze({
+    status: 'applied',
+    displayId: 1,
+    fullscreen: true,
+    revision: 0,
+    ...overrides,
+  });
+}
+
+/** 建立可手動控制發布順序的唯讀狀態服務。 */
+function createOutputStateService(initialSnapshot) {
+  let snapshot = initialSnapshot;
+  const listeners = new Set();
+
+  return {
+    listeners,
+    getSnapshot() {
+      return snapshot;
+    },
+    getStatus() {
+      return snapshot;
+    },
+    setSnapshot(nextSnapshot) {
+      snapshot = nextSnapshot;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    publish(nextSnapshot = snapshot) {
+      snapshot = nextSnapshot;
+
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+    },
+  };
+}
+
 function createHarness({
   presentationService = null,
   settingsManager = null,
   logoImporter = null,
+  displayTopologyService = null,
+  displayPlacementController = null,
 } = {}) {
   const ipcMain = new FakeIpcMain();
   const windows = {
@@ -170,11 +238,17 @@ function createHarness({
       return { canceled: false, assetPath: 'logos/abc123.png' };
     },
   };
+  const resolvedTopologyService = displayTopologyService ||
+    createOutputStateService(createTopologySnapshot());
+  const resolvedPlacementController = displayPlacementController ||
+    createOutputStateService(createPlacementSnapshot());
   const coordinator = new IpcCoordinator({
     ipcMain,
     presentationService: service,
     settingsManager: resolvedSettingsManager,
     logoImporter: resolvedLogoImporter,
+    displayTopologyService: resolvedTopologyService,
+    displayPlacementController: resolvedPlacementController,
     getWindow: (role) => windows[role] || null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,
@@ -196,6 +270,8 @@ function createHarness({
     errors,
     ipcMain,
     logoImporter: resolvedLogoImporter,
+    displayPlacementController: resolvedPlacementController,
+    displayTopologyService: resolvedTopologyService,
     presentationService: service,
     settingsManager: resolvedSettingsManager,
     timers,
@@ -203,6 +279,94 @@ function createHarness({
     windows,
   };
 }
+
+test('Control 可取得拓樸與定位的最小輸出快照，Display 角色不可存取', async () => {
+  const { ipcMain, windows } = createHarness();
+
+  const result = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
+    createEvent(windows.control),
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    data: {
+      schemaVersion: 1,
+      topologyStatus: 'ready',
+      hdmiConnectionStatus: 'detecting',
+      displays: [{
+        id: 1,
+        label: '主螢幕',
+        width: 1920,
+        height: 1080,
+        scaleFactor: 1,
+        isPrimary: true,
+        isInternal: true,
+      }],
+      effectiveDisplayId: 1,
+      configuredDisplayId: null,
+      selectionMode: 'auto',
+      fullscreen: true,
+      usingFallback: false,
+      configRevision: 0,
+      topologyRevision: 0,
+      placement: {
+        status: 'applied',
+        displayId: 1,
+        fullscreen: true,
+        revision: 0,
+      },
+    },
+  });
+
+  const forbiddenResult = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
+    createEvent(windows.display),
+  );
+  assert.equal(forbiddenResult.ok, false);
+  assert.equal(forbiddenResult.error.code, 'FORBIDDEN');
+});
+
+test('輸出來源連續發布相同組合時只向 Control 廣播一次', () => {
+  const {
+    displayPlacementController,
+    displayTopologyService,
+    windows,
+  } = createHarness();
+  const nextTopology = createTopologySnapshot({
+    hdmiConnectionStatus: 'connected',
+    revision: 1,
+  });
+  const nextPlacement = createPlacementSnapshot({ revision: 1 });
+
+  // 模擬真實 listener 順序：Topology 已提交新狀態，Placement 先發布套用結果，
+  // 隨後 Topology 才通知 IPC；兩次讀到的組合完全相同，只能送出一個事件。
+  displayTopologyService.setSnapshot(nextTopology);
+  displayPlacementController.publish(nextPlacement);
+  displayTopologyService.publish(nextTopology);
+  displayPlacementController.publish(nextPlacement);
+
+  assert.equal(windows.control.webContents.sent.length, 1);
+  assert.equal(windows.display.webContents.sent.length, 0);
+  assert.equal(
+    windows.control.webContents.sent[0].channel,
+    IPC_CHANNELS.CONTROL_OUTPUT_STATUS_CHANGED,
+  );
+  assert.equal(
+    windows.control.webContents.sent[0].payload.topologyRevision,
+    1,
+  );
+  assert.equal(
+    windows.control.webContents.sent[0].payload.placement.revision,
+    1,
+  );
+
+  displayTopologyService.publish(createTopologySnapshot({
+    hdmiConnectionStatus: 'not-connected',
+    revision: 2,
+  }));
+  assert.equal(windows.control.webContents.sent.length, 2);
+});
 
 test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作', async () => {
   const { ipcMain, logoImporter, settingsManager, windows } = createHarness();
@@ -650,6 +814,8 @@ test('內部錯誤使用固定 envelope，不洩漏路徑或 stack', async () =>
 test('IPC handlers 與 service subscription 只註冊一次並可完整移除', () => {
   const {
     coordinator,
+    displayPlacementController,
+    displayTopologyService,
     ipcMain,
     presentationService,
     settingsManager,
@@ -663,6 +829,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     IPC_CHANNELS.CONTROL_GET_SETTINGS,
     IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
     IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+    IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
   ];
@@ -675,9 +842,13 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
   coordinator.dispose();
   presentationService.showEmergency('555');
   settingsManager.publish();
+  displayTopologyService.publish(createTopologySnapshot({ revision: 1 }));
+  displayPlacementController.publish(createPlacementSnapshot({ revision: 1 }));
   assert.equal(ipcMain.handlers.size, 0);
   assert.deepEqual(ipcMain.removedChannels.sort(), requestChannels.sort());
   assert.equal(windows.control.webContents.sent.length, 0);
   assert.equal(windows.display.webContents.sent.length, 0);
   assert.equal(settingsManager.listeners.size, 0);
+  assert.equal(displayTopologyService.listeners.size, 0);
+  assert.equal(displayPlacementController.listeners.size, 0);
 });

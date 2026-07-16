@@ -140,6 +140,8 @@ async function bootstrap() {
     presentationService,
     settingsManager,
     logoImporter,
+    displayTopologyService,
+    displayPlacementController,
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return windowManager.getControlWindow();

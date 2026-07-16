@@ -52,6 +52,14 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
     CONTINUOUS: 'continuous',
     FINITE: 'finite',
   });
+  assert.equal(
+    IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
+    'dc:v2:control:output-status:get',
+  );
+  assert.equal(
+    IPC_CHANNELS.CONTROL_OUTPUT_STATUS_CHANGED,
+    'dc:v2:control:output-status:changed',
+  );
 
   for (const value of [
     IPC_CHANNELS,
