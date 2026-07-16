@@ -9,14 +9,15 @@ const DISPLAY_TOPOLOGY_STATUSES = Object.freeze({
 
 const HDMI_DETECTING_STATUS = 'detecting';
 
-const OUTPUT_SELECTION_MODES = Object.freeze({
-  AUTO: 'auto',
-  MANUAL: 'manual',
-});
-
 const MAX_DISPLAY_COUNT = 32;
 const MAX_LABEL_CODE_POINTS = 80;
 const ALLOWED_HDMI_STATUSES = new Set(Object.values(HDMI_CONNECTION_STATUSES));
+const FIXED_OUTPUT_PREFERENCE = Object.freeze({
+  selectionMode: 'auto',
+  configuredDisplayId: null,
+  fullscreen: true,
+  configRevision: 0,
+});
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -170,47 +171,9 @@ function normalizeDisplays(rawDisplays, rawPrimaryDisplay) {
   return Object.freeze(displays);
 }
 
-function readOutputPreference(settingsSnapshot) {
-  const display = settingsSnapshot?.config?.display;
-  const revision = settingsSnapshot?.revision;
-
-  if (
-    !isPlainObject(display) ||
-    !Number.isSafeInteger(revision) ||
-    revision < 0 ||
-    !Object.values(OUTPUT_SELECTION_MODES).includes(display.selectionMode) ||
-    typeof display.fullscreen !== 'boolean' ||
-    (display.selectionMode === OUTPUT_SELECTION_MODES.AUTO &&
-      display.defaultDisplayId !== null) ||
-    (display.selectionMode === OUTPUT_SELECTION_MODES.MANUAL &&
-      !isValidDisplayId(display.defaultDisplayId))
-  ) {
-    throw new TypeError('設定管理器回傳無效的輸出偏好。');
-  }
-
-  return Object.freeze({
-    selectionMode: display.selectionMode,
-    configuredDisplayId: display.defaultDisplayId,
-    fullscreen: display.fullscreen,
-    configRevision: revision,
-  });
-}
-
-/** 依設定與目前有效目標決定下一個 Display。 */
-function selectTargetDisplay(displays, preference, currentEffectiveDisplayId) {
+/** 固定選擇外接螢幕；沒有外接螢幕時只回到主螢幕。 */
+function selectTargetDisplay(displays, currentEffectiveDisplayId) {
   const primaryDisplay = displays.find(({ isPrimary }) => isPrimary) || null;
-
-  if (preference.selectionMode === OUTPUT_SELECTION_MODES.MANUAL) {
-    const configured = displays.find(
-      ({ id }) => id === preference.configuredDisplayId,
-    );
-
-    return Object.freeze({
-      display: configured || primaryDisplay,
-      usingFallback: !configured,
-    });
-  }
-
   const externalDisplays = displays.filter(({ isInternal }) => !isInternal);
   const externalSecondaryDisplays = externalDisplays.filter(
     ({ isPrimary }) => !isPrimary,
@@ -223,11 +186,6 @@ function selectTargetDisplay(displays, preference, currentEffectiveDisplayId) {
     ({ id }) => id === currentEffectiveDisplayId,
   );
   const preferredExternal = externalDisplays[0];
-  const secondaryDisplays = displays.filter(({ isPrimary }) => !isPrimary);
-  const currentSecondary = secondaryDisplays.find(
-    ({ id }) => id === currentEffectiveDisplayId,
-  );
-  const preferredSecondary = secondaryDisplays[0];
 
   return Object.freeze({
     display:
@@ -235,8 +193,6 @@ function selectTargetDisplay(displays, preference, currentEffectiveDisplayId) {
       preferredExternalSecondary ||
       currentExternal ||
       preferredExternal ||
-      currentSecondary ||
-      preferredSecondary ||
       primaryDisplay,
     usingFallback: false,
   });
@@ -274,7 +230,7 @@ function createStateSignature(snapshot, displays) {
 }
 
 /**
- * 監聽 Electron screen 與 ConfigManager，維護輸出螢幕拓樸狀態。
+ * 監聽 Electron screen，維護自動輸出螢幕拓樸狀態。
  *
  * 本服務不直接操作 BrowserWindow；視窗定位由獨立 placement controller
  * 訂閱本服務，避免螢幕查詢、設定持久化與原生視窗操作互相耦合。
@@ -282,7 +238,6 @@ function createStateSignature(snapshot, displays) {
 class DisplayTopologyService {
   constructor({
     screen,
-    settingsManager,
     hdmiDetector,
     powerMonitor = null,
     logger = console,
@@ -292,7 +247,6 @@ class DisplayTopologyService {
   }) {
     if (
       !screen ||
-      !settingsManager ||
       !hdmiDetector ||
       !Number.isSafeInteger(hdmiDebounceMilliseconds) ||
       hdmiDebounceMilliseconds < 0 ||
@@ -307,7 +261,6 @@ class DisplayTopologyService {
     }
 
     this.screen = screen;
-    this.settingsManager = settingsManager;
     this.hdmiDetector = hdmiDetector;
     this.powerMonitor = powerMonitor;
     this.logger = logger;
@@ -327,9 +280,7 @@ class DisplayTopologyService {
     this.hdmiRefreshTimer = null;
     this.hdmiProbePromise = null;
     this.hdmiProbeQueued = false;
-    this.settingsUnsubscribe = null;
     this.handleScreenChange = this.handleScreenChange.bind(this);
-    this.handleSettingsChange = this.handleSettingsChange.bind(this);
   }
 
   async initialize() {
@@ -377,9 +328,6 @@ class DisplayTopologyService {
       this.powerMonitor?.on(eventName, this.handleScreenChange);
     }
 
-    this.settingsUnsubscribe = this.settingsManager.subscribe(
-      this.handleSettingsChange,
-    );
   }
 
   getSnapshot() {
@@ -414,14 +362,6 @@ class DisplayTopologyService {
     }
 
     this.scheduleRefresh();
-  }
-
-  handleSettingsChange() {
-    if (!this.disposed && this.initialized) {
-      this.commitCurrentTopology({
-        hdmiConnectionStatus: this.snapshot.hdmiConnectionStatus,
-      });
-    }
   }
 
   scheduleRefresh() {
@@ -471,14 +411,12 @@ class DisplayTopologyService {
     let candidate;
 
     try {
-      const preference = readOutputPreference(this.settingsManager.getSnapshot());
       const displays = normalizeDisplays(
         this.screen.getAllDisplays(),
         this.screen.getPrimaryDisplay(),
       );
       const selected = selectTargetDisplay(
         displays,
-        preference,
         this.snapshot?.effectiveDisplayId ?? null,
       );
 
@@ -486,7 +424,7 @@ class DisplayTopologyService {
         topologyStatus: DISPLAY_TOPOLOGY_STATUSES.READY,
         hdmiConnectionStatus,
         displays,
-        preference,
+        preference: FIXED_OUTPUT_PREFERENCE,
         targetDisplay: selected.display,
         usingFallback: selected.usingFallback,
       };
@@ -499,36 +437,13 @@ class DisplayTopologyService {
   }
 
   createUnknownCandidate(hdmiConnectionStatus) {
-    let preference;
-
-    try {
-      preference = readOutputPreference(this.settingsManager.getSnapshot());
-    } catch {
-      preference = this.snapshot
-        ? Object.freeze({
-          selectionMode: this.snapshot.selectionMode,
-          configuredDisplayId: this.snapshot.configuredDisplayId,
-          fullscreen: this.snapshot.fullscreen,
-          configRevision: this.snapshot.configRevision,
-        })
-        : Object.freeze({
-          selectionMode: OUTPUT_SELECTION_MODES.AUTO,
-          configuredDisplayId: null,
-          fullscreen: true,
-          configRevision: 0,
-        });
-    }
-
     return {
       topologyStatus: DISPLAY_TOPOLOGY_STATUSES.UNKNOWN,
       hdmiConnectionStatus,
       displays: this.displays,
-      preference,
+      preference: FIXED_OUTPUT_PREFERENCE,
       targetDisplay: this.targetDisplay,
-      usingFallback: this.snapshot?.usingFallback ?? (
-        preference.selectionMode === OUTPUT_SELECTION_MODES.MANUAL &&
-        this.targetDisplay?.id !== preference.configuredDisplayId
-      ),
+      usingFallback: false,
     };
   }
 
@@ -608,12 +523,7 @@ class DisplayTopologyService {
       topologyStatus: this.snapshot.topologyStatus,
       hdmiConnectionStatus: result.status,
       displays: this.displays,
-      preference: Object.freeze({
-        selectionMode: this.snapshot.selectionMode,
-        configuredDisplayId: this.snapshot.configuredDisplayId,
-        fullscreen: this.snapshot.fullscreen,
-        configRevision: this.snapshot.configRevision,
-      }),
+      preference: FIXED_OUTPUT_PREFERENCE,
       targetDisplay: this.targetDisplay,
       usingFallback: this.snapshot.usingFallback,
     });
@@ -654,8 +564,6 @@ class DisplayTopologyService {
       this.powerMonitor?.removeListener(eventName, this.handleScreenChange);
     }
 
-    this.settingsUnsubscribe?.();
-    this.settingsUnsubscribe = null;
     this.listeners.clear();
   }
 }

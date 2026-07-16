@@ -6,7 +6,6 @@ const test = require('node:test');
 const {
   DISPLAY_PLACEMENT_STATUSES,
   DisplayPlacementController,
-  calculateWindowedBounds,
 } = require('../../main/display-placement-controller');
 
 function createTargetDisplay(overrides = {}) {
@@ -118,26 +117,6 @@ function createController({
   return { controller, topology };
 }
 
-test('視窗化 bounds 使用目標 workArea 的 80% 內 16:9 置中', () => {
-  const workArea = { x: -2560, y: -360, width: 2560, height: 1400 };
-  const bounds = calculateWindowedBounds(workArea);
-
-  assert.ok(bounds.width <= workArea.width * 0.8);
-  assert.ok(bounds.height <= workArea.height * 0.8);
-  assert.ok(Math.abs(bounds.width / bounds.height - 16 / 9) < 0.002);
-  assert.equal(
-    bounds.x,
-    Math.round(workArea.x + (workArea.width - bounds.width) / 2),
-  );
-  assert.equal(
-    bounds.y,
-    Math.round(workArea.y + (workArea.height - bounds.height) / 2),
-  );
-  assert.ok(bounds.x < 0);
-  assert.ok(bounds.y < 0);
-  assert.equal(Object.isFrozen(bounds), true);
-});
-
 test('全螢幕跨螢幕依序退出、套用原始 DIP bounds、再進入全螢幕', () => {
   const window = new FakeWindow();
   const topology = new FakeTopologyService();
@@ -162,7 +141,7 @@ test('全螢幕跨螢幕依序退出、套用原始 DIP bounds、再進入全螢
   });
 });
 
-test('關閉全螢幕時使用 workArea 比例視窗且不重新進入全螢幕', () => {
+test('舊拓樸即使帶有視窗偏好，Display 仍固定套用全螢幕', () => {
   const window = new FakeWindow();
   const topology = new FakeTopologyService({
     snapshot: createTopologySnapshot({ fullscreen: false }),
@@ -176,11 +155,12 @@ test('關閉全螢幕時使用 workArea 比例視窗且不重新進入全螢幕'
     { method: 'setFullScreen', enabled: false },
     {
       method: 'setBounds',
-      bounds: calculateWindowedBounds(topology.target.workArea),
+      bounds: topology.target.bounds,
       animate: false,
     },
+    { method: 'setFullScreen', enabled: true },
   ]);
-  assert.equal(controller.getStatus().fullscreen, false);
+  assert.equal(controller.getStatus().fullscreen, true);
 });
 
 test('相同視窗與 placement 不重複呼叫原生 API，目標變更才重套用', () => {

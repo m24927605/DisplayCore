@@ -23,20 +23,6 @@ function createDisplay(id, overrides = {}) {
   };
 }
 
-function createConfigSnapshot({
-  revision = 0,
-  selectionMode = 'auto',
-  defaultDisplayId = null,
-  fullscreen = true,
-} = {}) {
-  return {
-    config: {
-      display: { selectionMode, defaultDisplayId, fullscreen },
-    },
-    revision,
-  };
-}
-
 class FakeScreen extends EventEmitter {
   constructor(displays, primaryDisplayId) {
     super();
@@ -65,34 +51,9 @@ class FakeScreen extends EventEmitter {
   }
 }
 
-class FakeSettingsManager {
-  constructor(snapshot = createConfigSnapshot()) {
-    this.snapshot = snapshot;
-    this.listeners = new Set();
-  }
-
-  getSnapshot() {
-    return this.snapshot;
-  }
-
-  subscribe(listener) {
-    this.listeners.add(listener);
-    return () => this.listeners.delete(listener);
-  }
-
-  publish(snapshot) {
-    this.snapshot = snapshot;
-
-    for (const listener of this.listeners) {
-      listener(snapshot);
-    }
-  }
-}
-
 function createService({
   displays,
   primaryDisplayId,
-  settingsSnapshot,
   powerMonitor,
   hdmiResult = {
     status: 'not-connected',
@@ -104,7 +65,6 @@ function createService({
     displays || [createDisplay(1, { internal: true })],
     primaryDisplayId ?? 1,
   );
-  const settingsManager = new FakeSettingsManager(settingsSnapshot);
   const hdmiCalls = [];
   const hdmiDetector = {
     async detect() {
@@ -115,7 +75,6 @@ function createService({
   const warnings = [];
   const service = new DisplayTopologyService({
     screen,
-    settingsManager,
     hdmiDetector,
     powerMonitor,
     logger: {
@@ -125,7 +84,7 @@ function createService({
     },
   });
 
-  return { hdmiCalls, screen, service, settingsManager, warnings };
+  return { hdmiCalls, screen, service, warnings };
 }
 
 async function flushAsyncWork() {
@@ -168,10 +127,8 @@ test('初始化不等待 HDMI 探測，先提供可定位的拓樸再背景更�
     resolveHdmi = resolve;
   });
   const screen = new FakeScreen([primary], 1);
-  const settingsManager = new FakeSettingsManager();
   const service = new DisplayTopologyService({
     screen,
-    settingsManager,
     hdmiDetector: {
       detect() {
         return hdmiResult;
@@ -239,7 +196,6 @@ test('只有主螢幕時 auto 使用主螢幕並發布最小唯讀快照', async
   const { service } = createService({
     displays: [primary],
     primaryDisplayId: 1,
-    settingsSnapshot: createConfigSnapshot({ revision: 4 }),
     hdmiResult: {
       status: 'connected',
       activeConnectionCount: 1,
@@ -270,7 +226,7 @@ test('只有主螢幕時 auto 使用主螢幕並發布最小唯讀快照', async
     fullscreen: true,
     usingFallback: false,
     secondDisplayConnected: false,
-    configRevision: 4,
+    configRevision: 0,
     revision: 1,
   });
   assert.equal(Object.isFrozen(snapshot), true);
@@ -352,33 +308,51 @@ test('auto 從單一外接主螢幕升級到新接入的外接副螢幕', async 
   assert.equal(service.getSnapshot().effectiveDisplayId, 20);
 });
 
-test('manual 螢幕離線時暫用主螢幕，重新連接後自動回到原設定', async () => {
+test('外接螢幕拔除時回到主螢幕，重新連接後自動返回外接螢幕', async () => {
   const primary = createDisplay(1, { internal: true });
-  const selected = createDisplay(42, { label: '指定電視' });
+  const selected = createDisplay(42, { label: '外接電視' });
   const { screen, service } = createService({
-    displays: [primary],
+    displays: [primary, selected],
     primaryDisplayId: 1,
-    settingsSnapshot: createConfigSnapshot({
-      selectionMode: 'manual',
-      defaultDisplayId: 42,
-      fullscreen: false,
-    }),
   });
 
   await service.initialize();
+  assert.equal(service.getSnapshot().effectiveDisplayId, 42);
+  assert.equal(service.getSnapshot().configuredDisplayId, null);
+  assert.equal(service.getSnapshot().usingFallback, false);
+  assert.equal(service.getSnapshot().fullscreen, true);
+
+  screen.displays = [primary];
+  screen.emit('display-removed', {}, selected);
+  await flushAsyncWork();
+
   assert.equal(service.getSnapshot().effectiveDisplayId, 1);
-  assert.equal(service.getSnapshot().configuredDisplayId, 42);
-  assert.equal(service.getSnapshot().usingFallback, true);
-  assert.equal(service.getSnapshot().fullscreen, false);
+  assert.equal(service.getSnapshot().configuredDisplayId, null);
+  assert.equal(service.getSnapshot().usingFallback, false);
+  assert.equal(service.getSnapshot().fullscreen, true);
 
   screen.displays = [primary, selected];
   screen.emit('display-added', {}, selected);
   await flushAsyncWork();
 
   assert.equal(service.getSnapshot().effectiveDisplayId, 42);
-  assert.equal(service.getSnapshot().configuredDisplayId, 42);
+  assert.equal(service.getSnapshot().configuredDisplayId, null);
   assert.equal(service.getSnapshot().usingFallback, false);
   assert.deepEqual(service.getTargetDisplay().bounds, selected.bounds);
+});
+
+test('沒有外接螢幕時只使用主螢幕，不會誤選內建副螢幕', async () => {
+  const primary = createDisplay(1, { internal: true });
+  const internalSecondary = createDisplay(2, { internal: true });
+  const { service } = createService({
+    displays: [primary, internalSecondary],
+    primaryDisplayId: 1,
+  });
+
+  await service.initialize();
+
+  assert.equal(service.getSnapshot().effectiveDisplayId, 1);
+  assert.equal(service.getTargetDisplay().id, 1);
 });
 
 test('忽略無效、未偵測與重複 id，保留有效螢幕的負座標與 DIP bounds', async () => {
@@ -434,7 +408,7 @@ test('display 事件立即合併拓樸，HDMI 探測則 debounce 避免事件風
     { status: 'not-connected', activeConnectionCount: 1, hdmiConnectionCount: 0 },
     { status: 'connected', activeConnectionCount: 2, hdmiConnectionCount: 1 },
   ];
-  const { screen, settingsManager } = createService({
+  const { screen } = createService({
     displays: [primary],
     primaryDisplayId: 1,
   });
@@ -442,7 +416,6 @@ test('display 事件立即合併拓樸，HDMI 探測則 debounce 避免事件風
   let hdmiIndex = 0;
   const service = new DisplayTopologyService({
     screen,
-    settingsManager,
     hdmiDetector: {
       async detect() {
         return hdmiResults[Math.min(hdmiIndex++, hdmiResults.length - 1)];
@@ -479,12 +452,10 @@ test('HDMI 探測 single-flight：前次未完成時只排定一次後續查詢'
   const primary = createDisplay(1, { internal: true });
   const external = createDisplay(2);
   const screen = new FakeScreen([primary], 1);
-  const settingsManager = new FakeSettingsManager();
   const resolvers = [];
   let callCount = 0;
   const service = new DisplayTopologyService({
     screen,
-    settingsManager,
     hdmiDetector: {
       detect() {
         callCount += 1;
@@ -514,29 +485,6 @@ test('HDMI 探測 single-flight：前次未完成時只排定一次後續查詢'
   resolvers.shift()({ status: 'connected' });
   await flushAsyncWork();
   assert.equal(service.getSnapshot().hdmiConnectionStatus, 'connected');
-});
-
-test('設定發布即時更新偏好，且不需要重新查詢 HDMI', async () => {
-  const primary = createDisplay(1, { internal: true });
-  const external = createDisplay(2);
-  const { hdmiCalls, service, settingsManager } = createService({
-    displays: [primary, external],
-    primaryDisplayId: 1,
-  });
-
-  await service.initialize();
-  settingsManager.publish(createConfigSnapshot({
-    revision: 8,
-    selectionMode: 'manual',
-    defaultDisplayId: 1,
-    fullscreen: false,
-  }));
-
-  assert.equal(service.getSnapshot().effectiveDisplayId, 1);
-  assert.equal(service.getSnapshot().configuredDisplayId, 1);
-  assert.equal(service.getSnapshot().fullscreen, false);
-  assert.equal(service.getSnapshot().configRevision, 8);
-  assert.equal(hdmiCalls.length, 1);
 });
 
 test('screen API 暫時失敗時保留原目標並標示 unknown，恢復後重新發布', async () => {
@@ -573,16 +521,11 @@ test('screen API 暫時失敗時保留原目標並標示 unknown，恢復後重�
   assert.equal(service.getSnapshot().effectiveDisplayId, 1);
 });
 
-test('手動模式在初次拓樸查詢失敗時明確標示 fallback，不產生矛盾快照', async () => {
+test('初次拓樸查詢失敗時保留固定自動全螢幕狀態', async () => {
   const screen = new FakeScreen([createDisplay(1, { internal: true })], 1);
   screen.error = new Error('startup topology unavailable');
-  const settingsManager = new FakeSettingsManager(createConfigSnapshot({
-    selectionMode: 'manual',
-    defaultDisplayId: 42,
-  }));
   const service = new DisplayTopologyService({
     screen,
-    settingsManager,
     hdmiDetector: {
       async detect() {
         return { status: 'unknown' };
@@ -594,30 +537,29 @@ test('手動模式在初次拓樸查詢失敗時明確標示 fallback，不產�
   await service.initialize();
 
   assert.equal(service.getSnapshot().topologyStatus, 'unknown');
-  assert.equal(service.getSnapshot().configuredDisplayId, 42);
+  assert.equal(service.getSnapshot().selectionMode, 'auto');
+  assert.equal(service.getSnapshot().configuredDisplayId, null);
   assert.equal(service.getSnapshot().effectiveDisplayId, null);
-  assert.equal(service.getSnapshot().usingFallback, true);
+  assert.equal(service.getSnapshot().usingFallback, false);
+  assert.equal(service.getSnapshot().fullscreen, true);
 });
 
-test('dispose 精確移除 screen 與設定訂閱，後續事件不再變更狀態', async () => {
-  const { screen, service, settingsManager } = createService();
+test('dispose 精確移除 screen 訂閱，後續事件不再變更狀態', async () => {
+  const { screen, service } = createService();
   await service.initialize();
   const snapshotBefore = service.getSnapshot();
 
   assert.equal(screen.listenerCount('display-added'), 1);
   assert.equal(screen.listenerCount('display-removed'), 1);
   assert.equal(screen.listenerCount('display-metrics-changed'), 1);
-  assert.equal(settingsManager.listeners.size, 1);
 
   service.dispose();
   screen.displays = [createDisplay(1), createDisplay(2)];
   screen.emit('display-added', {}, createDisplay(2));
-  settingsManager.publish(createConfigSnapshot({ revision: 9 }));
   await flushAsyncWork();
 
   assert.equal(screen.listenerCount('display-added'), 0);
   assert.equal(screen.listenerCount('display-removed'), 0);
   assert.equal(screen.listenerCount('display-metrics-changed'), 0);
-  assert.equal(settingsManager.listeners.size, 0);
   assert.equal(service.getSnapshot(), snapshotBefore);
 });

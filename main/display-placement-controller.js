@@ -6,58 +6,15 @@ const DISPLAY_PLACEMENT_STATUSES = Object.freeze({
   ERROR: 'error',
 });
 
-const WINDOWED_AREA_RATIO = 0.8;
-const DISPLAY_ASPECT_RATIO = 16 / 9;
-
 function waitForDelay(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
-function isRectangle(value) {
-  return (
-    value !== null &&
-    typeof value === 'object' &&
-    ['x', 'y', 'width', 'height'].every((key) => Number.isFinite(value[key])) &&
-    value.width > 0 &&
-    value.height > 0
-  );
-}
-
-/**
- * 在指定螢幕可用區內建立 80% 大小、16:9 且置中的視窗。
- * Electron screen 的座標與尺寸皆為 DIP，不可再乘 scaleFactor。
- */
-function calculateWindowedBounds(workArea) {
-  if (!isRectangle(workArea)) {
-    throw new TypeError('workArea 必須是有效矩形。');
-  }
-
-  const maximumWidth = Math.max(1, Math.floor(workArea.width * WINDOWED_AREA_RATIO));
-  const maximumHeight = Math.max(1, Math.floor(workArea.height * WINDOWED_AREA_RATIO));
-  let width;
-  let height;
-
-  if (maximumWidth / maximumHeight > DISPLAY_ASPECT_RATIO) {
-    height = maximumHeight;
-    width = Math.max(1, Math.floor(height * DISPLAY_ASPECT_RATIO));
-  } else {
-    width = maximumWidth;
-    height = Math.max(1, Math.floor(width / DISPLAY_ASPECT_RATIO));
-  }
-
-  return Object.freeze({
-    x: Math.round(workArea.x + (workArea.width - width) / 2),
-    y: Math.round(workArea.y + (workArea.height - height) / 2),
-    width,
-    height,
-  });
-}
-
-function placementSignature(targetDisplay, fullscreen) {
+function placementSignature(targetDisplay) {
   return JSON.stringify({
     displayId: targetDisplay.id,
-    bounds: fullscreen ? targetDisplay.bounds : targetDisplay.workArea,
-    fullscreen,
+    bounds: targetDisplay.bounds,
+    fullscreen: true,
   });
 }
 
@@ -166,12 +123,12 @@ class DisplayPlacementController {
     this.setStatus({
       status: DISPLAY_PLACEMENT_STATUSES.PENDING,
       displayId: snapshot.effectiveDisplayId,
-      fullscreen: snapshot.fullscreen,
+      fullscreen: true,
     });
   }
 
   /**
-   * 套用順序固定為退出全螢幕、移動／縮放、依偏好重新進入全螢幕。
+   * 套用順序固定為退出全螢幕、移動／縮放、重新進入全螢幕。
    * 這讓 Windows 能在負座標與混合 DPI 拓樸中把全螢幕放到正確螢幕。
    */
   applyToWindow(displayWindow) {
@@ -187,7 +144,6 @@ class DisplayPlacementController {
       return false;
     }
 
-    const snapshot = this.topologyService.getSnapshot();
     const targetDisplay = this.topologyService.getTargetDisplay();
 
     if (!targetDisplay) {
@@ -195,7 +151,7 @@ class DisplayPlacementController {
       return false;
     }
 
-    const signature = placementSignature(targetDisplay, snapshot.fullscreen);
+    const signature = placementSignature(targetDisplay);
 
     if (this.lastPlacementByWindow.get(displayWindow) === signature) {
       return true;
@@ -203,22 +159,14 @@ class DisplayPlacementController {
 
     try {
       displayWindow.setFullScreen(false);
-      displayWindow.setBounds(
-        snapshot.fullscreen
-          ? targetDisplay.bounds
-          : calculateWindowedBounds(targetDisplay.workArea),
-        false,
-      );
-
-      if (snapshot.fullscreen) {
-        displayWindow.setFullScreen(true);
-      }
+      displayWindow.setBounds(targetDisplay.bounds, false);
+      displayWindow.setFullScreen(true);
 
       this.lastPlacementByWindow.set(displayWindow, signature);
       this.setStatus({
         status: DISPLAY_PLACEMENT_STATUSES.APPLIED,
         displayId: targetDisplay.id,
-        fullscreen: snapshot.fullscreen,
+        fullscreen: true,
       }, { force: true });
       return true;
     } catch {
@@ -227,7 +175,7 @@ class DisplayPlacementController {
       this.setStatus({
         status: DISPLAY_PLACEMENT_STATUSES.ERROR,
         displayId: targetDisplay.id,
-        fullscreen: snapshot.fullscreen,
+        fullscreen: true,
       });
       return false;
     }
@@ -308,5 +256,4 @@ class DisplayPlacementController {
 module.exports = {
   DISPLAY_PLACEMENT_STATUSES,
   DisplayPlacementController,
-  calculateWindowedBounds,
 };

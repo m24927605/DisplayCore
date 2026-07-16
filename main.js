@@ -145,7 +145,6 @@ async function bootstrap() {
   const displayTopologyService = new DisplayTopologyService({
     screen,
     powerMonitor,
-    settingsManager,
     hdmiDetector,
     logger: console,
   });
