@@ -131,6 +131,34 @@ async function flushAsyncWork() {
   await new Promise((resolve) => setImmediate(resolve));
 }
 
+function createFakeTimers() {
+  const timers = new Map();
+  let nextId = 1;
+
+  return {
+    clearTimer(id) {
+      timers.delete(id);
+    },
+    pendingCount() {
+      return timers.size;
+    },
+    runAll() {
+      const callbacks = [...timers.values()];
+      timers.clear();
+
+      for (const callback of callbacks) {
+        callback();
+      }
+    },
+    setTimer(callback) {
+      const id = nextId;
+      nextId += 1;
+      timers.set(id, callback);
+      return id;
+    },
+  };
+}
+
 test('初始化不等待 HDMI 探測，先提供可定位的拓樸再背景更新狀態', async () => {
   const primary = createDisplay(1, { internal: true });
   let resolveHdmi;
@@ -368,7 +396,7 @@ test('忽略無效、未偵測與重複 id，保留有效螢幕的負座標與 D
   assert.deepEqual(service.getTargetDisplay().bounds, left.bounds);
 });
 
-test('display 事件以 microtask 合併並依最新 API 狀態更新 HDMI', async () => {
+test('display 事件立即合併拓樸，HDMI 探測則 debounce 避免事件風暴', async () => {
   const primary = createDisplay(1, { internal: true });
   const external = createDisplay(2);
   const hdmiResults = [
@@ -379,6 +407,7 @@ test('display 事件以 microtask 合併並依最新 API 狀態更新 HDMI', asy
     displays: [primary],
     primaryDisplayId: 1,
   });
+  const timers = createFakeTimers();
   let hdmiIndex = 0;
   const service = new DisplayTopologyService({
     screen,
@@ -388,9 +417,12 @@ test('display 事件以 microtask 合併並依最新 API 狀態更新 HDMI', asy
         return hdmiResults[Math.min(hdmiIndex++, hdmiResults.length - 1)];
       },
     },
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
   });
 
   await service.initialize();
+  await flushAsyncWork();
   const queryCountBefore = screen.queryCount;
   screen.displays = [primary, external];
   screen.emit('display-added', {}, external);
@@ -400,6 +432,56 @@ test('display 事件以 microtask 合併並依最新 API 狀態更新 HDMI', asy
 
   assert.equal(screen.queryCount, queryCountBefore + 1);
   assert.equal(service.getSnapshot().effectiveDisplayId, 2);
+  assert.equal(service.getSnapshot().hdmiConnectionStatus, 'not-connected');
+  assert.equal(timers.pendingCount(), 1);
+  assert.equal(hdmiIndex, 1);
+
+  timers.runAll();
+  await flushAsyncWork();
+
+  assert.equal(service.getSnapshot().hdmiConnectionStatus, 'connected');
+  assert.equal(hdmiIndex, 2);
+});
+
+test('HDMI 探測 single-flight：前次未完成時只排定一次後續查詢', async () => {
+  const timers = createFakeTimers();
+  const primary = createDisplay(1, { internal: true });
+  const external = createDisplay(2);
+  const screen = new FakeScreen([primary], 1);
+  const settingsManager = new FakeSettingsManager();
+  const resolvers = [];
+  let callCount = 0;
+  const service = new DisplayTopologyService({
+    screen,
+    settingsManager,
+    hdmiDetector: {
+      detect() {
+        callCount += 1;
+        return new Promise((resolve) => resolvers.push(resolve));
+      },
+    },
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
+
+  await service.initialize();
+  assert.equal(callCount, 1);
+
+  screen.displays = [primary, external];
+  screen.emit('display-added', {}, external);
+  screen.emit('display-metrics-changed', {}, external, ['bounds']);
+  await flushAsyncWork();
+  timers.runAll();
+  await flushAsyncWork();
+
+  assert.equal(callCount, 1);
+
+  resolvers.shift()({ status: 'not-connected' });
+  await flushAsyncWork();
+  assert.equal(callCount, 2);
+
+  resolvers.shift()({ status: 'connected' });
+  await flushAsyncWork();
   assert.equal(service.getSnapshot().hdmiConnectionStatus, 'connected');
 });
 

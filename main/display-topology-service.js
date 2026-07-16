@@ -280,8 +280,25 @@ function createStateSignature(snapshot, displays) {
  * 訂閱本服務，避免螢幕查詢、設定持久化與原生視窗操作互相耦合。
  */
 class DisplayTopologyService {
-  constructor({ screen, settingsManager, hdmiDetector, logger = console }) {
-    if (!screen || !settingsManager || !hdmiDetector) {
+  constructor({
+    screen,
+    settingsManager,
+    hdmiDetector,
+    logger = console,
+    hdmiDebounceMilliseconds = 250,
+    setTimer = setTimeout,
+    clearTimer = clearTimeout,
+  }) {
+    if (
+      !screen ||
+      !settingsManager ||
+      !hdmiDetector ||
+      !Number.isSafeInteger(hdmiDebounceMilliseconds) ||
+      hdmiDebounceMilliseconds < 0 ||
+      hdmiDebounceMilliseconds > 5000 ||
+      typeof setTimer !== 'function' ||
+      typeof clearTimer !== 'function'
+    ) {
       throw new TypeError('螢幕拓樸服務缺少必要相依物件。');
     }
 
@@ -289,6 +306,9 @@ class DisplayTopologyService {
     this.settingsManager = settingsManager;
     this.hdmiDetector = hdmiDetector;
     this.logger = logger;
+    this.hdmiDebounceMilliseconds = hdmiDebounceMilliseconds;
+    this.setTimer = setTimer;
+    this.clearTimer = clearTimer;
     this.snapshot = null;
     this.displays = Object.freeze([]);
     this.targetDisplay = null;
@@ -299,7 +319,9 @@ class DisplayTopologyService {
     this.disposed = false;
     this.refreshScheduled = false;
     this.refreshPendingDuringInitialization = false;
-    this.hdmiProbeSequence = 0;
+    this.hdmiRefreshTimer = null;
+    this.hdmiProbePromise = null;
+    this.hdmiProbeQueued = false;
     this.settingsUnsubscribe = null;
     this.handleScreenChange = this.handleScreenChange.bind(this);
     this.handleSettingsChange = this.handleSettingsChange.bind(this);
@@ -409,8 +431,31 @@ class DisplayTopologyService {
       this.commitCurrentTopology({
         hdmiConnectionStatus: this.snapshot.hdmiConnectionStatus,
       });
-      void this.refreshHdmiStatus();
+      this.scheduleHdmiRefresh();
     });
+  }
+
+  /**
+   * 顯示器 docking 常會連續送出 added／metrics 多個事件。拓樸仍於下一個
+   * microtask 立即更新，但成本較高的 PowerShell／WMI 查詢延後合併。
+   */
+  scheduleHdmiRefresh() {
+    if (this.disposed) {
+      return;
+    }
+
+    if (this.hdmiRefreshTimer !== null) {
+      this.clearTimer(this.hdmiRefreshTimer);
+    }
+
+    this.hdmiRefreshTimer = this.setTimer(() => {
+      this.hdmiRefreshTimer = null;
+
+      if (!this.disposed) {
+        void this.refreshHdmiStatus();
+      }
+    }, this.hdmiDebounceMilliseconds);
+    this.hdmiRefreshTimer?.unref?.();
   }
 
   commitCurrentTopology({ hdmiConnectionStatus, initial = false }) {
@@ -511,12 +556,37 @@ class DisplayTopologyService {
   }
 
   async refreshHdmiStatus() {
-    const sequence = ++this.hdmiProbeSequence;
+    if (this.disposed) {
+      return;
+    }
+
+    if (this.hdmiProbePromise) {
+      this.hdmiProbeQueued = true;
+      return this.hdmiProbePromise;
+    }
+
+    const probePromise = this.performHdmiProbe();
+    this.hdmiProbePromise = probePromise;
+
+    try {
+      await probePromise;
+    } finally {
+      if (this.hdmiProbePromise === probePromise) {
+        this.hdmiProbePromise = null;
+      }
+
+      if (this.hdmiProbeQueued && !this.disposed) {
+        this.hdmiProbeQueued = false;
+        void this.refreshHdmiStatus();
+      }
+    }
+  }
+
+  async performHdmiProbe() {
     const result = await this.safeDetectHdmi();
 
     if (
       this.disposed ||
-      sequence !== this.hdmiProbeSequence ||
       result.status === this.snapshot.hdmiConnectionStatus
     ) {
       return;
@@ -553,7 +623,12 @@ class DisplayTopologyService {
     }
 
     this.disposed = true;
-    this.hdmiProbeSequence += 1;
+    this.hdmiProbeQueued = false;
+
+    if (this.hdmiRefreshTimer !== null) {
+      this.clearTimer(this.hdmiRefreshTimer);
+      this.hdmiRefreshTimer = null;
+    }
 
     for (const eventName of [
       'display-added',
