@@ -27,7 +27,7 @@ npm run make
 - `npm run package`：產生目前作業系統的未安裝應用程式封裝。
 - `npm run make`：產生安裝檔；Squirrel.Windows 應於 Windows 10／11 環境執行。
 
-## 目前進度：第 8 步響應式畫面
+## 目前進度：第 9 步 HDMI 與輸出螢幕管理
 
 本階段已完成：
 
@@ -70,6 +70,14 @@ npm run make
 - 日期時間依設定語系與 12／24 小時制格式化，更新排程對齊下一個整分鐘，避免長時間運作累積漂移。
 - 一般畫面會為 Logo 與日期時間保留比例式安全區；空白畫面與臨檢滿屏會隱藏所有裝飾資訊。
 - 真實 Electron Renderer 自動驗證 1366×768、1600×900、1920×1080、2560×1440 與 3840×2160，包含溢位、重疊、字體縮放、跑馬燈切換及即時設定更新。
+- Main Process 透過 Electron `screen` 維護可用螢幕拓樸，監聽新增、移除、尺寸／DPI 變更，以及系統恢復與解鎖。
+- 自動模式優先使用外接螢幕，沒有可用外接螢幕時回退主螢幕；外接電視被設為 Windows 主螢幕時也能正確辨識。
+- 手動模式保存指定 Display ID；螢幕中斷時暫用主螢幕但不覆寫原設定，重新連接同一 ID 後自動恢復。
+- Display Window 在載入頁面前先依目標螢幕的 DIP bounds 定位；可切換全螢幕或可用區 80% 的置中 16:9 視窗。
+- Windows 使用固定、無使用者輸入的本機 PowerShell／WMI 查詢判定是否有作用中的 HDMI 輸出；逾時、政策封鎖或無法判定時明確顯示 unknown，不影響正常螢幕路由。
+- HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
+- Control 以獨立狀態卡呈現 HDMI、實際輸出目標、全螢幕模式及螢幕數；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
+- Control 設定對話框可選自動／指定螢幕與全螢幕；拓樸事件不會覆蓋尚未儲存的表單草稿。
 
 ## 播放模型
 
@@ -93,6 +101,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 7. `555` 與 `888` 會先開啟確認對話框；確認後立即覆蓋一般清單。
 8. 「清空待播清單」只刪除未送出草稿；「清除電視畫面」只清除 Main 目前播放。
 9. 按「開啟系統設定」可調整本機設定；「載入預設值」只改草稿，按「儲存設定」後才會保存並即時更新 Display。
+10. 「螢幕連線與輸出」會即時顯示 HDMI 與實際輸出狀態；按「管理輸出設定」可直接開啟輸出偏好，選擇自動／指定螢幕及全螢幕。
 
 所有輸入都以純文字預覽與呈現，不會解析 HTML。編號／花名、自定義內容及前後空白不會被 trim、正規化或轉換。Main 會再次套用最多 500 則與合計 10,000 Unicode code point 的資源保護上限。
 
@@ -106,7 +115,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 - 背景顏色、字型、字體顏色與最小字體大小。
 - 是否顯示日期時間、12／24 小時制與日期語系。
 - 最小字體仍放不下時是否使用水平跑馬燈。
-- 預設顯示模式與全螢幕偏好；實體螢幕選擇於第 9 步啟用。
+- 自動／指定螢幕、指定 Display ID 與全螢幕偏好。
 
 Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到受管理目錄；設定只保存 `logos/...` 相對名稱。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
 
@@ -119,6 +128,9 @@ Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案�
 - `main/window-options.js`：BrowserWindow 安全選項。
 - `main/security-policy.js`：Session 與 WebContents 安全政策。
 - `main/local-protocol.js`：受限的本機靜態資源與目前啟用 Logo 同源協定。
+- `main/hdmi-detector.js`：Windows 本機 WMI HDMI aggregate 查詢、逾時與安全降級。
+- `main/display-topology-service.js`：螢幕正規化、自動／手動目標選擇、熱插拔與休眠恢復。
+- `main/display-placement-controller.js`：以 Electron DIP bounds 套用全螢幕或置中視窗位置。
 
 IPC：
 
@@ -127,6 +139,7 @@ IPC：
 - `ipc/presentation-store.js`：不可變播放狀態機、分頁投影與 revision。
 - `ipc/presentation-service.js`：翻頁 timer、整輪推進與狀態發布。
 - `ipc/display-settings.js`：將完整設定投影為 Display 所需的唯讀安全白名單。
+- `ipc/output-status.js`：將拓樸與定位狀態投影為 Control 所需的最小唯讀白名單。
 - `ipc/ipc-coordinator.js`：sender 授權、request handler 與雙視窗廣播。
 - `preload.js`：Control 的顯示操作、設定讀寫與 Logo 選擇固定用途 API。
 - `preload/display-preload.js`：Display 的唯讀播放與顯示設定 snapshot API。
@@ -149,6 +162,9 @@ Control：
 - `control/settings-model.mjs`：設定 snapshot、草稿驗證與 dirty 比較。
 - `control/settings-controller.mjs`：設定 IPC envelope、防重送與錯誤協調。
 - `control/settings-view.mjs`：設定對話框、欄位投影、預設值與儲存互動。
+- `control/output-state.mjs`：輸出 snapshot exact schema、雙 revision 防亂序與 UI 狀態衍生。
+- `control/output-controller.mjs`：先訂閱後查詢、錯誤復原與最後有效狀態保留。
+- `control/output-view.mjs`：HDMI 與實際輸出分離的即時狀態卡。
 - `control/app.mjs`：DOM adapter、草稿操作與 preload bridge 接線。
 
 Display：
@@ -165,9 +181,15 @@ Display：
 
 Presentation 中每個項目只有一個完整 `message`，不會拆成 title、編號、花名或動作欄位。Main 與 Display 不依一般文字內容判斷 555／888。
 
+## HDMI 判定範圍
+
+Electron `screen` 能可靠取得可用顯示器、內建／外接資訊、DIP 座標及熱插拔事件，但 `Display` 沒有實體 connector type。因此 DisplayCore 將兩件事分開處理：
+
+- 視窗路由依 Electron 顯示器拓樸選擇外接或手動指定螢幕。
+- HDMI 狀態是 Windows WMI 對全機作用中輸出的 aggregate 回報，不能證明目前選取的某一台螢幕使用 HDMI。
+
+因此 Control 不會把任何單一螢幕選項標成 HDMI；DisplayPort、USB-C、轉接器、虛擬或遠端顯示環境仍可能出現在螢幕清單。非 Windows 或 WMI 無法查詢時，HDMI 會顯示「無法判定」，而不是誤報「未連接」。
+
 ## 尚未進入的步驟
 
-- 第 9 步：HDMI 自動偵測、輸出螢幕選擇與 Display 全螢幕切換。
-- 第 10 步：Windows 10／11 實機與目標解析度的完整驗收。
-
-第 9 步完成前，Display 由作業系統放在預設螢幕；Control 內 HDMI、輸出螢幕與全螢幕區會維持明確的「尚未完成」狀態。
+- 第 10 步：Windows 10／11 實機、HDMI 電視、熱插拔、睡眠恢復、混合 DPI 與目標解析度的完整驗收。
