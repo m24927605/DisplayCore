@@ -13,51 +13,94 @@ async function loadPresentationState() {
   return import(moduleUrl);
 }
 
-test('Control 只接受結構完整且 revision 未過期的 presentation', async () => {
-  const { acceptPresentationSnapshot } = await loadPresentationState();
-  const snapshot = {
-    message: '001請至前廳',
+function createPageSnapshot(revision = 3) {
+  return {
+    mode: 'page',
+    messages: [
+      { message: '001請至前廳' },
+      { message: 'Nancy前廳000' },
+    ],
     layout: 'single-line',
-    revision: 3,
+    pageDurationSeconds: 3,
+    pageNumber: 1,
+    pageCount: 2,
+    roundNumber: 1,
+    totalRounds: 10,
+    revision,
   };
+}
+
+test('Control 接受結構完整且 revision 較新的 page snapshot', async () => {
+  const { acceptPresentationSnapshot } = await loadPresentationState();
+  const snapshot = createPageSnapshot();
 
   assert.deepEqual(acceptPresentationSnapshot(2, snapshot), {
     accepted: true,
     snapshot,
   });
   assert.deepEqual(
-    acceptPresentationSnapshot(3, {
-      message: '過期內容',
-      layout: 'single-line',
-      revision: 2,
-    }),
+    acceptPresentationSnapshot(3, createPageSnapshot(2)),
     { accepted: false },
   );
+});
+
+test('Control 接受 blank／emergency discriminated shape', async () => {
+  const { acceptPresentationSnapshot } = await loadPresentationState();
+  const blank = {
+    mode: 'blank',
+    messages: [],
+    layout: 'single-line',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    revision: 0,
+  };
+  const emergency = {
+    mode: 'emergency',
+    messages: [{ message: '555' }],
+    layout: 'fill-screen',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    revision: 1,
+  };
+
+  assert.equal(acceptPresentationSnapshot(-1, blank).accepted, true);
+  assert.equal(acceptPresentationSnapshot(0, emergency).accepted, true);
 });
 
 test('相同 revision 一律視為已處理，不允許衝突內容重畫', async () => {
   const { acceptPresentationSnapshot } = await loadPresentationState();
 
-  assert.deepEqual(
-    acceptPresentationSnapshot(5, {
-      message: '衝突內容',
-      layout: 'fill-screen',
-      revision: 5,
-    }),
-    { accepted: false },
-  );
+  assert.deepEqual(acceptPresentationSnapshot(5, createPageSnapshot(5)), {
+    accepted: false,
+  });
 });
 
-test('Control 拒絕錯誤型別、未知 layout 與不安全 revision', async () => {
+test('Control 拒絕未知欄位、超過五則、錯誤 metadata 與不安全 revision', async () => {
   const { acceptPresentationSnapshot } = await loadPresentationState();
+  const valid = createPageSnapshot();
   const invalidSnapshots = [
     null,
     [],
-    { message: 1, layout: 'single-line', revision: 0 },
-    { message: '', layout: 'unknown', revision: 0 },
-    { message: '', layout: 'single-line', revision: -1 },
-    { message: '', layout: 'single-line', revision: 1.5 },
-    { message: '', layout: 'single-line', revision: Number.MAX_SAFE_INTEGER + 1 },
+    { ...valid, title: '禁止欄位' },
+    { ...valid, mode: 'unknown' },
+    { ...valid, messages: [] },
+    {
+      ...valid,
+      messages: Array.from({ length: 6 }, () => ({ message: '超量' })),
+    },
+    { ...valid, messages: [{ message: '合法', title: '禁止欄位' }] },
+    { ...valid, pageDurationSeconds: null },
+    { ...valid, pageNumber: 3 },
+    { ...valid, roundNumber: null, totalRounds: 10 },
+    { ...valid, revision: -1 },
+    { ...valid, revision: 1.5 },
+    { ...valid, revision: Number.MAX_SAFE_INTEGER + 1 },
   ];
 
   for (const snapshot of invalidSnapshots) {
@@ -67,18 +110,16 @@ test('Control 拒絕錯誤型別、未知 layout 與不安全 revision', async (
   }
 });
 
-test('接受後建立獨立副本，不保留可被外部修改的物件', async () => {
+test('接受後深層複製 messages，不保留可被外部修改的物件', async () => {
   const { acceptPresentationSnapshot } = await loadPresentationState();
-  const input = {
-    message: 'Nancy前廳000',
-    layout: 'single-line',
-    revision: 8,
-  };
+  const input = createPageSnapshot(8);
   const result = acceptPresentationSnapshot(7, input);
 
   assert.equal(result.accepted, true);
   assert.notEqual(result.snapshot, input);
+  assert.notEqual(result.snapshot.messages, input.messages);
+  assert.notEqual(result.snapshot.messages[0], input.messages[0]);
 
-  input.message = '被修改';
-  assert.equal(result.snapshot.message, 'Nancy前廳000');
+  input.messages[0].message = '被修改';
+  assert.equal(result.snapshot.messages[0].message, '001請至前廳');
 });

@@ -70,10 +70,11 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
 
   assert.ok(api);
   assert.deepEqual(Object.keys(api).sort(), [
-    'clearMessage',
+    'clearPresentation',
     'getPresentation',
     'onPresentationChanged',
-    'showMessage',
+    'showEmergency',
+    'startProgram',
   ]);
   assert.deepEqual(harness.requiredModules, ['electron/renderer']);
   assert.equal(api.invoke, undefined);
@@ -81,23 +82,35 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   assert.equal(api.on, undefined);
 
   await api.getPresentation();
-  await api.showMessage('  Nancy請至前廳\n原樣保留  ');
-  await api.showMessage('555', 'fill-screen');
-  await api.clearMessage();
+  await api.startProgram(
+    [{ message: '  Nancy請至前廳\n原樣保留  ' }],
+    3,
+    { mode: 'continuous' },
+  );
+  await api.showEmergency('555');
+  await api.clearPresentation();
 
   assert.deepEqual(
     harness.invocations.map(({ channel }) => channel),
     [
       IPC_CHANNELS.CONTROL_GET_PRESENTATION,
-      IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
-      IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
-      IPC_CHANNELS.CONTROL_CLEAR_MESSAGE,
+      IPC_CHANNELS.CONTROL_START_PROGRAM,
+      IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
+      IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
     ],
   );
-  assert.equal(harness.invocations[1].args[0].message, '  Nancy請至前廳\n原樣保留  ');
-  assert.equal(harness.invocations[1].args[0].layout, 'single-line');
-  assert.equal(harness.invocations[2].args[0].message, '555');
-  assert.equal(harness.invocations[2].args[0].layout, 'fill-screen');
+  assert.equal(
+    JSON.stringify(harness.invocations[1].args[0]),
+    JSON.stringify({
+      messages: [{ message: '  Nancy請至前廳\n原樣保留  ' }],
+      pageDurationSeconds: 3,
+      repeat: { mode: 'continuous' },
+    }),
+  );
+  assert.equal(
+    JSON.stringify(harness.invocations[2].args[0]),
+    JSON.stringify({ code: '555' }),
+  );
 });
 
 test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => {
@@ -110,8 +123,9 @@ test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => 
     'onPresentationChanged',
   ]);
   assert.deepEqual(harness.requiredModules, ['electron/renderer']);
-  assert.equal(api.showMessage, undefined);
-  assert.equal(api.clearMessage, undefined);
+  assert.equal(api.startProgram, undefined);
+  assert.equal(api.showEmergency, undefined);
+  assert.equal(api.clearPresentation, undefined);
 
   await api.getPresentation();
   assert.equal(
@@ -146,8 +160,14 @@ test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async ()
       receivedArguments.push(args);
     });
     const snapshot = {
-      message: '888',
+      mode: 'emergency',
+      messages: [{ message: '888' }],
       layout: 'fill-screen',
+      pageDurationSeconds: null,
+      pageNumber: null,
+      pageCount: null,
+      roundNumber: null,
+      totalRounds: null,
       revision: 7,
     };
 

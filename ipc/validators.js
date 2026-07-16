@@ -1,34 +1,24 @@
 'use strict';
 
-const { PRESENTATION_LAYOUTS } = require('./channels');
+const { PLAYBACK_MODES } = require('./channels');
 
-// 防止一次 IPC 傳入極端大量文字耗盡 Main／Renderer 記憶體。
+// 所有限制都由 Main 再驗證，Renderer 的欄位狀態不能視為安全邊界。
+const MESSAGES_PER_PAGE = 5;
+const MAX_MESSAGE_COUNT = 500;
 const MAX_MESSAGE_CODE_POINTS = 10_000;
-const ALLOWED_LAYOUTS = new Set(Object.values(PRESENTATION_LAYOUTS));
-const SHOW_MESSAGE_KEYS = Object.freeze(['layout', 'message']);
+const MIN_PAGE_DURATION_SECONDS = 1;
+const MAX_PAGE_DURATION_SECONDS = 3_600;
+const MAX_CYCLE_COUNT = 999;
 
-/**
- * @param {string} message
- * @returns {boolean}
- */
-function isWithinMessageLimit(message) {
-  let codePoints = 0;
+const PROGRAM_KEYS = Object.freeze([
+  'messages',
+  'pageDurationSeconds',
+  'repeat',
+]);
+const MESSAGE_KEYS = Object.freeze(['message']);
+const EMERGENCY_KEYS = Object.freeze(['code']);
+const EMERGENCY_CODES = new Set(['555', '888']);
 
-  for (const _character of message) {
-    codePoints += 1;
-
-    if (codePoints > MAX_MESSAGE_CODE_POINTS) {
-      return false;
-    }
-  }
-
-  return true;
-}
-
-/**
- * @param {unknown} value
- * @returns {boolean}
- */
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -38,12 +28,18 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
-/**
- * 建立可安全回傳 Renderer 的驗證錯誤，不含 payload 或內部例外資訊。
- *
- * @param {string} message
- * @param {string} [field]
- */
+function hasExactKeys(value, expectedKeys) {
+  if (!isPlainObject(value)) {
+    return false;
+  }
+
+  const keys = Object.keys(value).sort();
+  return (
+    keys.length === expectedKeys.length &&
+    keys.every((key, index) => key === expectedKeys[index])
+  );
+}
+
 function validationFailure(message, field) {
   const error = {
     code: 'VALIDATION_FAILED',
@@ -57,53 +53,147 @@ function validationFailure(message, field) {
   return { ok: false, error };
 }
 
-/**
- * 驗證 Control 顯示請求。
- *
- * message 不 trim、不正規化、不判斷編號、花名或 555／888，只做型別與
- * 純資源上限檢查。拒絕未知欄位，確保內容永遠不會被拆成 title 等欄位。
- *
- * @param {unknown} payload
- */
-function validateShowMessagePayload(payload) {
-  if (!isPlainObject(payload)) {
-    return validationFailure('顯示資料必須是物件。');
-  }
-
-  const keys = Object.keys(payload).sort();
-
+function validateMessages(messages) {
   if (
-    keys.length !== SHOW_MESSAGE_KEYS.length ||
-    keys.some((key, index) => key !== SHOW_MESSAGE_KEYS[index])
+    !Array.isArray(messages) ||
+    messages.length === 0 ||
+    messages.length > MAX_MESSAGE_COUNT
   ) {
-    return validationFailure('顯示資料包含缺少或不允許的欄位。');
-  }
-
-  if (typeof payload.message !== 'string') {
-    return validationFailure('message 必須是文字。', 'message');
-  }
-
-  if (!isWithinMessageLimit(payload.message)) {
     return validationFailure(
-      `message 不得超過 ${MAX_MESSAGE_CODE_POINTS} 個字元。`,
-      'message',
+      `messages 必須包含 1 至 ${MAX_MESSAGE_COUNT} 則訊息。`,
+      'messages',
     );
   }
 
-  if (!ALLOWED_LAYOUTS.has(payload.layout)) {
-    return validationFailure('layout 不在允許清單中。', 'layout');
+  let totalCodePoints = 0;
+  const copiedMessages = [];
+
+  for (const item of messages) {
+    if (!hasExactKeys(item, MESSAGE_KEYS) || typeof item.message !== 'string') {
+      return validationFailure(
+        '每則訊息只能包含一個文字 message 欄位。',
+        'messages',
+      );
+    }
+
+    if (item.message.length === 0) {
+      return validationFailure('message 不得為空字串。', 'messages');
+    }
+
+    for (const _character of item.message) {
+      totalCodePoints += 1;
+
+      if (totalCodePoints > MAX_MESSAGE_CODE_POINTS) {
+        return validationFailure(
+          `所有 message 合計不得超過 ${MAX_MESSAGE_CODE_POINTS} 個字元。`,
+          'messages',
+        );
+      }
+    }
+
+    copiedMessages.push({ message: item.message });
+  }
+
+  return { ok: true, value: copiedMessages };
+}
+
+function validateRepeat(repeat) {
+  if (!isPlainObject(repeat) || typeof repeat.mode !== 'string') {
+    return validationFailure('repeat 格式不正確。', 'repeat');
+  }
+
+  if (repeat.mode === PLAYBACK_MODES.CONTINUOUS) {
+    if (!hasExactKeys(repeat, ['mode'])) {
+      return validationFailure(
+        '持續模式不可包含整輪次數。',
+        'repeat',
+      );
+    }
+
+    return { ok: true, value: { mode: PLAYBACK_MODES.CONTINUOUS } };
+  }
+
+  if (repeat.mode === PLAYBACK_MODES.FINITE) {
+    if (
+      !hasExactKeys(repeat, ['mode', 'rounds']) ||
+      !Number.isSafeInteger(repeat.rounds) ||
+      repeat.rounds < 1 ||
+      repeat.rounds > MAX_CYCLE_COUNT
+    ) {
+      return validationFailure(
+        `整輪顯示次數必須是 1 至 ${MAX_CYCLE_COUNT} 的整數。`,
+        'repeat',
+      );
+    }
+
+    return {
+      ok: true,
+      value: { mode: PLAYBACK_MODES.FINITE, rounds: repeat.rounds },
+    };
+  }
+
+  return validationFailure('repeat mode 不在允許清單中。', 'repeat');
+}
+
+/** 驗證並深層複製一般訊息播放清單。 */
+function validateStartProgramPayload(payload) {
+  if (!hasExactKeys(payload, PROGRAM_KEYS)) {
+    return validationFailure('一般顯示資料包含缺少或不允許的欄位。');
+  }
+
+  const messages = validateMessages(payload.messages);
+
+  if (!messages.ok) {
+    return messages;
+  }
+
+  if (
+    !Number.isSafeInteger(payload.pageDurationSeconds) ||
+    payload.pageDurationSeconds < MIN_PAGE_DURATION_SECONDS ||
+    payload.pageDurationSeconds > MAX_PAGE_DURATION_SECONDS
+  ) {
+    return validationFailure(
+      `每頁秒數必須是 ${MIN_PAGE_DURATION_SECONDS} 至 ${MAX_PAGE_DURATION_SECONDS} 的整數。`,
+      'pageDurationSeconds',
+    );
+  }
+
+  const repeat = validateRepeat(payload.repeat);
+
+  if (!repeat.ok) {
+    return repeat;
   }
 
   return {
     ok: true,
     value: {
-      message: payload.message,
-      layout: payload.layout,
+      messages: messages.value,
+      pageDurationSeconds: payload.pageDurationSeconds,
+      repeat: repeat.value,
     },
   };
 }
 
+/** 555／888 使用獨立指令，不允許一般 message 假冒緊急操作。 */
+function validateEmergencyPayload(payload) {
+  if (
+    !hasExactKeys(payload, EMERGENCY_KEYS) ||
+    typeof payload.code !== 'string' ||
+    !EMERGENCY_CODES.has(payload.code)
+  ) {
+    return validationFailure('不支援的滿屏代碼。', 'code');
+  }
+
+  return { ok: true, value: { code: payload.code } };
+}
+
 module.exports = {
+  MAX_CYCLE_COUNT,
   MAX_MESSAGE_CODE_POINTS,
-  validateShowMessagePayload,
+  MAX_MESSAGE_COUNT,
+  MAX_PAGE_DURATION_SECONDS,
+  MESSAGES_PER_PAGE,
+  MIN_PAGE_DURATION_SECONDS,
+  validateEmergencyPayload,
+  validateStartProgramPayload,
 };

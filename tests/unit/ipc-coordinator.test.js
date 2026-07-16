@@ -5,6 +5,7 @@ const test = require('node:test');
 
 const { IPC_CHANNELS, IPC_ROLES } = require('../../ipc/channels');
 const { IpcCoordinator } = require('../../ipc/ipc-coordinator');
+const { PresentationService } = require('../../ipc/presentation-service');
 const { PresentationStore } = require('../../ipc/presentation-store');
 
 const CONTROL_URL = 'displaycore://app/control/index.html';
@@ -76,14 +77,27 @@ function createWindow(url) {
   };
 }
 
-function createEvent(browserWindow, senderFrame = browserWindow.webContents.mainFrame) {
+function createEvent(
+  browserWindow,
+  senderFrame = browserWindow.webContents.mainFrame,
+) {
   return {
     sender: browserWindow.webContents,
     senderFrame,
   };
 }
 
-function createHarness({ presentationStore = new PresentationStore() } = {}) {
+function createProgram(messageCount = 1, repeat = { mode: 'continuous' }) {
+  return {
+    messages: Array.from({ length: messageCount }, (_value, index) => ({
+      message: `訊息${index + 1}`,
+    })),
+    pageDurationSeconds: 3,
+    repeat,
+  };
+}
+
+function createHarness({ presentationService = null } = {}) {
   const ipcMain = new FakeIpcMain();
   const windows = {
     [IPC_ROLES.CONTROL]: createWindow(CONTROL_URL),
@@ -91,9 +105,21 @@ function createHarness({ presentationStore = new PresentationStore() } = {}) {
   };
   const warnings = [];
   const errors = [];
+  const timers = [];
+  const service = presentationService || new PresentationService({
+    store: new PresentationStore(),
+    setTimer(callback, delay) {
+      const handle = { callback, delay, cleared: false };
+      timers.push(handle);
+      return handle;
+    },
+    clearTimer(handle) {
+      handle.cleared = true;
+    },
+  });
   const coordinator = new IpcCoordinator({
     ipcMain,
-    presentationStore,
+    presentationService: service,
     getWindow: (role) => windows[role] || null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,
@@ -114,13 +140,14 @@ function createHarness({ presentationStore = new PresentationStore() } = {}) {
     coordinator,
     errors,
     ipcMain,
-    presentationStore,
+    presentationService: service,
+    timers,
     warnings,
     windows,
   };
 }
 
-test('Control 可顯示與清除，Main 將同一 snapshot 發送至兩個角色', async () => {
+test('Control 啟動清單、滿屏與清除時，Main 對兩個角色發布相同 snapshot', async () => {
   const { ipcMain, windows } = createHarness();
   const controlEvent = createEvent(windows.control);
   const displayEvent = createEvent(windows.display);
@@ -130,61 +157,88 @@ test('Control 可顯示與清除，Main 將同一 snapshot 發送至兩個角色
     controlEvent,
   );
   const shown = await ipcMain.invoke(
-    IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
     controlEvent,
-    { message: '001請至前廳', layout: 'single-line' },
+    createProgram(1),
   );
   const displaySnapshot = await ipcMain.invoke(
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
     displayEvent,
   );
+  const emergency = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
+    controlEvent,
+    { code: '888' },
+  );
   const cleared = await ipcMain.invoke(
-    IPC_CHANNELS.CONTROL_CLEAR_MESSAGE,
+    IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
     controlEvent,
   );
 
-  assert.deepEqual(initial, {
-    ok: true,
-    data: { message: '', layout: 'single-line', revision: 0 },
-  });
+  assert.equal(initial.ok, true);
+  assert.equal(initial.data.mode, 'blank');
   assert.deepEqual(shown, {
     ok: true,
-    data: { message: '001請至前廳', layout: 'single-line', revision: 1 },
+    data: {
+      mode: 'page',
+      messages: [{ message: '訊息1' }],
+      layout: 'single-line',
+      pageDurationSeconds: 3,
+      pageNumber: 1,
+      pageCount: 1,
+      roundNumber: null,
+      totalRounds: null,
+      revision: 1,
+    },
   });
   assert.deepEqual(displaySnapshot, shown);
-  assert.deepEqual(cleared, {
-    ok: true,
-    data: { message: '', layout: 'single-line', revision: 2 },
-  });
+  assert.equal(emergency.data.mode, 'emergency');
+  assert.equal(emergency.data.messages[0].message, '888');
+  assert.equal(cleared.data.mode, 'blank');
+  assert.equal(cleared.data.revision, 3);
 
-  assert.deepEqual(
-    windows.control.webContents.sent.map(({ channel }) => channel),
-    [
-      IPC_CHANNELS.CONTROL_PRESENTATION_CHANGED,
-      IPC_CHANNELS.CONTROL_PRESENTATION_CHANGED,
-    ],
+  for (const role of [IPC_ROLES.CONTROL, IPC_ROLES.DISPLAY]) {
+    assert.deepEqual(
+      windows[role].webContents.sent.map(({ payload }) => payload.revision),
+      [1, 2, 3],
+    );
+  }
+});
+
+test('Main scheduler 翻頁與完成清空也會發布，不需要 Display 回報 timer', async () => {
+  const { ipcMain, presentationService, timers, windows } = createHarness();
+  const result = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    createEvent(windows.control),
+    createProgram(6, { mode: 'finite', rounds: 1 }),
   );
+
+  assert.equal(result.ok, true);
+  assert.equal(timers.length, 1);
+  assert.equal(timers[0].delay, 3_000);
+
+  timers[0].cleared = true;
+  timers[0].callback();
+  assert.equal(presentationService.getSnapshot().pageNumber, 2);
+  assert.equal(timers.length, 2);
+
+  timers[1].cleared = true;
+  timers[1].callback();
+  assert.equal(presentationService.getSnapshot().mode, 'blank');
   assert.deepEqual(
-    windows.display.webContents.sent.map(({ channel }) => channel),
-    [
-      IPC_CHANNELS.DISPLAY_PRESENTATION_CHANGED,
-      IPC_CHANNELS.DISPLAY_PRESENTATION_CHANGED,
-    ],
-  );
-  assert.deepEqual(
-    windows.display.webContents.sent[0].payload,
-    shown.data,
+    windows.display.webContents.sent.map(({ payload }) => payload.revision),
+    [1, 2, 3],
   );
 });
 
 test('Display、subframe、錯誤 URL、null frame 與舊視窗都不能冒充 Control', async () => {
-  const { ipcMain, presentationStore, windows } = createHarness();
+  const { ipcMain, presentationService, windows } = createHarness();
   const oldControlWindow = windows.control;
   const assertForbidden = async (event) => {
     const result = await ipcMain.invoke(
-      IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
+      IPC_CHANNELS.CONTROL_START_PROGRAM,
       event,
-      { message: '禁止顯示', layout: 'single-line' },
+      createProgram(),
     );
 
     assert.deepEqual(result, {
@@ -200,8 +254,7 @@ test('Display、subframe、錯誤 URL、null frame 與舊視窗都不能冒充 C
   await assertForbidden(createEvent(oldControlWindow, createFrame(CONTROL_URL)));
   await assertForbidden(createEvent(oldControlWindow, null));
 
-  oldControlWindow.webContents.mainFrame.url =
-    'displaycore://app/display/index.html';
+  oldControlWindow.webContents.mainFrame.url = DISPLAY_URL;
   await assertForbidden(createEvent(oldControlWindow));
   oldControlWindow.webContents.mainFrame.url = CONTROL_URL;
 
@@ -234,7 +287,7 @@ test('Display、subframe、錯誤 URL、null frame 與舊視窗都不能冒充 C
   windows.control = createWindow(CONTROL_URL);
   await assertForbidden(createEvent(oldControlWindow));
 
-  assert.equal(presentationStore.getSnapshot().revision, 0);
+  assert.equal(presentationService.getSnapshot().revision, 0);
   assert.equal(windows.display.webContents.sent.length, 0);
 });
 
@@ -255,53 +308,60 @@ test('相同 underlying main frame 的不同 WebFrameMain wrapper 可以通過�
   assert.equal(result.data.revision, 0);
 });
 
-test('Main 端拒絕不合法 payload，且不改變狀態或廣播', async () => {
-  const { ipcMain, presentationStore, windows } = createHarness();
-  const result = await ipcMain.invoke(
-    IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
-    createEvent(windows.control),
+test('Main 原子拒絕不合法 program 與 emergency，不改變狀態、timer 或廣播', async () => {
+  const { ipcMain, presentationService, timers, windows } = createHarness();
+  const controlEvent = createEvent(windows.control);
+  const invalidProgram = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    controlEvent,
     {
-      message: '001請至前廳',
-      layout: 'single-line',
-      title: '不允許拆欄位',
+      ...createProgram(),
+      title: '禁止欄位',
     },
   );
+  const invalidEmergency = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
+    controlEvent,
+    { code: '999' },
+  );
 
-  assert.equal(result.ok, false);
-  assert.equal(result.error.code, 'VALIDATION_FAILED');
-  assert.equal(presentationStore.getSnapshot().revision, 0);
+  assert.equal(invalidProgram.ok, false);
+  assert.equal(invalidProgram.error.code, 'VALIDATION_FAILED');
+  assert.equal(invalidEmergency.ok, false);
+  assert.equal(presentationService.getSnapshot().revision, 0);
+  assert.equal(timers.length, 0);
   assert.equal(windows.control.webContents.sent.length, 0);
   assert.equal(windows.display.webContents.sent.length, 0);
 });
 
-test('目標視窗已銷毀時保留 Main 狀態並等待新 Renderer 取得 snapshot', async () => {
-  const { ipcMain, presentationStore, warnings, windows } = createHarness();
+test('Display 已銷毀時 Main 仍保存清單，等待重建 Renderer 取得最新頁', async () => {
+  const { ipcMain, presentationService, warnings, windows } = createHarness();
   windows.display.webContents.destroyed = true;
 
   const result = await ipcMain.invoke(
-    IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
     createEvent(windows.control),
-    { message: '公告今日停止服務', layout: 'single-line' },
+    createProgram(),
   );
 
   assert.equal(result.ok, true);
-  assert.deepEqual(presentationStore.getSnapshot(), result.data);
+  assert.deepEqual(presentationService.getSnapshot(), result.data);
   assert.equal(windows.control.webContents.sent.length, 1);
   assert.equal(windows.display.webContents.sent.length, 0);
   assert.equal(warnings.length, 0);
 });
 
-test('內部錯誤以固定 envelope 回覆，不向 Renderer 洩漏路徑或 stack', async () => {
-  const presentationStore = new PresentationStore();
-  presentationStore.showMessage = () => {
+test('內部錯誤使用固定 envelope，不洩漏路徑或 stack', async () => {
+  const presentationService = new PresentationService();
+  presentationService.startProgram = () => {
     throw new Error('/Users/operator/private/config.json');
   };
-  const { errors, ipcMain, windows } = createHarness({ presentationStore });
+  const { errors, ipcMain, windows } = createHarness({ presentationService });
 
   const result = await ipcMain.invoke(
-    IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
     createEvent(windows.control),
-    { message: '001前廳000', layout: 'single-line' },
+    createProgram(),
   );
 
   assert.deepEqual(result, {
@@ -315,12 +375,13 @@ test('內部錯誤以固定 envelope 回覆，不向 Renderer 洩漏路徑或 st
   assert.equal(errors.length, 1);
 });
 
-test('IPC handlers 只註冊一次並可在程式退出時完整移除', () => {
-  const { coordinator, ipcMain } = createHarness();
+test('IPC handlers 與 service subscription 只註冊一次並可完整移除', () => {
+  const { coordinator, ipcMain, presentationService, windows } = createHarness();
   const requestChannels = [
     IPC_CHANNELS.CONTROL_GET_PRESENTATION,
-    IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
-    IPC_CHANNELS.CONTROL_CLEAR_MESSAGE,
+    IPC_CHANNELS.CONTROL_START_PROGRAM,
+    IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
+    IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
   ];
 
@@ -330,6 +391,8 @@ test('IPC handlers 只註冊一次並可在程式退出時完整移除', () => {
   assert.equal(ipcMain.handlers.size, requestChannels.length);
 
   coordinator.dispose();
+  presentationService.showEmergency('555');
   assert.equal(ipcMain.handlers.size, 0);
   assert.deepEqual(ipcMain.removedChannels.sort(), requestChannels.sort());
+  assert.equal(windows.control.webContents.sent.length, 0);
 });

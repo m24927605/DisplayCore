@@ -15,6 +15,7 @@ const isSquirrelStartup = require('electron-squirrel-startup');
 const { ApplicationController } = require('./main/application-controller');
 const { IPC_ROLES } = require('./ipc/channels');
 const { IpcCoordinator } = require('./ipc/ipc-coordinator');
+const { PresentationService } = require('./ipc/presentation-service');
 const { PresentationStore } = require('./ipc/presentation-store');
 const {
   installLocalProtocol,
@@ -81,9 +82,15 @@ async function bootstrap() {
     controlDevTools: !app.isPackaged && !isMainProcessSmokeTest,
   });
   const presentationStore = new PresentationStore();
+  const presentationService = new PresentationService({
+    store: presentationStore,
+    onListenerError: (error) => {
+      console.error('[DisplayCore] 顯示狀態發布失敗。', error);
+    },
+  });
   const ipcCoordinator = new IpcCoordinator({
     ipcMain,
-    presentationStore,
+    presentationService,
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return windowManager.getControlWindow();
@@ -119,7 +126,10 @@ async function bootstrap() {
       });
       ipcCoordinator.register();
     },
-    shutdownRuntime: () => ipcCoordinator.dispose(),
+    shutdownRuntime: () => {
+      ipcCoordinator.dispose();
+      presentationService.dispose();
+    },
   });
 
   const started = await controller.start();

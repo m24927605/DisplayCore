@@ -1,5 +1,19 @@
 const ALLOWED_LAYOUTS = new Set(['single-line', 'fill-screen']);
-const SNAPSHOT_KEYS = Object.freeze(['layout', 'message', 'revision']);
+const ALLOWED_MODES = new Set(['blank', 'page', 'emergency']);
+const SNAPSHOT_KEYS = Object.freeze([
+  'layout',
+  'messages',
+  'mode',
+  'pageCount',
+  'pageDurationSeconds',
+  'pageNumber',
+  'revision',
+  'roundNumber',
+  'totalRounds',
+]);
+const MESSAGE_KEYS = Object.freeze(['message']);
+const MAX_PAGE_MESSAGES = 5;
+const MAX_TOTAL_CODE_POINTS = 10_000;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -10,32 +24,114 @@ function isPlainObject(value) {
   return prototype === Object.prototype || prototype === null;
 }
 
-function isValidSnapshot(snapshot) {
-  if (!isPlainObject(snapshot)) {
+function hasExactKeys(value, expectedKeys) {
+  if (!isPlainObject(value)) {
     return false;
   }
 
-  const keys = Object.keys(snapshot).sort();
-
+  const keys = Object.keys(value).sort();
   return (
-    keys.length === SNAPSHOT_KEYS.length &&
-    keys.every((key, index) => key === SNAPSHOT_KEYS[index]) &&
-    typeof snapshot.message === 'string' &&
-    ALLOWED_LAYOUTS.has(snapshot.layout) &&
-    Number.isSafeInteger(snapshot.revision) &&
-    snapshot.revision >= 0
+    keys.length === expectedKeys.length &&
+    keys.every((key, index) => key === expectedKeys[index])
   );
 }
 
+function isValidMessages(messages) {
+  if (!Array.isArray(messages) || messages.length > MAX_PAGE_MESSAGES) {
+    return false;
+  }
+
+  let codePoints = 0;
+
+  for (const item of messages) {
+    if (
+      !hasExactKeys(item, MESSAGE_KEYS) ||
+      typeof item.message !== 'string' ||
+      item.message.length === 0
+    ) {
+      return false;
+    }
+
+    for (const _character of item.message) {
+      codePoints += 1;
+
+      if (codePoints > MAX_TOTAL_CODE_POINTS) {
+        return false;
+      }
+    }
+  }
+
+  return true;
+}
+
+function hasNullPlaybackMetadata(snapshot) {
+  return (
+    snapshot.pageDurationSeconds === null &&
+    snapshot.pageNumber === null &&
+    snapshot.pageCount === null &&
+    snapshot.roundNumber === null &&
+    snapshot.totalRounds === null
+  );
+}
+
+function isValidPageMetadata(snapshot) {
+  const hasContinuousRepeat =
+    snapshot.roundNumber === null && snapshot.totalRounds === null;
+  const hasFiniteRepeat =
+    Number.isSafeInteger(snapshot.roundNumber) &&
+    Number.isSafeInteger(snapshot.totalRounds) &&
+    snapshot.roundNumber >= 1 &&
+    snapshot.totalRounds >= snapshot.roundNumber;
+
+  return (
+    snapshot.layout === 'single-line' &&
+    snapshot.messages.length >= 1 &&
+    Number.isSafeInteger(snapshot.pageDurationSeconds) &&
+    snapshot.pageDurationSeconds >= 1 &&
+    snapshot.pageDurationSeconds <= 3_600 &&
+    Number.isSafeInteger(snapshot.pageNumber) &&
+    Number.isSafeInteger(snapshot.pageCount) &&
+    snapshot.pageCount >= 1 &&
+    snapshot.pageNumber >= 1 &&
+    snapshot.pageNumber <= snapshot.pageCount &&
+    (hasContinuousRepeat || hasFiniteRepeat)
+  );
+}
+
+function isValidSnapshot(snapshot) {
+  if (
+    !hasExactKeys(snapshot, SNAPSHOT_KEYS) ||
+    !ALLOWED_MODES.has(snapshot.mode) ||
+    !ALLOWED_LAYOUTS.has(snapshot.layout) ||
+    !isValidMessages(snapshot.messages) ||
+    !Number.isSafeInteger(snapshot.revision) ||
+    snapshot.revision < 0
+  ) {
+    return false;
+  }
+
+  if (snapshot.mode === 'blank') {
+    return (
+      snapshot.layout === 'single-line' &&
+      snapshot.messages.length === 0 &&
+      hasNullPlaybackMetadata(snapshot)
+    );
+  }
+
+  if (snapshot.mode === 'emergency') {
+    return (
+      snapshot.layout === 'fill-screen' &&
+      snapshot.messages.length === 1 &&
+      hasNullPlaybackMetadata(snapshot)
+    );
+  }
+
+  return isValidPageMetadata(snapshot);
+}
+
 /**
- * 驗證 Main 傳入的 presentation，並拒絕比目前 revision 更舊的狀態。
- *
- * event 與啟動 snapshot 可能交錯到達；相同 revision 已代表同一狀態處理
- * 完成，因此不再重畫，也避免衝突內容冒用既有 revision。回傳獨立副本，
- * 避免外部物件之後被修改。
- *
- * @param {number} currentRevision
- * @param {unknown} candidate
+ * 驗證 Main v2 snapshot，並只接受單調增加的 revision。
+ * 回傳 messages 深層副本，避免 Renderer 之外的物件稍後改寫目前狀態。
  */
 export function acceptPresentationSnapshot(currentRevision, candidate) {
   if (
@@ -50,8 +146,14 @@ export function acceptPresentationSnapshot(currentRevision, candidate) {
   return {
     accepted: true,
     snapshot: {
-      message: candidate.message,
+      mode: candidate.mode,
+      messages: candidate.messages.map(({ message }) => ({ message })),
       layout: candidate.layout,
+      pageDurationSeconds: candidate.pageDurationSeconds,
+      pageNumber: candidate.pageNumber,
+      pageCount: candidate.pageCount,
+      roundNumber: candidate.roundNumber,
+      totalRounds: candidate.totalRounds,
       revision: candidate.revision,
     },
   };

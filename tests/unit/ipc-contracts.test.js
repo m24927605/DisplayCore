@@ -6,18 +6,32 @@ const test = require('node:test');
 const {
   IPC_CHANNELS,
   IPC_ROLES,
+  PLAYBACK_MODES,
   PRESENTATION_LAYOUTS,
+  PRESENTATION_MODES,
 } = require('../../ipc/channels');
 const {
+  MAX_CYCLE_COUNT,
   MAX_MESSAGE_CODE_POINTS,
-  validateShowMessagePayload,
+  MAX_MESSAGE_COUNT,
+  MAX_PAGE_DURATION_SECONDS,
+  MESSAGES_PER_PAGE,
+  MIN_PAGE_DURATION_SECONDS,
+  validateEmergencyPayload,
+  validateStartProgramPayload,
 } = require('../../ipc/validators');
 
-test('IPC channel 具有版本命名空間且彼此不重複', () => {
+function createMessages(count, prefix = '訊息') {
+  return Array.from({ length: count }, (_value, index) => ({
+    message: `${prefix}${index + 1}`,
+  }));
+}
+
+test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
   const channels = Object.values(IPC_CHANNELS);
 
   assert.equal(new Set(channels).size, channels.length);
-  assert.equal(channels.every((channel) => channel.startsWith('dc:v1:')), true);
+  assert.equal(channels.every((channel) => channel.startsWith('dc:v2:')), true);
   assert.deepEqual(IPC_ROLES, {
     CONTROL: 'control',
     DISPLAY: 'display',
@@ -26,67 +40,153 @@ test('IPC channel 具有版本命名空間且彼此不重複', () => {
     SINGLE_LINE: 'single-line',
     FILL_SCREEN: 'fill-screen',
   });
-  assert.equal(Object.isFrozen(IPC_CHANNELS), true);
-  assert.equal(Object.isFrozen(IPC_ROLES), true);
-  assert.equal(Object.isFrozen(PRESENTATION_LAYOUTS), true);
+  assert.deepEqual(PRESENTATION_MODES, {
+    BLANK: 'blank',
+    PAGE: 'page',
+    EMERGENCY: 'emergency',
+  });
+  assert.deepEqual(PLAYBACK_MODES, {
+    CONTINUOUS: 'continuous',
+    FINITE: 'finite',
+  });
+
+  for (const value of [
+    IPC_CHANNELS,
+    IPC_ROLES,
+    PRESENTATION_LAYOUTS,
+    PRESENTATION_MODES,
+    PLAYBACK_MODES,
+  ]) {
+    assert.equal(Object.isFrozen(value), true);
+  }
 });
 
-test('message 保留原始內容且 layout 可表達單行與滿屏模式', () => {
-  const standardMessage = '  Nancy請至前廳\n原樣保留  ';
-  const standard = validateShowMessagePayload({
-    message: standardMessage,
-    layout: PRESENTATION_LAYOUTS.SINGLE_LINE,
+test('一般顯示接受完整 message 清單與明確的持續／有限輪播模式', () => {
+  const messages = [
+    { message: '001請至前廳' },
+    { message: 'Nancy前廳000' },
+    { message: '公告\n原始換行保留<script>純文字</script>' },
+  ];
+  const continuous = validateStartProgramPayload({
+    messages,
+    pageDurationSeconds: 3,
+    repeat: { mode: PLAYBACK_MODES.CONTINUOUS },
   });
-  const inspection = validateShowMessagePayload({
-    message: '555\n555<script>不是標籤</script>',
-    layout: PRESENTATION_LAYOUTS.FILL_SCREEN,
+  const finite = validateStartProgramPayload({
+    messages,
+    pageDurationSeconds: 8,
+    repeat: { mode: PLAYBACK_MODES.FINITE, rounds: 10 },
   });
 
-  assert.deepEqual(standard, {
+  assert.deepEqual(continuous, {
     ok: true,
     value: {
-      message: standardMessage,
-      layout: 'single-line',
+      messages,
+      pageDurationSeconds: 3,
+      repeat: { mode: 'continuous' },
     },
   });
-  assert.equal(inspection.ok, true);
-  assert.equal(inspection.value.message, '555\n555<script>不是標籤</script>');
-  assert.equal(inspection.value.layout, 'fill-screen');
+  assert.deepEqual(finite, {
+    ok: true,
+    value: {
+      messages,
+      pageDurationSeconds: 8,
+      repeat: { mode: 'finite', rounds: 10 },
+    },
+  });
+  assert.notEqual(continuous.value.messages, messages);
+  assert.notEqual(continuous.value.messages[0], messages[0]);
 });
 
-test('顯示 payload 嚴格拒絕錯誤型別、未知欄位與不支援的 layout', () => {
+test('每頁固定最多五則，並為訊息數、時間、輪次與總字數設定資源上限', () => {
+  assert.equal(MESSAGES_PER_PAGE, 5);
+  assert.equal(MAX_MESSAGE_COUNT, 500);
+  assert.equal(MAX_MESSAGE_CODE_POINTS, 10_000);
+  assert.equal(MIN_PAGE_DURATION_SECONDS, 1);
+  assert.equal(MAX_PAGE_DURATION_SECONDS, 3_600);
+  assert.equal(MAX_CYCLE_COUNT, 999);
+
+  for (const count of [1, 5, 6, 10, 11, MAX_MESSAGE_COUNT]) {
+    assert.equal(
+      validateStartProgramPayload({
+        messages: createMessages(count),
+        pageDurationSeconds: 3,
+        repeat: { mode: 'continuous' },
+      }).ok,
+      true,
+      `${count} 則應通過`,
+    );
+  }
+
+  const exactlyAtLimit = validateStartProgramPayload({
+    messages: [{ message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS) }],
+    pageDurationSeconds: MAX_PAGE_DURATION_SECONDS,
+    repeat: { mode: 'finite', rounds: MAX_CYCLE_COUNT },
+  });
+  assert.equal(exactlyAtLimit.ok, true);
+});
+
+test('一般顯示原子拒絕未知欄位、空項目、錯誤 repeat 與超量資料', () => {
+  const valid = {
+    messages: [{ message: '001請至前廳' }],
+    pageDurationSeconds: 3,
+    repeat: { mode: 'continuous' },
+  };
   const invalidPayloads = [
     null,
     [],
-    '001請至前廳',
     {},
-    { message: 1, layout: 'single-line' },
-    { message: '001請至前廳', layout: 'unknown' },
-    { message: '001請至前廳', layout: 'single-line', title: '禁止欄位' },
+    { ...valid, title: '禁止欄位' },
+    { ...valid, messages: [] },
+    { ...valid, messages: createMessages(MAX_MESSAGE_COUNT + 1) },
+    { ...valid, messages: ['不是 message 物件'] },
+    { ...valid, messages: [{ message: '' }] },
+    { ...valid, messages: [{ message: '合法', title: '禁止欄位' }] },
+    {
+      ...valid,
+      messages: [{ message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS + 1) }],
+    },
+    { ...valid, pageDurationSeconds: 0 },
+    { ...valid, pageDurationSeconds: 1.5 },
+    { ...valid, pageDurationSeconds: MAX_PAGE_DURATION_SECONDS + 1 },
+    { ...valid, repeat: { mode: 'unknown' } },
+    { ...valid, repeat: { mode: 'continuous', rounds: 1 } },
+    { ...valid, repeat: { mode: 'finite' } },
+    { ...valid, repeat: { mode: 'finite', rounds: 0 } },
+    { ...valid, repeat: { mode: 'finite', rounds: 1.5 } },
+    {
+      ...valid,
+      repeat: { mode: 'finite', rounds: MAX_CYCLE_COUNT + 1 },
+    },
   ];
 
   for (const payload of invalidPayloads) {
-    const result = validateShowMessagePayload(payload);
+    const result = validateStartProgramPayload(payload);
 
-    assert.equal(result.ok, false, JSON.stringify(payload));
+    assert.equal(result.ok, false, JSON.stringify(payload)?.slice(0, 200));
     assert.equal(result.error.code, 'VALIDATION_FAILED');
     assert.equal(typeof result.error.message, 'string');
   }
 });
 
-test('message 使用 Unicode code point 上限防止過大 IPC payload', () => {
-  assert.equal(MAX_MESSAGE_CODE_POINTS, 10_000);
-
-  const accepted = validateShowMessagePayload({
-    message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS),
-    layout: 'single-line',
+test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推論', () => {
+  assert.deepEqual(validateEmergencyPayload({ code: '555' }), {
+    ok: true,
+    value: { code: '555' },
   });
-  const rejected = validateShowMessagePayload({
-    message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS + 1),
-    layout: 'single-line',
+  assert.deepEqual(validateEmergencyPayload({ code: '888' }), {
+    ok: true,
+    value: { code: '888' },
   });
 
-  assert.equal(accepted.ok, true);
-  assert.equal(rejected.ok, false);
-  assert.equal(rejected.error.field, 'message');
+  for (const payload of [
+    null,
+    '555',
+    {},
+    { code: 555 },
+    { code: '999' },
+    { code: '555', layout: 'fill-screen' },
+  ]) {
+    assert.equal(validateEmergencyPayload(payload).ok, false);
+  }
 });

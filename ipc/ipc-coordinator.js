@@ -1,18 +1,19 @@
 'use strict';
 
 const { IPC_CHANNELS, IPC_ROLES } = require('./channels');
-const { validateShowMessagePayload } = require('./validators');
+const {
+  validateEmergencyPayload,
+  validateStartProgramPayload,
+} = require('./validators');
 
 const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.CONTROL_GET_PRESENTATION,
-  IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
-  IPC_CHANNELS.CONTROL_CLEAR_MESSAGE,
+  IPC_CHANNELS.CONTROL_START_PROGRAM,
+  IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
+  IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
 ]);
 
-/**
- * @param {unknown} data
- */
 function success(data) {
   return { ok: true, data };
 }
@@ -38,73 +39,77 @@ function internalError() {
 }
 
 /**
- * Main Process 的 IPC 路由與授權中心。
+ * Main Process 的 v2 IPC 路由與角色授權中心。
  *
- * 每個 request channel 固定綁定一個角色。授權時動態取得目前視窗，確保
- * WindowManager 自動復原後新 Renderer 可立即使用，而舊 sender 失去權限。
+ * Control 只能啟動清單、顯示固定緊急代碼及清除；Display 只能讀取 snapshot。
+ * Main scheduler 發布的自動翻頁也透過同一 subscription 廣播，Renderer 不需
+ * 也不能回報 next page。
  */
 class IpcCoordinator {
-  /**
-   * @param {object} dependencies
-   * @param {Electron.IpcMain} dependencies.ipcMain
-   * @param {import('./presentation-store').PresentationStore} dependencies.presentationStore
-   * @param {(role: string) => Electron.BrowserWindow|null} dependencies.getWindow
-   * @param {Record<string, string>} dependencies.allowedUrls
-   * @param {{warn: Function, error: Function}} dependencies.logger
-   */
   constructor({
     ipcMain,
-    presentationStore,
+    presentationService,
     getWindow,
     allowedUrls,
     logger = console,
   }) {
     this.ipcMain = ipcMain;
-    this.presentationStore = presentationStore;
+    this.presentationService = presentationService;
     this.getWindow = getWindow;
     this.allowedUrls = allowedUrls;
     this.logger = logger;
     this.registered = false;
+    this.unsubscribe = null;
   }
 
-  /** 註冊固定白名單 handlers；重複呼叫不會重複綁定。 */
   register() {
     if (this.registered) {
       return;
     }
 
+    this.unsubscribe = this.presentationService.subscribe((snapshot) => {
+      this.broadcast(snapshot);
+    });
+
     this.ipcMain.handle(
       IPC_CHANNELS.CONTROL_GET_PRESENTATION,
       (event) => this.handleRequest(IPC_ROLES.CONTROL, event, () =>
-        success(this.presentationStore.getSnapshot()),
+        success(this.presentationService.getSnapshot()),
       ),
     );
     this.ipcMain.handle(
-      IPC_CHANNELS.CONTROL_SHOW_MESSAGE,
+      IPC_CHANNELS.CONTROL_START_PROGRAM,
       (event, payload) => this.handleRequest(
         IPC_ROLES.CONTROL,
         event,
-        () => this.showMessage(payload),
+        () => this.startProgram(payload),
       ),
     );
     this.ipcMain.handle(
-      IPC_CHANNELS.CONTROL_CLEAR_MESSAGE,
+      IPC_CHANNELS.CONTROL_SHOW_EMERGENCY,
+      (event, payload) => this.handleRequest(
+        IPC_ROLES.CONTROL,
+        event,
+        () => this.showEmergency(payload),
+      ),
+    );
+    this.ipcMain.handle(
+      IPC_CHANNELS.CONTROL_CLEAR_PRESENTATION,
       (event) => this.handleRequest(
         IPC_ROLES.CONTROL,
         event,
-        () => this.clearMessage(),
+        () => success(this.presentationService.clearPresentation()),
       ),
     );
     this.ipcMain.handle(
       IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
       (event) => this.handleRequest(IPC_ROLES.DISPLAY, event, () =>
-        success(this.presentationStore.getSnapshot()),
+        success(this.presentationService.getSnapshot()),
       ),
     );
     this.registered = true;
   }
 
-  /** 程式退出時移除 handlers，避免測試或重新初始化時殘留全域狀態。 */
   dispose() {
     if (!this.registered) {
       return;
@@ -114,10 +119,11 @@ class IpcCoordinator {
       this.ipcMain.removeHandler(channel);
     }
 
+    this.unsubscribe?.();
+    this.unsubscribe = null;
     this.registered = false;
   }
 
-  /** @private */
   handleRequest(role, event, operation) {
     if (!this.isAuthorized(role, event)) {
       return forbidden();
@@ -131,7 +137,6 @@ class IpcCoordinator {
     }
   }
 
-  /** @private */
   isAuthorized(role, event) {
     try {
       const browserWindow = this.getWindow(role);
@@ -153,6 +158,7 @@ class IpcCoordinator {
         !senderFrame ||
         senderFrame.isDestroyed() ||
         senderFrame.detached ||
+        !mainFrame ||
         mainFrame.isDestroyed() ||
         mainFrame.detached ||
         senderFrame.frameTreeNodeId !== mainFrame.frameTreeNodeId
@@ -162,33 +168,33 @@ class IpcCoordinator {
 
       return senderFrame.url === this.allowedUrls[role];
     } catch (error) {
-      // WebFrameMain 可能在導覽／銷毀競態中變成無效；一律 fail closed。
       this.logger.warn('[DisplayCore] IPC sender 驗證無法完成。', error);
       return false;
     }
   }
 
-  /** @private */
-  showMessage(payload) {
-    const validation = validateShowMessagePayload(payload);
+  startProgram(payload) {
+    const validation = validateStartProgramPayload(payload);
 
     if (!validation.ok) {
       return validation;
     }
 
-    const snapshot = this.presentationStore.showMessage(validation.value);
-    this.broadcast(snapshot);
-    return success(snapshot);
+    return success(this.presentationService.startProgram(validation.value));
   }
 
-  /** @private */
-  clearMessage() {
-    const snapshot = this.presentationStore.clearMessage();
-    this.broadcast(snapshot);
-    return success(snapshot);
+  showEmergency(payload) {
+    const validation = validateEmergencyPayload(payload);
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    return success(
+      this.presentationService.showEmergency(validation.value.code),
+    );
   }
 
-  /** @private */
   broadcast(snapshot) {
     this.sendToRole(
       IPC_ROLES.CONTROL,
@@ -202,7 +208,6 @@ class IpcCoordinator {
     );
   }
 
-  /** @private */
   sendToRole(role, channel, snapshot) {
     const browserWindow = this.getWindow(role);
     const webContents = browserWindow?.webContents;
@@ -219,7 +224,7 @@ class IpcCoordinator {
     try {
       webContents.send(channel, snapshot);
     } catch (error) {
-      // Main 已保存完整 snapshot；新 Renderer 啟動後會主動重新取得。
+      // Main 已保存最新頁；新 Renderer 啟動後會重新取得完整 snapshot。
       this.logger.warn('[DisplayCore] IPC 狀態事件暫時無法送達。', error);
     }
   }

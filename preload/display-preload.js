@@ -2,17 +2,12 @@
 
 const { contextBridge, ipcRenderer } = require('electron/renderer');
 
-// Display preload 必須維持唯讀；不得加入任何顯示、清除或設定修改 channel。
+// Display bridge 永遠唯讀；翻頁、清除與 emergency 全由 Main Process 決定。
 const CHANNELS = Object.freeze({
-  GET_PRESENTATION: 'dc:v1:display:presentation:get',
-  PRESENTATION_CHANGED: 'dc:v1:display:presentation:changed',
+  GET_PRESENTATION: 'dc:v2:display:presentation:get',
+  PRESENTATION_CHANGED: 'dc:v2:display:presentation:changed',
 });
 
-/**
- * 將 Main 推送的完整 snapshot 交給 Display Renderer，不傳遞 Electron event。
- *
- * @param {(snapshot: object) => void} listener
- */
 function onPresentationChanged(listener) {
   if (typeof listener !== 'function') {
     throw new TypeError('listener 必須是函式。');
@@ -29,7 +24,6 @@ function onPresentationChanged(listener) {
   };
 }
 
-/** Display Renderer 僅能讀取與訂閱顯示狀態。 */
 contextBridge.exposeInMainWorld(
   'displayCoreDisplay',
   Object.freeze({

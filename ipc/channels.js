@@ -1,38 +1,47 @@
 'use strict';
 
-/**
- * IPC 角色。
- *
- * Renderer 彼此不直接通訊；Main 依角色授權每一個固定 channel。
- */
+/** Renderer 角色；彼此不可直接通訊。 */
 const IPC_ROLES = Object.freeze({
   CONTROL: 'control',
   DISPLAY: 'display',
 });
 
-/**
- * Presentation 只有一個 message；layout 僅描述排版方式，不解析文字語意。
- * fill-screen 供臨檢 555、解除臨檢 888 等滿屏畫面使用，但 IPC 不判斷代碼。
- */
+/** Display 只依 layout 排版，不根據 message 內容推論業務語意。 */
 const PRESENTATION_LAYOUTS = Object.freeze({
   SINGLE_LINE: 'single-line',
   FILL_SCREEN: 'fill-screen',
 });
 
+/** Main 對外發布的可見狀態。 */
+const PRESENTATION_MODES = Object.freeze({
+  BLANK: 'blank',
+  PAGE: 'page',
+  EMERGENCY: 'emergency',
+});
+
+/** 一般訊息清單的整輪播放模式。 */
+const PLAYBACK_MODES = Object.freeze({
+  CONTINUOUS: 'continuous',
+  FINITE: 'finite',
+});
+
 /**
- * 所有 channel 都使用版本命名空間，避免未來契約變更互相衝突。
+ * v2 是多訊息、分頁及整輪次數契約；不得與舊的單一 message v1 混用。
  */
 const IPC_CHANNELS = Object.freeze({
-  CONTROL_GET_PRESENTATION: 'dc:v1:control:presentation:get',
-  CONTROL_SHOW_MESSAGE: 'dc:v1:control:message:show',
-  CONTROL_CLEAR_MESSAGE: 'dc:v1:control:message:clear',
-  DISPLAY_GET_PRESENTATION: 'dc:v1:display:presentation:get',
-  CONTROL_PRESENTATION_CHANGED: 'dc:v1:control:presentation:changed',
-  DISPLAY_PRESENTATION_CHANGED: 'dc:v1:display:presentation:changed',
+  CONTROL_GET_PRESENTATION: 'dc:v2:control:presentation:get',
+  CONTROL_START_PROGRAM: 'dc:v2:control:program:start',
+  CONTROL_SHOW_EMERGENCY: 'dc:v2:control:emergency:show',
+  CONTROL_CLEAR_PRESENTATION: 'dc:v2:control:presentation:clear',
+  DISPLAY_GET_PRESENTATION: 'dc:v2:display:presentation:get',
+  CONTROL_PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
+  DISPLAY_PRESENTATION_CHANGED: 'dc:v2:display:presentation:changed',
 });
 
 module.exports = {
   IPC_CHANNELS,
   IPC_ROLES,
+  PLAYBACK_MODES,
   PRESENTATION_LAYOUTS,
+  PRESENTATION_MODES,
 };

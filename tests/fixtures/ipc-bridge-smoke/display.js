@@ -4,8 +4,16 @@ let latestRevision = -1;
 
 function isExpectedSnapshot(snapshot) {
   return (
-    snapshot.message === '555\nNancy原樣<script>不是標籤</script>' &&
-    snapshot.layout === 'fill-screen' &&
+    snapshot.mode === 'page' &&
+    snapshot.messages.length === 1 &&
+    snapshot.messages[0].message ===
+      '555\nNancy原樣<script>不是標籤</script>' &&
+    snapshot.layout === 'single-line' &&
+    snapshot.pageDurationSeconds === 3 &&
+    snapshot.pageNumber === 1 &&
+    snapshot.pageCount === 1 &&
+    snapshot.roundNumber === null &&
+    snapshot.totalRounds === null &&
     snapshot.revision === 1
   );
 }

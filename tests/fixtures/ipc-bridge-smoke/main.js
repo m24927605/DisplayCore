@@ -9,6 +9,9 @@ const { IPC_ROLES } = require(path.join(projectRoot, 'ipc', 'channels'));
 const { IpcCoordinator } = require(
   path.join(projectRoot, 'ipc', 'ipc-coordinator'),
 );
+const { PresentationService } = require(
+  path.join(projectRoot, 'ipc', 'presentation-service'),
+);
 const { PresentationStore } = require(
   path.join(projectRoot, 'ipc', 'presentation-store'),
 );
@@ -20,6 +23,7 @@ const TIMEOUT_MS = 10_000;
 let controlWindow = null;
 let displayWindow = null;
 let coordinator = null;
+let presentationService = null;
 let completed = false;
 let timeout = null;
 
@@ -35,6 +39,7 @@ function finish(exitCode, message, error) {
   }
 
   coordinator?.dispose();
+  presentationService?.dispose();
 
   if (error) {
     console.error(message, error);
@@ -74,9 +79,12 @@ async function run() {
   );
   controlWindow = createWindow(path.join(projectRoot, 'preload.js'));
 
+  presentationService = new PresentationService({
+    store: new PresentationStore(),
+  });
   coordinator = new IpcCoordinator({
     ipcMain,
-    presentationStore: new PresentationStore(),
+    presentationService,
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return controlWindow;

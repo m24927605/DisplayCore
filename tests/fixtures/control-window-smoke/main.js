@@ -16,6 +16,9 @@ const { IPC_ROLES } = require(path.join(projectRoot, 'ipc', 'channels'));
 const { IpcCoordinator } = require(
   path.join(projectRoot, 'ipc', 'ipc-coordinator'),
 );
+const { PresentationService } = require(
+  path.join(projectRoot, 'ipc', 'presentation-service'),
+);
 const { PresentationStore } = require(
   path.join(projectRoot, 'ipc', 'presentation-store'),
 );
@@ -38,6 +41,7 @@ const TIMEOUT_MS = 20_000;
 
 let controlWindow = null;
 let coordinator = null;
+let presentationService = null;
 let completed = false;
 let timeout = null;
 
@@ -56,6 +60,7 @@ function finish(exitCode, message, error) {
   }
 
   coordinator?.dispose();
+  presentationService?.dispose();
 
   if (error) {
     console.error(message, error);
@@ -167,6 +172,48 @@ async function assertCurrentDom(expected) {
   assert.deepEqual(state, expected);
 }
 
+function expectedPage(message, revision) {
+  return {
+    mode: 'page',
+    messages: [{ message }],
+    layout: 'single-line',
+    pageDurationSeconds: 3,
+    pageNumber: 1,
+    pageCount: 1,
+    roundNumber: null,
+    totalRounds: null,
+    revision,
+  };
+}
+
+function expectedEmergency(code, revision) {
+  return {
+    mode: 'emergency',
+    messages: [{ message: code }],
+    layout: 'fill-screen',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    revision,
+  };
+}
+
+function expectedBlank(revision) {
+  return {
+    mode: 'blank',
+    messages: [],
+    layout: 'single-line',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    revision,
+  };
+}
+
 async function runWorkflow(presentationStore) {
   await waitFor(
     () => execute(
@@ -188,10 +235,11 @@ async function runWorkflow(presentationStore) {
     moduleType: 'undefined',
     bufferType: 'undefined',
     bridgeMethods: [
-      'clearMessage',
+      'clearPresentation',
       'getPresentation',
       'onPresentationChanged',
-      'showMessage',
+      'showEmergency',
+      'startProgram',
     ],
   });
 
@@ -211,11 +259,10 @@ async function runWorkflow(presentationStore) {
     await execute('document.activeElement.id'),
     'recipient-input',
   );
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: '001請至前廳',
-    layout: 'single-line',
-    revision: 1,
-  });
+  assert.deepEqual(
+    presentationStore.getSnapshot(),
+    expectedPage('001請至前廳', 1),
+  );
 
   // 固定動作：Nancy + 前廳000。
   await setTextInput('recipient-input', 'Nancy');
@@ -227,11 +274,10 @@ async function runWorkflow(presentationStore) {
   await click('show-message-button');
   await waitForRevision(presentationStore, 2);
   await waitForIdle();
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: 'Nancy前廳000',
-    layout: 'single-line',
-    revision: 2,
-  });
+  assert.deepEqual(
+    presentationStore.getSnapshot(),
+    expectedPage('Nancy前廳000', 2),
+  );
 
   // 自定義內容必須保留為文字，不可建立任何 HTML 節點。
   const literalHtml =
@@ -257,11 +303,10 @@ async function runWorkflow(presentationStore) {
   await waitForRevision(presentationStore, 3);
   await waitForCurrentDom(3);
   await waitForIdle();
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: literalHtml,
-    layout: 'single-line',
-    revision: 3,
-  });
+  assert.deepEqual(
+    presentationStore.getSnapshot(),
+    expectedPage(literalHtml, 3),
+  );
   await assertCurrentDom({
     message: literalHtml,
     layout: '單行',
@@ -329,11 +374,10 @@ async function runWorkflow(presentationStore) {
   await waitForRevision(presentationStore, 4);
   await waitForCurrentDom(4);
   await waitForIdle();
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: '555',
-    layout: 'fill-screen',
-    revision: 4,
-  });
+  assert.deepEqual(
+    presentationStore.getSnapshot(),
+    expectedEmergency('555', 4),
+  );
   assert.deepEqual(
     await execute(`(() => {
       const element = document.getElementById('current-message');
@@ -360,11 +404,10 @@ async function runWorkflow(presentationStore) {
   await waitForRevision(presentationStore, 5);
   await waitForCurrentDom(5);
   await waitForIdle();
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: '888',
-    layout: 'fill-screen',
-    revision: 5,
-  });
+  assert.deepEqual(
+    presentationStore.getSnapshot(),
+    expectedEmergency('888', 5),
+  );
 
   // 清除必須回到空白 single-line，不能把 888 誤當 clear。
   await execute(`(() => {
@@ -379,11 +422,7 @@ async function runWorkflow(presentationStore) {
     await execute('document.activeElement.id'),
     'clear-display-button',
   );
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: '',
-    layout: 'single-line',
-    revision: 6,
-  });
+  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(6));
   await assertCurrentDom({
     message: '目前為空白畫面',
     layout: '單行',
@@ -405,11 +444,7 @@ async function runWorkflow(presentationStore) {
   );
   assert.equal(errorText, '操作失敗，請稍後再試。');
   assert.doesNotMatch(errorText, /private|config|stack/i);
-  assert.deepEqual(presentationStore.getSnapshot(), {
-    message: '',
-    layout: 'single-line',
-    revision: 6,
-  });
+  assert.deepEqual(presentationStore.getSnapshot(), expectedBlank(6));
 }
 
 async function run() {
@@ -436,24 +471,34 @@ async function run() {
   hardenWebContents(controlWindow.webContents);
 
   const presentationStore = new PresentationStore();
-  const showMessage = presentationStore.showMessage.bind(presentationStore);
+  presentationService = new PresentationService({ store: presentationStore });
+  const startProgram = presentationService.startProgram.bind(
+    presentationService,
+  );
+  const showEmergency = presentationService.showEmergency.bind(
+    presentationService,
+  );
   let failNextInspection = true;
-  presentationStore.showMessage = (presentation) => {
-    if (presentation.message === '555' && failNextInspection) {
+  presentationService.showEmergency = (code) => {
+    if (code === '555' && failNextInspection) {
       failNextInspection = false;
       throw new Error('/private/inspection.json: simulated emergency failure');
     }
 
-    if (presentation.message === ERROR_SENTINEL) {
+    return showEmergency(code);
+  };
+
+  presentationService.startProgram = (program) => {
+    if (program.messages[0]?.message === ERROR_SENTINEL) {
       throw new Error('/private/config.json: simulated internal stack');
     }
 
-    return showMessage(presentation);
+    return startProgram(program);
   };
 
   coordinator = new IpcCoordinator({
     ipcMain,
-    presentationStore,
+    presentationService,
     getWindow: (role) =>
       role === IPC_ROLES.CONTROL ? controlWindow : null,
     allowedUrls: {

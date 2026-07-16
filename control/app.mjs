@@ -168,12 +168,15 @@ function renderError(message) {
 }
 
 function renderPresentation(snapshot) {
-  const isEmpty = snapshot.message.length === 0;
-  const isFillScreen = snapshot.layout === 'fill-screen';
+  const isEmpty = snapshot.mode === 'blank';
+  const isFillScreen = snapshot.mode === 'emergency';
+  const visibleMessage = snapshot.messages
+    .map(({ message }) => message)
+    .join('\n');
 
   elements.currentMessage.textContent = isEmpty
     ? '目前為空白畫面'
-    : snapshot.message;
+    : visibleMessage;
   elements.currentMessage.classList.toggle('is-placeholder', isEmpty);
   elements.currentMessage.classList.toggle('is-single-line', !isFillScreen);
   elements.currentMessage.classList.toggle('is-fill-screen', isFillScreen);
@@ -233,8 +236,12 @@ async function submitDraft() {
   }
 
   clearFieldErrors();
-  await uiState.controller.showPresentation(
-    result.presentation,
+  await uiState.controller.startProgram(
+    {
+      messages: [{ message: result.presentation.message }],
+      pageDurationSeconds: 3,
+      repeat: { mode: 'continuous' },
+    },
     '一般訊息已顯示到電視。',
   );
 }
@@ -284,8 +291,8 @@ async function confirmEmergency() {
       ? '臨檢代碼 555 已使用滿屏顯示。'
       : '解除代碼 888 已使用滿屏顯示。';
 
-  const succeeded = await uiState.controller.showPresentation(
-    pendingEmergency.presentation,
+  const succeeded = await uiState.controller.showEmergency(
+    pendingEmergency.code,
     successMessage,
   );
 
@@ -353,8 +360,13 @@ function bindUiEvents() {
 }
 
 function hasRequiredBridge(api) {
-  return ['onPresentationChanged', 'getPresentation', 'showMessage', 'clearMessage']
-    .every((methodName) => typeof api?.[methodName] === 'function');
+  return [
+    'onPresentationChanged',
+    'getPresentation',
+    'startProgram',
+    'showEmergency',
+    'clearPresentation',
+  ].every((methodName) => typeof api?.[methodName] === 'function');
 }
 
 async function boot() {
@@ -373,8 +385,13 @@ async function boot() {
     onPresentationChanged: (listener) =>
       bridge.onPresentationChanged(listener),
     getPresentation: () => bridge.getPresentation(),
-    showMessage: (message, layout) => bridge.showMessage(message, layout),
-    clearMessage: () => bridge.clearMessage(),
+    startProgram: (program) => bridge.startProgram(
+      program.messages,
+      program.pageDurationSeconds,
+      program.repeat,
+    ),
+    showEmergency: (code) => bridge.showEmergency(code),
+    clearPresentation: () => bridge.clearPresentation(),
   });
 
   uiState.controller = createControlController({ api, view: createView() });

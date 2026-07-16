@@ -149,17 +149,25 @@ export function createControlController({ api, view }) {
       }
     },
 
-    /** @param {{message: string, layout: string}} presentation */
-    showPresentation(presentation, successMessage = '訊息已顯示。') {
+    /** 啟動由 Main 管理 timer 的完整訊息清單。 */
+    startProgram(program, successMessage = '訊息清單已顯示。') {
       return runMutation(
-        () => api.showMessage(presentation.message, presentation.layout),
+        () => api.startProgram(program),
+        successMessage,
+      );
+    },
+
+    /** 555／888 使用獨立白名單 bridge，不允許一般清單偽裝滿屏。 */
+    showEmergency(code, successMessage = '滿屏代碼已顯示。') {
+      return runMutation(
+        () => api.showEmergency(code),
         successMessage,
       );
     },
 
     clearPresentation() {
       return runMutation(
-        () => api.clearMessage(),
+        () => api.clearPresentation(),
         '顯示畫面已清除。',
       );
     },
