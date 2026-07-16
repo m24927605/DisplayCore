@@ -64,7 +64,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿只修改可編輯欄位並保留 locale 與第 9 步輸出設定', async () => {
+test('設定草稿可修改輸出模式、指定螢幕與全螢幕，並保留 locale', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -84,6 +84,9 @@ test('設定草稿只修改可編輯欄位並保留 locale 與第 9 步輸出設
     dateTimeEnabled: true,
     hour12: true,
     marqueeEnabled: false,
+    displaySelectionMode: 'manual',
+    defaultDisplayId: '42',
+    displayFullscreen: false,
   });
 
   assert.equal(result.ok, true);
@@ -101,7 +104,11 @@ test('設定草稿只修改可編輯欄位並保留 locale 與第 9 步輸出設
     },
     dateTime: { enabled: true, locale: 'zh-TW', hour12: true },
     marquee: { enabled: false },
-    display: baseline.display,
+    display: {
+      selectionMode: 'manual',
+      defaultDisplayId: 42,
+      fullscreen: false,
+    },
   });
   assert.equal(validateConfig(result.config).ok, true);
 });
@@ -119,6 +126,9 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     dateTimeEnabled: false,
     hour12: false,
     marqueeEnabled: true,
+    displaySelectionMode: 'auto',
+    defaultDisplayId: '',
+    displayFullscreen: true,
   };
   const invalidPartials = [
     { logoEnabled: true, logoPath: null },
@@ -134,6 +144,13 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { dateTimeEnabled: 'true' },
     { hour12: 0 },
     { marqueeEnabled: 1 },
+    { displaySelectionMode: 'automatic' },
+    { displaySelectionMode: 'manual', defaultDisplayId: '' },
+    { displaySelectionMode: 'manual', defaultDisplayId: '-1' },
+    { displaySelectionMode: 'manual', defaultDisplayId: '01' },
+    { displaySelectionMode: 'manual', defaultDisplayId: '1.5' },
+    { displaySelectionMode: 'manual', defaultDisplayId: '9007199254740992' },
+    { displayFullscreen: 'true' },
   ];
 
   for (const partial of invalidPartials) {
@@ -141,6 +158,32 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     assert.equal(result.ok, false, JSON.stringify(partial));
     assert.equal(typeof result.error.field, 'string');
   }
+});
+
+test('自動輸出模式固定保存 null，不會夾帶先前指定螢幕 ID', async () => {
+  const { buildSettingsDraft } = await loadModule();
+  const result = buildSettingsDraft({
+    baseline: defaultConfig,
+    logoEnabled: false,
+    logoPath: null,
+    backgroundColor: '#000000',
+    fontFamily: defaultConfig.appearance.fontFamily,
+    fontColor: '#FFFFFF',
+    minimumFontSizeRem: '2.5',
+    dateTimeEnabled: false,
+    hour12: false,
+    marqueeEnabled: true,
+    displaySelectionMode: 'auto',
+    defaultDisplayId: '42',
+    displayFullscreen: false,
+  });
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.config.display, {
+    selectionMode: 'auto',
+    defaultDisplayId: null,
+    fullscreen: false,
+  });
 });
 
 test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影響', async () => {

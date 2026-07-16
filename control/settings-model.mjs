@@ -17,6 +17,7 @@ const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const DECIMAL_NUMBER = /^\d+(?:\.\d{1,2})?$/;
+const CANONICAL_DISPLAY_ID = /^(?:0|[1-9]\d*)$/;
 const INVALID_USER_CONFIG_NOTICE = Object.freeze({
   code: 'INVALID_USER_CONFIG',
   message: '使用者設定檔無法讀取，目前使用安全預設值；儲存後可修復。',
@@ -271,6 +272,9 @@ export function buildSettingsDraft({
   dateTimeEnabled,
   hour12,
   marqueeEnabled,
+  displaySelectionMode,
+  defaultDisplayId,
+  displayFullscreen,
 }) {
   const baselineResult = normalizeConfig(baseline);
 
@@ -288,6 +292,37 @@ export function buildSettingsDraft({
     );
   }
 
+  if (displaySelectionMode !== 'auto' && displaySelectionMode !== 'manual') {
+    return failure('display.selectionMode', '請選擇有效的輸出模式。');
+  }
+
+  if (typeof displayFullscreen !== 'boolean') {
+    return failure('display.fullscreen', '全螢幕設定格式不正確。');
+  }
+
+  let normalizedDisplayId = null;
+
+  if (displaySelectionMode === 'manual') {
+    if (
+      typeof defaultDisplayId !== 'string' ||
+      !CANONICAL_DISPLAY_ID.test(defaultDisplayId)
+    ) {
+      return failure(
+        'display.defaultDisplayId',
+        '請選擇有效的輸出螢幕。',
+      );
+    }
+
+    normalizedDisplayId = Number(defaultDisplayId);
+
+    if (!Number.isSafeInteger(normalizedDisplayId)) {
+      return failure(
+        'display.defaultDisplayId',
+        '請選擇有效的輸出螢幕。',
+      );
+    }
+  }
+
   const result = normalizeConfig({
     configVersion: 1,
     logo: { enabled: logoEnabled, path: logoPath },
@@ -303,7 +338,11 @@ export function buildSettingsDraft({
       hour12,
     },
     marquee: { enabled: marqueeEnabled },
-    display: baselineResult.value.display,
+    display: {
+      selectionMode: displaySelectionMode,
+      defaultDisplayId: normalizedDisplayId,
+      fullscreen: displayFullscreen,
+    },
   });
 
   return result.ok ? { ok: true, config: result.value } : result;
