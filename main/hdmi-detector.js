@@ -1,6 +1,7 @@
 'use strict';
 
 const { execFile: executeFile } = require('node:child_process');
+const path = require('node:path');
 const { promisify } = require('node:util');
 
 const execFileAsync = promisify(executeFile);
@@ -14,6 +15,7 @@ const HDMI_CONNECTION_STATUSES = Object.freeze({
 const HDMI_OUTPUT_TECHNOLOGY = 5;
 const POWERSHELL_TIMEOUT_MS = 3_000;
 const POWERSHELL_MAX_BUFFER_BYTES = 64 * 1024;
+const WINDOWS_SYSTEM_ROOT_PATTERN = /^[A-Za-z]:\\Windows\\?$/i;
 const POWERSHELL_QUERY = [
   "$ErrorActionPreference='Stop';",
   "$connections=@( Get-CimInstance -Namespace 'root\\wmi' -ClassName 'WmiMonitorConnectionParams'",
@@ -30,6 +32,33 @@ const UNKNOWN_RESULT = Object.freeze({
 });
 
 /**
+ * 僅允許標準 Windows 系統目錄，並產生 Windows PowerShell 5.1 的絕對路徑。
+ * 不回退使用 PATH，避免同名執行檔攔截 HDMI 查詢。
+ *
+ * @param {unknown} systemRoot
+ * @returns {string | null}
+ */
+function resolvePowerShellExecutable(systemRoot) {
+  if (typeof systemRoot !== 'string') {
+    return null;
+  }
+
+  const normalizedSystemRoot = systemRoot.trim();
+
+  if (!WINDOWS_SYSTEM_ROOT_PATTERN.test(normalizedSystemRoot)) {
+    return null;
+  }
+
+  return path.win32.join(
+    normalizedSystemRoot,
+    'System32',
+    'WindowsPowerShell',
+    'v1.0',
+    'powershell.exe',
+  );
+}
+
+/**
  * 將 Windows PowerShell 輸出轉成作用中顯示連接技術代碼。
  * Windows PowerShell 5.1 在單一值時會輸出數字而非陣列，因此兩者皆接受。
  *
@@ -44,7 +73,7 @@ function parseConnectionTechnologies(stdout) {
   const normalized = stdout.replace(/^\uFEFF/, '').trim();
 
   if (normalized.length === 0) {
-    return [];
+    throw new TypeError('PowerShell 未回傳 HDMI 查詢結果。');
   }
 
   const parsed = JSON.parse(normalized);
@@ -74,15 +103,18 @@ class HdmiDetector {
   /**
    * @param {object} [dependencies]
    * @param {NodeJS.Platform} [dependencies.platform]
+   * @param {string} [dependencies.systemRoot]
    * @param {Function} [dependencies.execFile]
    * @param {{warn: Function}} [dependencies.logger]
    */
   constructor({
     platform = process.platform,
+    systemRoot = process.env.SystemRoot,
     execFile = execFileAsync,
     logger = console,
   } = {}) {
     this.platform = platform;
+    this.powerShellExecutable = resolvePowerShellExecutable(systemRoot);
     this.execFile = execFile;
     this.logger = logger;
   }
@@ -95,9 +127,16 @@ class HdmiDetector {
       return UNKNOWN_RESULT;
     }
 
+    if (this.powerShellExecutable === null) {
+      this.logger.warn(
+        '[DisplayCore] Windows PowerShell 系統路徑無效，無法查詢 HDMI 狀態。',
+      );
+      return UNKNOWN_RESULT;
+    }
+
     try {
       const { stdout } = await this.execFile(
-        'powershell.exe',
+        this.powerShellExecutable,
         [
           '-NoLogo',
           '-NoProfile',
