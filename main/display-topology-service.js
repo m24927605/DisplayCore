@@ -525,7 +525,10 @@ class DisplayTopologyService {
       displays: this.displays,
       preference,
       targetDisplay: this.targetDisplay,
-      usingFallback: this.snapshot?.usingFallback ?? false,
+      usingFallback: this.snapshot?.usingFallback ?? (
+        preference.selectionMode === OUTPUT_SELECTION_MODES.MANUAL &&
+        this.targetDisplay?.id !== preference.configuredDisplayId
+      ),
     };
   }
 

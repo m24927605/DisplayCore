@@ -573,6 +573,32 @@ test('screen API 暫時失敗時保留原目標並標示 unknown，恢復後重�
   assert.equal(service.getSnapshot().effectiveDisplayId, 1);
 });
 
+test('手動模式在初次拓樸查詢失敗時明確標示 fallback，不產生矛盾快照', async () => {
+  const screen = new FakeScreen([createDisplay(1, { internal: true })], 1);
+  screen.error = new Error('startup topology unavailable');
+  const settingsManager = new FakeSettingsManager(createConfigSnapshot({
+    selectionMode: 'manual',
+    defaultDisplayId: 42,
+  }));
+  const service = new DisplayTopologyService({
+    screen,
+    settingsManager,
+    hdmiDetector: {
+      async detect() {
+        return { status: 'unknown' };
+      },
+    },
+    logger: { warn() {} },
+  });
+
+  await service.initialize();
+
+  assert.equal(service.getSnapshot().topologyStatus, 'unknown');
+  assert.equal(service.getSnapshot().configuredDisplayId, 42);
+  assert.equal(service.getSnapshot().effectiveDisplayId, null);
+  assert.equal(service.getSnapshot().usingFallback, true);
+});
+
 test('dispose 精確移除 screen 與設定訂閱，後續事件不再變更狀態', async () => {
   const { screen, service, settingsManager } = createService();
   await service.initialize();
