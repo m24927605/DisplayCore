@@ -4,6 +4,7 @@ const path = require('node:path');
 const {
   app,
   BrowserWindow,
+  ipcMain,
   Menu,
   net,
   protocol,
@@ -12,6 +13,9 @@ const {
 const isSquirrelStartup = require('electron-squirrel-startup');
 
 const { ApplicationController } = require('./main/application-controller');
+const { IPC_ROLES } = require('./ipc/channels');
+const { IpcCoordinator } = require('./ipc/ipc-coordinator');
+const { PresentationStore } = require('./ipc/presentation-store');
 const {
   installLocalProtocol,
   registerAppScheme,
@@ -31,8 +35,8 @@ const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
 /**
  * DisplayCore 主程序 composition root。
  *
- * 本檔只負責組合 Electron API 與各單一職責模組。IPC、設定管理、Renderer
- * 功能與 HDMI 偵測會依後續開發步驟加入，不提前放進主程序生命週期。
+ * 本檔只負責組合 Electron API 與各單一職責模組。設定管理、Renderer
+ * 正式功能與 HDMI 偵測會依後續開發步驟加入。
  */
 async function bootstrap() {
   // Squirrel.Windows 安裝或解除安裝時會短暫啟動程式，此時不可建立視窗。
@@ -76,6 +80,26 @@ async function bootstrap() {
     windowedDisplay: isMainProcessSmokeTest,
     controlDevTools: !app.isPackaged && !isMainProcessSmokeTest,
   });
+  const presentationStore = new PresentationStore();
+  const ipcCoordinator = new IpcCoordinator({
+    ipcMain,
+    presentationStore,
+    getWindow: (role) => {
+      if (role === IPC_ROLES.CONTROL) {
+        return windowManager.getControlWindow();
+      }
+      if (role === IPC_ROLES.DISPLAY) {
+        return windowManager.getDisplayWindow();
+      }
+
+      return null;
+    },
+    allowedUrls: {
+      [IPC_ROLES.CONTROL]: CONTROL_URL,
+      [IPC_ROLES.DISPLAY]: DISPLAY_URL,
+    },
+    logger: console,
+  });
 
   const controller = new ApplicationController({
     app,
@@ -93,7 +117,9 @@ async function bootstrap() {
         net,
         appRoot: PROJECT_ROOT,
       });
+      ipcCoordinator.register();
     },
+    shutdownRuntime: () => ipcCoordinator.dispose(),
   });
 
   const started = await controller.start();

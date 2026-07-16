@@ -170,6 +170,8 @@ test('WindowManager 建立並載入安全的 Control 與 Display Window', async 
     controlWindow.webContents,
     displayWindow.webContents,
   ]);
+  assert.equal(manager.getControlWindow(), controlWindow);
+  assert.equal(manager.getDisplayWindow(), displayWindow);
   assert.equal(manager.hasWindows(), true);
 });
 
@@ -244,9 +246,13 @@ test('Display Renderer 崩潰時會原子重建整組視窗', async () => {
   );
   await flushAsyncWork();
 
+  const [, , newControlWindow, newDisplayWindow] = FakeBrowserWindow.instances;
+
   assert.equal(oldControlWindow.destroyed, true);
   assert.equal(oldDisplayWindow.destroyed, true);
   assert.equal(FakeBrowserWindow.instances.length, 4);
+  assert.equal(manager.getControlWindow(), newControlWindow);
+  assert.equal(manager.getDisplayWindow(), newDisplayWindow);
   assert.equal(manager.hasWindows(), true);
   assert.equal(closeNotifications, 0);
 });

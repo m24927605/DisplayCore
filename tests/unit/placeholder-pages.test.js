@@ -26,11 +26,17 @@ test('Control 與 Display 占位頁只載入本機樣式並設定嚴格 CSP', as
   }
 });
 
-test('Display preload 占位入口不暴露 IPC 或 Node API', async () => {
+test('Display preload 只使用 sandbox 允許的 Electron bridge', async () => {
   const source = await readFile(
     path.join(projectRoot, 'preload', 'display-preload.js'),
     'utf8',
   );
 
-  assert.doesNotMatch(source, /contextBridge|ipcRenderer|require\s*\(/);
+  assert.match(source, /require\(['"]electron\/renderer['"]\)/);
+  assert.match(
+    source,
+    /exposeInMainWorld\(\s*['"]displayCoreDisplay['"]/,
+  );
+  assert.doesNotMatch(source, /showMessage|clearMessage/);
+  assert.doesNotMatch(source, /require\(['"](?:\.|node:)/);
 });

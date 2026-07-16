@@ -368,6 +368,28 @@ class WindowManager {
   }
 
   /**
+   * @returns {Electron.BrowserWindow|null} 目前有效的 Control Window
+   */
+  getControlWindow() {
+    if (!this.controlWindow || this.controlWindow.isDestroyed()) {
+      return null;
+    }
+
+    return this.controlWindow;
+  }
+
+  /**
+   * @returns {Electron.BrowserWindow|null} 目前有效的 Display Window
+   */
+  getDisplayWindow() {
+    if (!this.displayWindow || this.displayWindow.isDestroyed()) {
+      return null;
+    }
+
+    return this.displayWindow;
+  }
+
+  /**
    * @returns {boolean} 是否正在以新視窗取代失效的視窗組
    */
   isRecovering() {
@@ -390,8 +412,8 @@ class WindowManager {
    */
   getWindowState() {
     return {
-      controlWindow: this.controlWindow,
-      displayWindow: this.displayWindow,
+      controlWindow: this.getControlWindow(),
+      displayWindow: this.getDisplayWindow(),
     };
   }
 }

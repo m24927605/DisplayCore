@@ -65,11 +65,15 @@ test('ApplicationController 依序完成單例、ready、runtime 與視窗建立
   const app = new FakeApp();
   const windowManager = createWindowManager();
   let runtimeCalls = 0;
+  let shutdownCalls = 0;
   const controller = new ApplicationController({
     app,
     windowManager,
     initializeRuntime: async () => {
       runtimeCalls += 1;
+    },
+    shutdownRuntime: () => {
+      shutdownCalls += 1;
     },
     platform: 'win32',
     logger: { error() {} },
@@ -84,7 +88,9 @@ test('ApplicationController 依序完成單例、ready、runtime 與視窗建立
   assert.equal(windowManager.focusCalls, 1);
 
   app.emit('before-quit');
+  app.emit('before-quit');
   assert.equal(windowManager.prepareCalls, 1);
+  assert.equal(shutdownCalls, 1);
 
   windowManager.windowsExist = false;
   app.emit('window-all-closed');

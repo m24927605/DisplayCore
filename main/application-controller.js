@@ -12,6 +12,7 @@ class ApplicationController {
    * @param {Electron.App} dependencies.app
    * @param {import('./window-manager').WindowManager} dependencies.windowManager
    * @param {() => Promise<void>} dependencies.initializeRuntime
+   * @param {() => void} dependencies.shutdownRuntime
    * @param {NodeJS.Platform} dependencies.platform
    * @param {{error: Function}} dependencies.logger
    */
@@ -19,17 +20,20 @@ class ApplicationController {
     app,
     windowManager,
     initializeRuntime,
+    shutdownRuntime = () => {},
     platform = process.platform,
     logger = console,
   }) {
     this.app = app;
     this.windowManager = windowManager;
     this.initializeRuntime = initializeRuntime;
+    this.shutdownRuntime = shutdownRuntime;
     this.platform = platform;
     this.logger = logger;
     this.startPromise = null;
     this.lifecycleBound = false;
     this.runtimeReady = false;
+    this.shutdownStarted = false;
   }
 
   /**
@@ -74,7 +78,18 @@ class ApplicationController {
     });
 
     this.app.on('before-quit', () => {
+      if (this.shutdownStarted) {
+        return;
+      }
+
+      this.shutdownStarted = true;
       this.windowManager.prepareForQuit();
+
+      try {
+        this.shutdownRuntime();
+      } catch (error) {
+        this.logger.error('[DisplayCore] runtime 清理失敗。', error);
+      }
     });
 
     this.app.on('window-all-closed', () => {
