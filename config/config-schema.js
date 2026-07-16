@@ -9,7 +9,7 @@ const DISPLAY_SELECTION_MODES = Object.freeze({
 
 const CONFIG_LIMITS = Object.freeze({
   MAX_FILE_BYTES: 65_536,
-  MAX_LOGO_PATH_LENGTH: 1_024,
+  MAX_LOGO_PATH_LENGTH: 128,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
@@ -39,7 +39,7 @@ const DISPLAY_KEYS = Object.freeze([
   'selectionMode',
 ]);
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
-const LOCAL_IMAGE_PATH = /\.(?:jpe?g|png|svg|webp)$/i;
+const MANAGED_LOGO_PATH = /^logos\/[a-z0-9][a-z0-9._-]*\.(?:jpe?g|png|webp)$/i;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 function isPlainObject(value) {
@@ -90,10 +90,10 @@ function validateLogo(logo) {
     logo.path.length === 0 ||
     logo.path.length > CONFIG_LIMITS.MAX_LOGO_PATH_LENGTH ||
     CONTROL_CHARACTERS.test(logo.path) ||
-    !LOCAL_IMAGE_PATH.test(logo.path)
+    !MANAGED_LOGO_PATH.test(logo.path)
   ) {
     return validationFailure(
-      'Logo 路徑必須是有效的 PNG、JPEG、WebP 或 SVG 本機圖片。',
+      'Logo 必須是已匯入 DisplayCore 的 PNG、JPEG 或 WebP 圖片。',
       'logo.path',
     );
   }
@@ -291,4 +291,3 @@ module.exports = {
   DISPLAY_SELECTION_MODES,
   validateConfig,
 };
-

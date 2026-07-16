@@ -40,7 +40,7 @@ test('顏色與 locale 正規化，但 Logo 路徑與字型名稱不改寫', asy
   const source = await readDefaultConfig();
   source.logo = {
     enabled: true,
-    path: 'C:\\DisplayCore Assets\\品牌 Logo.SVG',
+    path: 'logos/brand-2026.PNG',
   };
   source.appearance.backgroundColor = '#a1b2c3';
   source.appearance.fontColor = '#d4e5f6';
@@ -73,16 +73,23 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
   }
 });
 
-test('Logo 僅接受有界本機圖片路徑，啟用時不得缺少路徑', async () => {
+test('Logo 僅接受受管理的相對點陣圖識別，啟用時不得缺少路徑', async () => {
   const source = await readDefaultConfig();
   const candidates = [
     { enabled: true, path: null },
     { enabled: false, path: '' },
+    { enabled: true, path: '/tmp/logo.png' },
+    { enabled: true, path: 'C:\\DisplayCore\\logo.png' },
+    { enabled: true, path: '\\\\server\\share\\logo.png' },
+    { enabled: true, path: 'https://example.invalid/logo.png' },
+    { enabled: true, path: 'logos/../logo.png' },
+    { enabled: true, path: 'logos/nested/logo.png' },
+    { enabled: true, path: 'logos/logo.svg' },
     { enabled: true, path: 'C:\\logo.exe' },
-    { enabled: true, path: 'C:\\logo\n.png' },
+    { enabled: true, path: 'logos/logo\n.png' },
     {
       enabled: true,
-      path: `${'a'.repeat(CONFIG_LIMITS.MAX_LOGO_PATH_LENGTH)}.png`,
+      path: `logos/${'a'.repeat(CONFIG_LIMITS.MAX_LOGO_PATH_LENGTH)}.png`,
     },
   ];
 
@@ -166,4 +173,3 @@ test('日期、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     fullscreen: false,
   });
 });
-
