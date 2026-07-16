@@ -112,7 +112,7 @@ test('Forge 開發工具鏈覆寫為已修補的封裝與暫存套件', async ()
   assert.equal(packageJson.overrides.tmp, '0.2.7');
 });
 
-test('Electron 封裝排除根目錄測試與覆蓋率資料', () => {
+test('Electron 封裝排除專案與相依套件的測試、覆蓋率與 AIT 資料', () => {
   const forgeConfig = require('../../forge.config');
   const ignoredPaths = forgeConfig.packagerConfig.ignore;
   const isIgnored = (relativePath) =>
@@ -123,7 +123,15 @@ test('Electron 封裝排除根目錄測試與覆蓋率資料', () => {
   assert.equal(isIgnored('/coverage/lcov.info'), true);
   assert.equal(isIgnored('/control/index.html'), false);
   assert.equal(isIgnored('/display/index.html'), false);
-  assert.equal(isIgnored('/node_modules/example/tests/index.js'), false);
+  assert.equal(isIgnored('/node_modules/example/test/index.test.js'), true);
+  assert.equal(isIgnored('/node_modules/example/tests/index.test.js'), true);
+  assert.equal(
+    isIgnored('/node_modules/@scope/example/coverage/lcov.info'),
+    true,
+  );
+  assert.equal(isIgnored('/.ait/settings.json'), true);
+  assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
+  assert.equal(isIgnored('/node_modules/example/index.js'), false);
 });
 
 test('.gitignore 排除建置產物、相依套件、測試覆蓋率與日誌', async () => {

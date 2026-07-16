@@ -13,10 +13,13 @@ module.exports = {
     asar: true,
     executableName: 'DisplayCore',
     // Electron Packager 以「/」開頭的專案根相對路徑套用 ignore。
-    // 只排除開發產物，避免誤傷 node_modules 內同名目錄或正式 Renderer 資源。
+    // 排除專案與相依套件的開發產物，正式 Renderer 資源仍完整封裝。
     ignore: [
       /^\/tests(?:\/|$)/,
       /^\/coverage(?:\/|$)/,
+      /^\/node_modules\/.*\/(?:test|tests|coverage)(?:\/|$)/,
+      /^\/(?:.*\/)?\.ait(?:\/|$)/i,
+      /\.ait$/i,
     ],
   },
   rebuildConfig: {},
