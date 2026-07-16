@@ -219,6 +219,18 @@ test('Display、subframe、錯誤 URL、null frame 與舊視窗都不能冒充 C
   detachedFrame.detached = true;
   await assertForbidden(createEvent(oldControlWindow, detachedFrame));
 
+  const unstableFrame = {
+    frameTreeNodeId: oldControlWindow.webContents.mainFrame.frameTreeNodeId,
+    isDestroyed() {
+      return false;
+    },
+    get detached() {
+      throw new Error('/private/native-frame-error');
+    },
+    url: CONTROL_URL,
+  };
+  await assertForbidden(createEvent(oldControlWindow, unstableFrame));
+
   windows.control = createWindow(CONTROL_URL);
   await assertForbidden(createEvent(oldControlWindow));
 

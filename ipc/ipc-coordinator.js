@@ -133,33 +133,39 @@ class IpcCoordinator {
 
   /** @private */
   isAuthorized(role, event) {
-    const browserWindow = this.getWindow(role);
+    try {
+      const browserWindow = this.getWindow(role);
 
-    if (
-      !browserWindow ||
-      browserWindow.isDestroyed() ||
-      !event ||
-      event.sender !== browserWindow.webContents ||
-      event.sender.isDestroyed()
-    ) {
+      if (
+        !browserWindow ||
+        browserWindow.isDestroyed() ||
+        !event ||
+        event.sender !== browserWindow.webContents ||
+        event.sender.isDestroyed()
+      ) {
+        return false;
+      }
+
+      const senderFrame = event.senderFrame;
+      const mainFrame = event.sender.mainFrame;
+
+      if (
+        !senderFrame ||
+        senderFrame.isDestroyed() ||
+        senderFrame.detached ||
+        mainFrame.isDestroyed() ||
+        mainFrame.detached ||
+        senderFrame.frameTreeNodeId !== mainFrame.frameTreeNodeId
+      ) {
+        return false;
+      }
+
+      return senderFrame.url === this.allowedUrls[role];
+    } catch (error) {
+      // WebFrameMain 可能在導覽／銷毀競態中變成無效；一律 fail closed。
+      this.logger.warn('[DisplayCore] IPC sender 驗證無法完成。', error);
       return false;
     }
-
-    const senderFrame = event.senderFrame;
-    const mainFrame = event.sender.mainFrame;
-
-    if (
-      !senderFrame ||
-      senderFrame.detached ||
-      senderFrame.isDestroyed() ||
-      mainFrame.detached ||
-      mainFrame.isDestroyed() ||
-      senderFrame.frameTreeNodeId !== mainFrame.frameTreeNodeId
-    ) {
-      return false;
-    }
-
-    return senderFrame.url === this.allowedUrls[role];
   }
 
   /** @private */
