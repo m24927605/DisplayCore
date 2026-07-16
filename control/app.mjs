@@ -29,6 +29,7 @@ const elements = Object.freeze({
   dialogTitle: document.getElementById('inspection-dialog-title'),
   dialogDescription: document.getElementById('inspection-dialog-description'),
   dialogCode: document.getElementById('inspection-code-preview'),
+  dialogError: document.getElementById('inspection-dialog-error'),
   dialogConfirmButton: document.getElementById('inspection-confirm-button'),
   dialogCancelButton: document.getElementById('inspection-cancel-button'),
   operationStatus: document.getElementById('operation-status'),
@@ -242,6 +243,8 @@ function openEmergencyDialog(triggerButton) {
   elements.dialogDescription.textContent =
     '此操作會立即覆蓋目前訊息，並切換為不受單行限制的滿屏模式。';
   elements.dialogCode.textContent = code;
+  elements.dialogError.textContent = '';
+  elements.dialogError.hidden = true;
   elements.dialogConfirmButton.textContent = `確認顯示 ${code}`;
   elements.dialog.showModal();
 }
@@ -258,10 +261,17 @@ async function confirmEmergency() {
       ? '臨檢代碼 555 已使用滿屏顯示。'
       : '解除代碼 888 已使用滿屏顯示。';
 
-  await uiState.controller.showPresentation(
+  const succeeded = await uiState.controller.showPresentation(
     pendingEmergency.presentation,
     successMessage,
   );
+
+  if (!succeeded) {
+    elements.dialogError.textContent =
+      '代碼尚未顯示，原畫面未變更。請確認後重試。';
+    elements.dialogError.hidden = false;
+    return;
+  }
 
   if (elements.dialog.open) {
     elements.dialog.close();
@@ -308,6 +318,8 @@ function bindUiEvents() {
   elements.dialog.addEventListener('close', () => {
     const triggerButton = uiState.pendingEmergency?.triggerButton;
     uiState.pendingEmergency = null;
+    elements.dialogError.textContent = '';
+    elements.dialogError.hidden = true;
 
     queueMicrotask(() => {
       if (triggerButton?.isConnected && !triggerButton.disabled) {

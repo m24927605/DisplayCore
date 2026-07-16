@@ -272,6 +272,31 @@ async function runWorkflow(presentationStore) {
     cancelFocused: true,
   });
   assert.equal(presentationStore.getSnapshot().revision, 3);
+  await click('inspection-confirm-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('operation-error').hidden === false &&
+      document.getElementById('inspection-confirm-button').disabled === false
+    )()`),
+    '555 失敗後恢復確認操作',
+  );
+  assert.equal(presentationStore.getSnapshot().revision, 3);
+  assert.deepEqual(
+    await execute(`(() => ({
+      dialogOpen: document.getElementById('inspection-confirm-dialog').open,
+      errorText: document.getElementById('operation-error').textContent,
+      dialogError: document.getElementById('inspection-dialog-error').textContent,
+      confirmText: document.getElementById('inspection-confirm-button').textContent,
+    }))()`),
+    {
+      dialogOpen: true,
+      errorText: '操作失敗，請稍後再試。',
+      dialogError: '代碼尚未顯示，原畫面未變更。請確認後重試。',
+      confirmText: '確認顯示 555',
+    },
+  );
+
+  // 保留原本 pending code 後可直接重試，連點仍只能產生一次 revision。
   await execute(`(() => {
     const button = document.getElementById('inspection-confirm-button');
     button.click();
@@ -369,7 +394,13 @@ async function run() {
 
   const presentationStore = new PresentationStore();
   const showMessage = presentationStore.showMessage.bind(presentationStore);
+  let failNextInspection = true;
   presentationStore.showMessage = (presentation) => {
+    if (presentation.message === '555' && failNextInspection) {
+      failNextInspection = false;
+      throw new Error('/private/inspection.json: simulated emergency failure');
+    }
+
     if (presentation.message === ERROR_SENTINEL) {
       throw new Error('/private/config.json: simulated internal stack');
     }

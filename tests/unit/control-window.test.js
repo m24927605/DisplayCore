@@ -59,6 +59,7 @@ test('555 與 888 使用獨立按鈕及原生確認對話框防止誤觸', async
   assert.match(html, /<dialog[^>]+id="inspection-confirm-dialog"/);
   assert.match(html, /id="inspection-dialog-title"/);
   assert.match(html, /id="inspection-code-preview"/);
+  assert.match(html, /id="inspection-dialog-error"[^>]+role="alert"/);
   assert.match(html, /id="inspection-confirm-button"/);
   assert.match(html, /id="inspection-cancel-button"[^>]+autofocus/);
 });
