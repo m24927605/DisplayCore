@@ -37,8 +37,10 @@ const IPC_CHANNELS = Object.freeze({
   CONTROL_SAVE_SETTINGS: 'dc:v2:control:settings:save',
   CONTROL_CHOOSE_LOGO: 'dc:v2:control:settings:logo:choose',
   DISPLAY_GET_PRESENTATION: 'dc:v2:display:presentation:get',
+  DISPLAY_GET_SETTINGS: 'dc:v2:display:settings:get',
   CONTROL_PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
   DISPLAY_PRESENTATION_CHANGED: 'dc:v2:display:presentation:changed',
+  DISPLAY_SETTINGS_CHANGED: 'dc:v2:display:settings:changed',
 });
 
 module.exports = {

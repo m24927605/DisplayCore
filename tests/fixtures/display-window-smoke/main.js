@@ -147,7 +147,12 @@ async function runWorkflow(timers) {
     requireType: 'undefined',
     processType: 'undefined',
     moduleType: 'undefined',
-    bridgeMethods: ['getPresentation', 'onPresentationChanged'],
+    bridgeMethods: [
+      'getPresentation',
+      'getSettings',
+      'onPresentationChanged',
+      'onSettingsChanged',
+    ],
     interactiveCount: 0,
   });
 

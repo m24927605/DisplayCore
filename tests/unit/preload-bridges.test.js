@@ -133,20 +133,26 @@ test('Display preload 只有唯讀 snapshot 與事件訂閱能力', async () => 
   assert.ok(api);
   assert.deepEqual(Object.keys(api).sort(), [
     'getPresentation',
+    'getSettings',
     'onPresentationChanged',
+    'onSettingsChanged',
   ]);
   assert.deepEqual(harness.requiredModules, ['electron/renderer']);
   assert.equal(api.startProgram, undefined);
   assert.equal(api.showEmergency, undefined);
   assert.equal(api.clearPresentation, undefined);
-  assert.equal(api.getSettings, undefined);
   assert.equal(api.saveSettings, undefined);
   assert.equal(api.chooseLogo, undefined);
 
   await api.getPresentation();
+  await api.getSettings();
   assert.equal(
     harness.invocations[0].channel,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
+  );
+  assert.equal(
+    harness.invocations[1].channel,
+    IPC_CHANNELS.DISPLAY_GET_SETTINGS,
   );
 });
 
@@ -161,6 +167,13 @@ test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async ()
       file: 'preload/display-preload.js',
       apiName: 'displayCoreDisplay',
       channel: IPC_CHANNELS.DISPLAY_PRESENTATION_CHANGED,
+      subscribeMethod: 'onPresentationChanged',
+    },
+    {
+      file: 'preload/display-preload.js',
+      apiName: 'displayCoreDisplay',
+      channel: IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
+      subscribeMethod: 'onSettingsChanged',
     },
   ]) {
     const harness = await loadPreload(scenario.file);
@@ -168,11 +181,11 @@ test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async ()
     const receivedArguments = [];
 
     assert.throws(
-      () => api.onPresentationChanged('不是函式'),
+      () => api[scenario.subscribeMethod || 'onPresentationChanged']('不是函式'),
       { name: 'TypeError', message: 'listener 必須是函式。' },
     );
 
-    const unsubscribe = api.onPresentationChanged((...args) => {
+    const unsubscribe = api[scenario.subscribeMethod || 'onPresentationChanged']((...args) => {
       receivedArguments.push(args);
     });
     const snapshot = {

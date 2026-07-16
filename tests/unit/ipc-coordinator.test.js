@@ -107,8 +107,11 @@ function createSettingsManager() {
     notice: null,
   });
 
+  const listeners = new Set();
+
   return {
     saved: [],
+    listeners,
     getSnapshot() {
       return snapshot;
     },
@@ -120,7 +123,17 @@ function createSettingsManager() {
         revision: expectedRevision + 1,
         notice: null,
       });
+      this.publish(snapshot);
       return snapshot;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    publish(nextSnapshot = snapshot) {
+      for (const listener of listeners) {
+        listener(nextSnapshot);
+      }
     },
   };
 }
@@ -237,6 +250,70 @@ test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作',
     assert.equal(result.ok, false);
     assert.equal(result.error.code, 'FORBIDDEN');
   }
+});
+
+test('Display 只能讀取最小設定投影，Control 不能冒充 Display', async () => {
+  const { ipcMain, windows } = createHarness();
+
+  const result = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_GET_SETTINGS,
+    createEvent(windows.display),
+  );
+
+  assert.deepEqual(result, {
+    ok: true,
+    data: {
+      configVersion: 1,
+      logo: { enabled: false, url: null },
+      appearance: defaultConfig.appearance,
+      dateTime: defaultConfig.dateTime,
+      marquee: defaultConfig.marquee,
+      revision: 0,
+    },
+  });
+  assert.equal(Object.hasOwn(result.data, 'defaults'), false);
+  assert.equal(Object.hasOwn(result.data, 'notice'), false);
+  assert.equal(Object.hasOwn(result.data, 'display'), false);
+
+  const forbiddenResult = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_GET_SETTINGS,
+    createEvent(windows.control),
+  );
+  assert.equal(forbiddenResult.ok, false);
+  assert.equal(forbiddenResult.error.code, 'FORBIDDEN');
+});
+
+test('設定原子儲存成功後只向 Display 發布最小設定事件', async () => {
+  const { ipcMain, windows } = createHarness();
+  const config = structuredClone(defaultConfig);
+  config.appearance.backgroundColor = '#123456';
+  config.dateTime.enabled = true;
+
+  const saved = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
+    createEvent(windows.control),
+    { config, expectedRevision: 0 },
+  );
+
+  assert.equal(saved.ok, true);
+  assert.equal(windows.control.webContents.sent.length, 0);
+  assert.equal(windows.display.webContents.sent.length, 1);
+  assert.equal(
+    windows.display.webContents.sent[0].channel,
+    IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
+  );
+  assert.deepEqual(windows.display.webContents.sent[0].payload, {
+    configVersion: 1,
+    logo: { enabled: false, url: null },
+    appearance: config.appearance,
+    dateTime: config.dateTime,
+    marquee: config.marquee,
+    revision: 1,
+  });
+  assert.doesNotMatch(
+    JSON.stringify(windows.display.webContents.sent[0].payload),
+    /defaults|notice|defaultDisplayId|selectionMode|fullscreen|userData/i,
+  );
 });
 
 test('Main 原子拒絕畸形設定 payload，不呼叫設定管理器', async () => {
@@ -571,7 +648,13 @@ test('內部錯誤使用固定 envelope，不洩漏路徑或 stack', async () =>
 });
 
 test('IPC handlers 與 service subscription 只註冊一次並可完整移除', () => {
-  const { coordinator, ipcMain, presentationService, windows } = createHarness();
+  const {
+    coordinator,
+    ipcMain,
+    presentationService,
+    settingsManager,
+    windows,
+  } = createHarness();
   const requestChannels = [
     IPC_CHANNELS.CONTROL_GET_PRESENTATION,
     IPC_CHANNELS.CONTROL_START_PROGRAM,
@@ -581,6 +664,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
     IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
+    IPC_CHANNELS.DISPLAY_GET_SETTINGS,
   ];
 
   assert.deepEqual([...ipcMain.handlers.keys()].sort(), requestChannels.sort());
@@ -590,7 +674,10 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
 
   coordinator.dispose();
   presentationService.showEmergency('555');
+  settingsManager.publish();
   assert.equal(ipcMain.handlers.size, 0);
   assert.deepEqual(ipcMain.removedChannels.sort(), requestChannels.sort());
   assert.equal(windows.control.webContents.sent.length, 0);
+  assert.equal(windows.display.webContents.sent.length, 0);
+  assert.equal(settingsManager.listeners.size, 0);
 });

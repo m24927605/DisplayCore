@@ -1,6 +1,7 @@
 'use strict';
 
 const { IPC_CHANNELS, IPC_ROLES } = require('./channels');
+const { createDisplaySettingsSnapshot } = require('./display-settings');
 const {
   validateEmergencyPayload,
   validateSaveSettingsPayload,
@@ -16,6 +17,7 @@ const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
   IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
+  IPC_CHANNELS.DISPLAY_GET_SETTINGS,
 ]);
 
 function success(data) {
@@ -98,7 +100,8 @@ class IpcCoordinator {
     this.allowedUrls = allowedUrls;
     this.logger = logger;
     this.registered = false;
-    this.unsubscribe = null;
+    this.presentationUnsubscribe = null;
+    this.settingsUnsubscribe = null;
   }
 
   register() {
@@ -106,9 +109,19 @@ class IpcCoordinator {
       return;
     }
 
-    this.unsubscribe = this.presentationService.subscribe((snapshot) => {
+    this.presentationUnsubscribe = this.presentationService.subscribe((snapshot) => {
       this.broadcast(snapshot);
     });
+
+    if (typeof this.settingsManager?.subscribe === 'function') {
+      this.settingsUnsubscribe = this.settingsManager.subscribe((snapshot) => {
+        try {
+          this.broadcastSettings(createDisplaySettingsSnapshot(snapshot));
+        } catch (error) {
+          this.logger.error('[DisplayCore] Display 設定投影失敗。', error);
+        }
+      });
+    }
 
     this.ipcMain.handle(
       IPC_CHANNELS.CONTROL_GET_PRESENTATION,
@@ -168,6 +181,14 @@ class IpcCoordinator {
         success(this.presentationService.getSnapshot()),
       ),
     );
+    this.ipcMain.handle(
+      IPC_CHANNELS.DISPLAY_GET_SETTINGS,
+      (event) => this.handleRequest(IPC_ROLES.DISPLAY, event, () =>
+        success(
+          createDisplaySettingsSnapshot(this.settingsManager.getSnapshot()),
+        ),
+      ),
+    );
     this.registered = true;
   }
 
@@ -180,8 +201,10 @@ class IpcCoordinator {
       this.ipcMain.removeHandler(channel);
     }
 
-    this.unsubscribe?.();
-    this.unsubscribe = null;
+    this.presentationUnsubscribe?.();
+    this.settingsUnsubscribe?.();
+    this.presentationUnsubscribe = null;
+    this.settingsUnsubscribe = null;
     this.registered = false;
   }
 
@@ -299,6 +322,14 @@ class IpcCoordinator {
     this.sendToRole(
       IPC_ROLES.DISPLAY,
       IPC_CHANNELS.DISPLAY_PRESENTATION_CHANGED,
+      snapshot,
+    );
+  }
+
+  broadcastSettings(snapshot) {
+    this.sendToRole(
+      IPC_ROLES.DISPLAY,
+      IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
       snapshot,
     );
   }
