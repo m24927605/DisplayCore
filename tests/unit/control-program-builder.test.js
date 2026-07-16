@@ -5,6 +5,8 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const test = require('node:test');
 
+const mainLimits = require('../../ipc/validators');
+
 const moduleUrl = pathToFileURL(
   path.resolve(__dirname, '..', '..', 'control', 'program-builder.mjs'),
 ).toString();
@@ -39,6 +41,32 @@ test('加入訊息會保留完整文字、輸入順序與不可變資料', async
 
   original[0].message = '被外部修改';
   assert.equal(result.messages[0].message, '001請至前廳');
+});
+
+test('Control UX 限制與 Main 安全邊界常數保持一致', async () => {
+  const { PROGRAM_LIMITS } = await loadBuilder();
+
+  assert.deepEqual(PROGRAM_LIMITS, {
+    MESSAGES_PER_PAGE: mainLimits.MESSAGES_PER_PAGE,
+    MAX_MESSAGE_COUNT: mainLimits.MAX_MESSAGE_COUNT,
+    MAX_MESSAGE_CODE_POINTS: mainLimits.MAX_MESSAGE_CODE_POINTS,
+    MIN_PAGE_DURATION_SECONDS: mainLimits.MIN_PAGE_DURATION_SECONDS,
+    MAX_PAGE_DURATION_SECONDS: mainLimits.MAX_PAGE_DURATION_SECONDS,
+    MIN_ROUNDS: 1,
+    MAX_ROUNDS: mainLimits.MAX_CYCLE_COUNT,
+  });
+});
+
+test('頁數計算集中於 builder 且覆蓋每頁五則的邊界', async () => {
+  const { countPages } = await loadBuilder();
+
+  assert.equal(countPages(0), 0);
+  assert.equal(countPages(1), 1);
+  assert.equal(countPages(5), 1);
+  assert.equal(countPages(6), 2);
+  assert.equal(countPages(500), 100);
+  assert.throws(() => countPages(-1), /messageCount/);
+  assert.throws(() => countPages(1.5), /messageCount/);
 });
 
 test('刪除指定訊息不會改動原清單，且拒絕無效索引', async () => {

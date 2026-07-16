@@ -120,6 +120,19 @@ function parseBoundedInteger(value, minimum, maximum) {
     : null;
 }
 
+/** 以唯一的每頁上限計算頁數，避免 DOM adapter 複製分頁規則。 */
+export function countPages(messageCount) {
+  if (
+    !Number.isSafeInteger(messageCount) ||
+    messageCount < 0 ||
+    messageCount > PROGRAM_LIMITS.MAX_MESSAGE_COUNT
+  ) {
+    throw new TypeError('messageCount 必須是允許範圍內的非負整數。');
+  }
+
+  return Math.ceil(messageCount / PROGRAM_LIMITS.MESSAGES_PER_PAGE);
+}
+
 /**
  * 把一則完整 message 追加到清單。文字不 trim、不正規化也不解析。
  */
@@ -218,9 +231,7 @@ export function buildProgram({
     repeat = Object.freeze({ mode: PLAYBACK_MODES.CONTINUOUS });
   }
 
-  const pageCount = Math.ceil(
-    copied.messages.length / PROGRAM_LIMITS.MESSAGES_PER_PAGE,
-  );
+  const pageCount = countPages(copied.messages.length);
   const secondsPerRound = pageCount * duration;
   const totalSeconds = repeat.mode === PLAYBACK_MODES.FINITE
     ? secondsPerRound * repeat.rounds
