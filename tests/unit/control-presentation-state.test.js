@@ -35,18 +35,17 @@ test('Control 只接受結構完整且 revision 未過期的 presentation', asyn
   );
 });
 
-test('相同 revision 可安全重放，避免 snapshot 與 event 競態誤判', async () => {
+test('相同 revision 一律視為已處理，不允許衝突內容重畫', async () => {
   const { acceptPresentationSnapshot } = await loadPresentationState();
-  const snapshot = {
-    message: '555',
-    layout: 'fill-screen',
-    revision: 5,
-  };
 
-  assert.deepEqual(acceptPresentationSnapshot(5, snapshot), {
-    accepted: true,
-    snapshot,
-  });
+  assert.deepEqual(
+    acceptPresentationSnapshot(5, {
+      message: '衝突內容',
+      layout: 'fill-screen',
+      revision: 5,
+    }),
+    { accepted: false },
+  );
 });
 
 test('Control 拒絕錯誤型別、未知 layout 與不安全 revision', async () => {
@@ -83,4 +82,3 @@ test('接受後建立獨立副本，不保留可被外部修改的物件', async
   input.message = '被修改';
   assert.equal(result.snapshot.message, 'Nancy前廳000');
 });
-

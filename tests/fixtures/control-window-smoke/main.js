@@ -201,9 +201,16 @@ async function runWorkflow(presentationStore) {
     await execute(`document.getElementById('message-preview').textContent`),
     '001請至前廳',
   );
-  await click('show-message-button');
+  await execute(`(() => {
+    document.getElementById('recipient-input').focus();
+    document.getElementById('message-form').requestSubmit();
+  })()`);
   await waitForRevision(presentationStore, 1);
   await waitForIdle();
+  assert.equal(
+    await execute('document.activeElement.id'),
+    'recipient-input',
+  );
   assert.deepEqual(presentationStore.getSnapshot(), {
     message: '001請至前廳',
     layout: 'single-line',
@@ -227,7 +234,8 @@ async function runWorkflow(presentationStore) {
   });
 
   // 自定義內容必須保留為文字，不可建立任何 HTML 節點。
-  const literalHtml = '<img src=x onerror="globalThis.displayCorePwned=true">';
+  const literalHtml =
+    '公告\n<img src=x onerror="globalThis.displayCorePwned=true">';
   await selectAction('custom');
   await setTextInput('recipient-input', '');
   await setTextInput('custom-message-input', literalHtml);
@@ -332,10 +340,18 @@ async function runWorkflow(presentationStore) {
   });
 
   // 清除必須回到空白 single-line，不能把 888 誤當 clear。
-  await click('clear-display-button');
+  await execute(`(() => {
+    const button = document.getElementById('clear-display-button');
+    button.focus();
+    button.click();
+  })()`);
   await waitForRevision(presentationStore, 6);
   await waitForCurrentDom(6);
   await waitForIdle();
+  assert.equal(
+    await execute('document.activeElement.id'),
+    'clear-display-button',
+  );
   assert.deepEqual(presentationStore.getSnapshot(), {
     message: '',
     layout: 'single-line',

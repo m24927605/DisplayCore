@@ -30,8 +30,9 @@ function isValidSnapshot(snapshot) {
 /**
  * 驗證 Main 傳入的 presentation，並拒絕比目前 revision 更舊的狀態。
  *
- * event 與啟動 snapshot 可能交錯到達；相同 revision 可以安全重放，只有
- * 真正較舊的資料會被忽略。回傳獨立副本，避免外部物件之後被修改。
+ * event 與啟動 snapshot 可能交錯到達；相同 revision 已代表同一狀態處理
+ * 完成，因此不再重畫，也避免衝突內容冒用既有 revision。回傳獨立副本，
+ * 避免外部物件之後被修改。
  *
  * @param {number} currentRevision
  * @param {unknown} candidate
@@ -41,7 +42,7 @@ export function acceptPresentationSnapshot(currentRevision, candidate) {
     !Number.isSafeInteger(currentRevision) ||
     currentRevision < -1 ||
     !isValidSnapshot(candidate) ||
-    candidate.revision < currentRevision
+    candidate.revision <= currentRevision
   ) {
     return { accepted: false };
   }
@@ -55,4 +56,3 @@ export function acceptPresentationSnapshot(currentRevision, candidate) {
     },
   };
 }
-

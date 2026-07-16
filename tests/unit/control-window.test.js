@@ -11,6 +11,35 @@ async function readControlFile(fileName) {
   return readFile(path.join(projectRoot, 'control', fileName), 'utf8');
 }
 
+function parseHexColor(hexColor) {
+  return [1, 3, 5].map((start) =>
+    Number.parseInt(hexColor.slice(start, start + 2), 16) / 255,
+  );
+}
+
+function relativeLuminance(hexColor) {
+  return parseHexColor(hexColor)
+    .map((channel) =>
+      channel <= 0.04045
+        ? channel / 12.92
+        : ((channel + 0.055) / 1.055) ** 2.4,
+    )
+    .reduce(
+      (luminance, channel, index) =>
+        luminance + channel * [0.2126, 0.7152, 0.0722][index],
+      0,
+    );
+}
+
+function contrastRatio(firstColor, secondColor) {
+  const luminances = [
+    relativeLuminance(firstColor),
+    relativeLuminance(secondColor),
+  ].sort((first, second) => second - first);
+
+  return (luminances[0] + 0.05) / (luminances[1] + 0.05);
+}
+
 test('Control HTML 提供語意化的一般訊息操作與精確預覽', async () => {
   const html = await readControlFile('index.html');
 
@@ -28,7 +57,7 @@ test('Control HTML 提供語意化的一般訊息操作與精確預覽', async (
   }
 
   assert.match(html, /<label[^>]+for="custom-message-input"/);
-  assert.match(html, /<input[^>]+id="custom-message-input"/);
+  assert.match(html, /<textarea[^>]+id="custom-message-input"/);
   assert.match(html, /<output[^>]+id="message-preview"/);
   assert.match(html, /<button[^>]+id="show-message-button"[^>]+type="submit"/);
   assert.match(html, /<button[^>]+id="clear-display-button"[^>]+type="button"/);
@@ -47,6 +76,12 @@ test('Control 將目前 Main 狀態與尚未送出的預覽清楚分開', async 
 
 test('555 與 888 使用獨立按鈕及原生確認對話框防止誤觸', async () => {
   const html = await readControlFile('index.html');
+
+  assert.ok(
+    html.indexOf('id="inspection-actions"') <
+      html.indexOf('id="message-form"'),
+    '最小視窗的閱讀與鍵盤順序必須先到達緊急操作',
+  );
 
   assert.match(
     html,
@@ -103,6 +138,7 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /display:\s*grid/);
   assert.match(css, /display:\s*flex/);
   assert.match(css, /@media\s*\([^)]*max-width/);
+  assert.match(css, /grid-template-areas:/);
   assert.match(css, /clamp\(/);
   assert.match(css, /min-block-size:\s*2\.75rem/);
   assert.match(css, /-webkit-font-smoothing:\s*antialiased/);
@@ -111,6 +147,18 @@ test('Control 樣式具響應式、可存取與精確動效細節', async () => 
   assert.match(css, /text-wrap:\s*pretty/);
   assert.match(css, /scale\(0\.96\)/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.match(css, /\.operation-footer\s*{[^}]*position:\s*fixed/s);
   assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
   assert.doesNotMatch(css, /will-change:\s*all\b/);
+
+  const subtleColor = css.match(/--subtle:\s*(#[\da-f]{6})/i)?.[1];
+  assert.ok(subtleColor, '必須定義共用次要文字顏色');
+  assert.ok(
+    contrastRatio(subtleColor, '#ffffff') >= 4.5,
+    `${subtleColor} 在白底必須符合 WCAG AA`,
+  );
+  assert.ok(
+    contrastRatio(subtleColor, '#f6f8fb') >= 4.5,
+    `${subtleColor} 在次要表面必須符合 WCAG AA`,
+  );
 });

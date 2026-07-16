@@ -41,6 +41,7 @@ const uiState = {
   ready: false,
   validationVisible: false,
   pendingEmergency: null,
+  focusBeforeBusy: null,
   controller: null,
 };
 
@@ -181,6 +182,15 @@ function renderPresentation(snapshot) {
 function createView() {
   return Object.freeze({
     setBusy(busy) {
+      if (busy && !uiState.busy) {
+        const activeElement = document.activeElement;
+        uiState.focusBeforeBusy =
+          activeElement instanceof HTMLElement &&
+          activeElement !== document.body
+            ? activeElement
+            : null;
+      }
+
       uiState.busy = busy;
 
       if (busy) {
@@ -188,6 +198,17 @@ function createView() {
       }
 
       setMutationControls();
+
+      if (!busy) {
+        const focusTarget = uiState.focusBeforeBusy;
+        uiState.focusBeforeBusy = null;
+
+        queueMicrotask(() => {
+          if (focusTarget?.isConnected && !focusTarget.disabled) {
+            focusTarget.focus();
+          }
+        });
+      }
     },
     renderPresentation,
     renderStatus,

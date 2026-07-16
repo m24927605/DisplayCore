@@ -27,6 +27,45 @@
       </header>
 
       <main class="dashboard" aria-labelledby="page-title">
+        <section
+          id="inspection-actions"
+          class="panel emergency-panel"
+          aria-labelledby="inspection-title"
+        >
+          <div class="section-heading compact-heading">
+            <div>
+              <p class="section-kicker warning-kicker">重要操作</p>
+              <h2 id="inspection-title">臨檢滿屏代碼</h2>
+            </div>
+            <span class="emergency-symbol" aria-hidden="true">!</span>
+          </div>
+          <p class="section-description">
+            代碼會立即覆蓋目前訊息，並以不受單行限制的滿屏模式顯示。
+          </p>
+          <div class="emergency-actions">
+            <button
+              id="inspection-555-button"
+              class="button emergency-button inspection-button"
+              data-emergency-code="555"
+              type="button"
+              disabled
+            >
+              <span class="button-code">555</span>
+              <span>臨檢滿屏</span>
+            </button>
+            <button
+              id="inspection-888-button"
+              class="button emergency-button clear-code-button"
+              data-emergency-code="888"
+              type="button"
+              disabled
+            >
+              <span class="button-code">888</span>
+              <span>解除臨檢滿屏</span>
+            </button>
+          </div>
+        </section>
+
         <section class="panel composer-panel" aria-labelledby="composer-title">
           <div class="section-heading">
             <div>
@@ -97,16 +136,16 @@
                 <label for="custom-message-input">自定義內容</label>
                 <span class="field-note">編號／花名可留空</span>
               </div>
-              <input
+              <textarea
                 id="custom-message-input"
                 name="customMessage"
-                type="text"
                 autocomplete="off"
                 spellcheck="false"
                 aria-describedby="custom-message-help custom-message-error"
                 placeholder="例如：公告今日停止服務"
+                rows="3"
                 disabled
-              >
+              ></textarea>
               <p id="custom-message-help" class="field-help">
                 內容會直接接在編號／花名後方，不插入分隔符號。
               </p>
@@ -150,8 +189,7 @@
           </form>
         </section>
 
-        <div class="side-stack">
-          <section
+        <section
             id="current-presentation"
             class="panel current-panel"
             aria-labelledby="current-title"
@@ -170,48 +208,9 @@
               <span>狀態版本</span>
               <span id="current-revision" class="revision-value">—</span>
             </div>
-          </section>
+        </section>
 
-          <section
-            id="inspection-actions"
-            class="panel emergency-panel"
-            aria-labelledby="inspection-title"
-          >
-            <div class="section-heading compact-heading">
-              <div>
-                <p class="section-kicker warning-kicker">重要操作</p>
-                <h2 id="inspection-title">臨檢滿屏代碼</h2>
-              </div>
-              <span class="emergency-symbol" aria-hidden="true">!</span>
-            </div>
-            <p class="section-description">
-              代碼會立即覆蓋目前訊息，並以不受單行限制的滿屏模式顯示。
-            </p>
-            <div class="emergency-actions">
-              <button
-                id="inspection-555-button"
-                class="button emergency-button inspection-button"
-                data-emergency-code="555"
-                type="button"
-                disabled
-              >
-                <span class="button-code">555</span>
-                <span>臨檢滿屏</span>
-              </button>
-              <button
-                id="inspection-888-button"
-                class="button emergency-button clear-code-button"
-                data-emergency-code="888"
-                type="button"
-                disabled
-              >
-                <span class="button-code">888</span>
-                <span>解除臨檢滿屏</span>
-              </button>
-            </div>
-          </section>
-
-          <section
+        <section
             id="future-system-features"
             class="panel future-panel"
             aria-labelledby="future-title"
@@ -240,8 +239,7 @@
             <button class="button button-secondary future-button" type="button" disabled>
               後續步驟開放
             </button>
-          </section>
-        </div>
+        </section>
       </main>
 
       <footer class="operation-footer">
