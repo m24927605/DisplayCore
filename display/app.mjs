@@ -75,6 +75,12 @@ function clearVisualLayers() {
   elements.stage.dataset.minimumFontClamped = 'false';
 }
 
+function updateAnnouncement(message, priority) {
+  // 先切換播報優先級再更新內容，確保本次變更使用正確的 live-region 模式。
+  elements.announcement.setAttribute('aria-live', priority);
+  elements.announcement.textContent = message;
+}
+
 function createStaticMessage(row, message) {
   row.textContent = '';
   row.classList.remove('is-marquee', 'is-compressed');
@@ -256,6 +262,7 @@ function updateChromeVisibility() {
   elements.logoFrame.hidden = !showLogo;
   elements.logo.hidden = !showLogo;
   elements.clock.hidden = !showClock;
+  elements.normalLayer.classList.toggle('has-chrome', showLogo || showClock);
   elements.chrome.hidden = !(showLogo || showClock);
 }
 
@@ -378,8 +385,7 @@ function applyDisplaySettings(snapshot) {
 
 function renderBlank(snapshot) {
   clearVisualLayers();
-  elements.announcement.textContent = '';
-  elements.announcement.setAttribute('aria-live', 'polite');
+  updateAnnouncement('', 'polite');
   elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
   elements.fillLayer.hidden = true;
@@ -391,10 +397,10 @@ function renderBlank(snapshot) {
 
 function renderPage(snapshot) {
   clearVisualLayers();
-  elements.announcement.textContent = snapshot.messages
-    .map(({ message }) => message)
-    .join('\n');
-  elements.announcement.setAttribute('aria-live', 'polite');
+  updateAnnouncement(
+    snapshot.messages.map(({ message }) => message).join('\n'),
+    'polite',
+  );
   elements.fillLayer.hidden = true;
   elements.normalLayer.hidden = false;
   elements.pageLayer.hidden = false;
@@ -424,8 +430,7 @@ function renderPage(snapshot) {
 function renderEmergency(snapshot) {
   clearVisualLayers();
   const message = snapshot.messages[0].message;
-  elements.announcement.textContent = message;
-  elements.announcement.setAttribute('aria-live', 'assertive');
+  updateAnnouncement(message, 'assertive');
   elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
   elements.fillLayer.hidden = false;

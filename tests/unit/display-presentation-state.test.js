@@ -32,7 +32,7 @@ function createPage(revision = 1, count = 5) {
 test('Display 接受 Main 發出的 1 至 5 則 page 並深層複製', async () => {
   const { acceptDisplaySnapshot } = await loadState();
 
-  for (const count of [1, 5]) {
+  for (const count of [1, 2, 3, 4, 5]) {
     const input = createPage(2, count);
     const result = acceptDisplaySnapshot(1, input);
 

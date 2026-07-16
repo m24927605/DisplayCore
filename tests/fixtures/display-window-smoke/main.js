@@ -352,6 +352,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
       pageHidden: document.getElementById('page-layer').hidden,
       fillHidden: document.getElementById('fill-layer').hidden,
       normalHidden: document.getElementById('normal-layer').hidden,
+      normalHasChrome: document.getElementById('normal-layer').classList.contains('has-chrome'),
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoHidden: document.getElementById('display-logo').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
@@ -390,6 +391,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
     pageHidden: false,
     fillHidden: true,
     normalHidden: false,
+    normalHasChrome: true,
     chromeHidden: false,
     logoHidden: false,
     logoSource: expectedLogoUrl,
@@ -491,6 +493,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
       clockText: document.getElementById('display-clock').textContent,
+      normalHasChrome: document.getElementById('normal-layer').classList.contains('has-chrome'),
+      normalGap: getComputedStyle(document.getElementById('normal-layer')).gap,
     };
   })()`);
   assert.deepEqual(marquee, {
@@ -505,6 +509,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
     chromeHidden: true,
     logoSource: null,
     clockText: '',
+    normalHasChrome: false,
+    normalGap: '0px',
   });
 
   presentationService.showEmergency('555');

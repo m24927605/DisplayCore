@@ -98,6 +98,12 @@ body {
   overflow: hidden;
 }
 
+/* 沒有 Logo 與時間時移除空的 chrome 軌道與間距，讓訊息使用完整安全區。 */
+.normal-layer:not(.has-chrome) {
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+}
+
 .display-chrome {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;

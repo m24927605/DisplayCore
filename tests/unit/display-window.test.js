@@ -56,6 +56,10 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
     css,
     /\.normal-layer\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\)/s,
   );
+  assert.match(
+    css,
+    /\.normal-layer:not\(\.has-chrome\)\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)[^}]*gap:\s*0/s,
+  );
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   assert.match(css, /\.message-row\s*{[^}]*white-space:\s*nowrap/s);
@@ -87,6 +91,16 @@ test('Display app 僅使用唯讀 bridge 與 textContent，且不解析緊急代
   assert.match(source, /bridge\.onSettingsChanged\(listener\)/);
   assert.match(source, /\.setProperty\(\s*'--display-background'/);
   assert.match(source, /\.setProperty\(\s*'--display-font-family'/);
+  assert.match(
+    source,
+    /elements\.normalLayer\.classList\.toggle\(\s*'has-chrome',\s*showLogo \|\| showClock\s*\)/s,
+  );
+  assert.match(
+    source,
+    /function updateAnnouncement\([^)]*\)\s*{[\s\S]*?setAttribute\('aria-live', priority\);[\s\S]*?\.textContent\s*=\s*message;/,
+  );
+  assert.match(source, /updateAnnouncement\([^;]+,\s*'polite'\);/s);
+  assert.match(source, /updateAnnouncement\(message,\s*'assertive'\);/s);
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
   assert.doesNotMatch(source, /\brequire\s*\(|\bprocess\.|\bipcRenderer\b/);
   assert.doesNotMatch(source, /555|888/);
