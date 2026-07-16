@@ -1,0 +1,34 @@
+{
+  "name": "displaycore",
+  "productName": "DisplayCore",
+  "version": "0.1.0",
+  "description": "完全離線的 Windows 無人資訊顯示系統",
+  "main": "main.js",
+  "private": true,
+  "license": "UNLICENSED",
+  "author": "DisplayCore",
+  "engines": {
+    "node": ">=24.18.0 <25"
+  },
+  "scripts": {
+    "start": "electron-forge start",
+    "start:smoke": "electron-forge start -- --displaycore-smoke-test",
+    "test": "node --test",
+    "package": "electron-forge package",
+    "make": "electron-forge make"
+  },
+  "overrides": {
+    "tar": "7.5.20",
+    "tmp": "0.2.7"
+  },
+  "dependencies": {
+    "electron-squirrel-startup": "1.0.1"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "7.11.2",
+    "@electron-forge/maker-squirrel": "7.11.2",
+    "@electron-forge/plugin-fuses": "7.11.2",
+    "@electron/fuses": "1.8.0",
+    "electron": "43.1.1"
+  }
+}
