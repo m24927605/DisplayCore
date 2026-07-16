@@ -8,6 +8,7 @@ const {
   ipcMain,
   Menu,
   net,
+  powerMonitor,
   protocol,
   screen,
   session,
@@ -121,6 +122,7 @@ async function bootstrap() {
   const hdmiDetector = new HdmiDetector({ logger: console });
   const displayTopologyService = new DisplayTopologyService({
     screen,
+    powerMonitor,
     settingsManager,
     hdmiDetector,
     logger: console,

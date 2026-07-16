@@ -11,11 +11,16 @@ test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務',
   const source = await readFile(path.join(projectRoot, 'main.js'), 'utf8');
 
   assert.match(source, /\bscreen\s*,/);
+  assert.match(source, /\bpowerMonitor\s*,/);
   assert.match(source, /require\('\.\/main\/hdmi-detector'\)/);
   assert.match(source, /require\('\.\/main\/display-topology-service'\)/);
   assert.match(source, /require\('\.\/main\/display-placement-controller'\)/);
   assert.match(source, /new HdmiDetector\(/);
   assert.match(source, /new DisplayTopologyService\(/);
+  assert.match(
+    source,
+    /new DisplayTopologyService\(\{[\s\S]*screen,[\s\S]*powerMonitor,/,
+  );
   assert.match(source, /new DisplayPlacementController\(/);
   assert.match(
     source,
