@@ -13,7 +13,7 @@ async function loadState() {
   return import(moduleUrl);
 }
 
-function createPage(revision = 1, count = 5) {
+function createPage(revision = 1, count = 3) {
   return {
     mode: 'page',
     messages: Array.from({ length: count }, (_value, index) => ({
@@ -29,10 +29,10 @@ function createPage(revision = 1, count = 5) {
   };
 }
 
-test('Display 接受 Main 發出的 1 至 5 則 page 並深層複製', async () => {
+test('Display 接受 Main 發出的 1 至 3 則 page 並深層複製', async () => {
   const { acceptDisplaySnapshot } = await loadState();
 
-  for (const count of [1, 2, 3, 4, 5]) {
+  for (const count of [1, 2, 3]) {
     const input = createPage(2, count);
     const result = acceptDisplaySnapshot(1, input);
 
@@ -87,13 +87,13 @@ test('Display 拒絕相同／較舊 revision、未知欄位與不可能的頁面
     { ...valid, mode: 'emergency' },
     { ...valid, layout: 'fill-screen' },
     { ...valid, messages: [] },
-    { ...valid, messages: createPage(6, 6).messages },
+    { ...valid, messages: createPage(6, 4).messages },
     { ...valid, messages: [{ message: '' }] },
     { ...valid, messages: [{ message: '合法', extra: true }] },
     { ...valid, pageDurationSeconds: 0 },
     { ...valid, pageNumber: 0 },
     { ...valid, pageNumber: 4, pageCount: 3 },
-    { ...valid, pageCount: 101 },
+    { ...valid, pageCount: 168 },
     { ...valid, roundNumber: null, totalRounds: 10 },
     { ...valid, roundNumber: 11, totalRounds: 10 },
     { ...valid, totalRounds: 1_000 },

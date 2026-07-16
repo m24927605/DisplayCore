@@ -12,7 +12,7 @@ const SNAPSHOT_KEYS = Object.freeze([
   'totalRounds',
 ]);
 const MESSAGE_KEYS = Object.freeze(['message']);
-const MAX_PAGE_MESSAGES = 5;
+const MAX_PAGE_MESSAGES = 3;
 const MAX_TOTAL_CODE_POINTS = 10_000;
 
 function isPlainObject(value) {

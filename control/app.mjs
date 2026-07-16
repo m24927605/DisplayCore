@@ -307,7 +307,7 @@ function createQueuePage(pageNumber, pageMessages, startIndex) {
   return page;
 }
 
-/** 依每頁五則將本機草稿清單投影成可編輯的分頁預覽。 */
+/** 依每頁三則將本機草稿清單投影成可編輯的分頁預覽。 */
 function renderQueue() {
   const messageCount = uiState.messages.length;
   const pageCount = countPages(messageCount);

@@ -131,14 +131,14 @@ test('Display 頁面進度只接受目前版面雙閘門需要的 exact payload'
     { ...common, phase: 'complete', marqueeCount: 1 },
     { ...common, phase: 'ready' },
     { ...common, phase: 'ready', marqueeCount: -1 },
-    { ...common, phase: 'ready', marqueeCount: 6 },
+    { ...common, phase: 'ready', marqueeCount: 4 },
     { ...common, phase: 'ready', marqueeCount: 1.5 },
     { ...common, phase: 'pending', revision: -1 },
     { ...common, phase: 'pending', revision: 1.5 },
     { ...common, phase: 'pending', displayEpoch: 0 },
     { ...common, phase: 'pending', displayEpoch: 1.5 },
     { ...common, phase: 'pending', pageNumber: 0 },
-    { ...common, phase: 'pending', pageNumber: 101 },
+    { ...common, phase: 'pending', pageNumber: 168 },
     { ...common, phase: 'pending', settingsRevision: -1 },
     { ...common, phase: 'pending', settingsRevision: 1.5 },
     { ...common, phase: 'pending', layoutGeneration: 0 },
@@ -192,15 +192,15 @@ test('一般顯示接受完整 message 清單與明確的持續／有限輪播�
   assert.notEqual(continuous.value.messages[0], messages[0]);
 });
 
-test('每頁固定最多五則，並為訊息數、時間、輪次與總字數設定資源上限', () => {
-  assert.equal(MESSAGES_PER_PAGE, 5);
+test('每頁固定最多三則，並為訊息數、時間、輪次與總字數設定資源上限', () => {
+  assert.equal(MESSAGES_PER_PAGE, 3);
   assert.equal(MAX_MESSAGE_COUNT, 500);
   assert.equal(MAX_MESSAGE_CODE_POINTS, 10_000);
   assert.equal(MIN_PAGE_DURATION_SECONDS, 1);
   assert.equal(MAX_PAGE_DURATION_SECONDS, 3_600);
   assert.equal(MAX_CYCLE_COUNT, 999);
 
-  for (const count of [1, 5, 6, 10, 11, MAX_MESSAGE_COUNT]) {
+  for (const count of [1, 3, 4, 6, 7, MAX_MESSAGE_COUNT]) {
     assert.equal(
       validateStartProgramPayload({
         messages: createMessages(count),

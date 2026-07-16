@@ -57,14 +57,14 @@ test('Control UX 限制與 Main 安全邊界常數保持一致', async () => {
   });
 });
 
-test('頁數計算集中於 builder 且覆蓋每頁五則的邊界', async () => {
+test('頁數計算集中於 builder 且覆蓋每頁三則的邊界', async () => {
   const { countPages } = await loadBuilder();
 
   assert.equal(countPages(0), 0);
   assert.equal(countPages(1), 1);
-  assert.equal(countPages(5), 1);
-  assert.equal(countPages(6), 2);
-  assert.equal(countPages(500), 100);
+  assert.equal(countPages(3), 1);
+  assert.equal(countPages(4), 2);
+  assert.equal(countPages(500), 167);
   assert.throws(() => countPages(-1), /messageCount/);
   assert.throws(() => countPages(1.5), /messageCount/);
 });
@@ -87,7 +87,7 @@ test('刪除指定訊息不會改動原清單，且拒絕無效索引', async ()
   });
 });
 
-test('七則訊息以每頁五則分成兩頁，並依整輪次數計算時間', async () => {
+test('七則訊息以每頁三則分成三頁，並依整輪次數計算時間', async () => {
   const { PLAYBACK_MODES, buildProgram } = await loadBuilder();
   const result = buildProgram({
     messages: createMessages(7),
@@ -105,9 +105,9 @@ test('七則訊息以每頁五則分成兩頁，並依整輪次數計算時間',
     },
     summary: {
       messageCount: 7,
-      pageCount: 2,
-      secondsPerRound: 6,
-      totalSeconds: 60,
+      pageCount: 3,
+      secondsPerRound: 9,
+      totalSeconds: 90,
     },
   });
   assert.ok(Object.isFrozen(result.program));
@@ -205,7 +205,7 @@ test('每頁秒數與整輪次數的最小、最大邊界都可建立', async ()
     assert.equal(result.ok, true);
     assert.equal(result.program.pageDurationSeconds, pageDurationSeconds);
     assert.deepEqual(result.program.repeat, { mode: 'finite', rounds });
-    assert.equal(result.summary.pageCount, 100);
+    assert.equal(result.summary.pageCount, 167);
   }
 });
 

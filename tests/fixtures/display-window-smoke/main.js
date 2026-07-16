@@ -408,8 +408,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.deepEqual(firstPage, {
     mode: 'page',
     settingsRevision: '0',
-    messages: messages.slice(0, 5).map(({ message }) => message),
-    rowCount: 5,
+    messages: messages.slice(0, 3).map(({ message }) => message),
+    rowCount: 3,
     pageHidden: false,
     fillHidden: true,
     normalHidden: false,
@@ -423,10 +423,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
     backgroundColor: 'rgb(16, 32, 48)',
     fontColor: 'rgb(244, 245, 246)',
     fontFamily: firstPage.fontFamily,
-    whiteSpaces: Array(5).fill('nowrap'),
+    whiteSpaces: Array(3).fill('nowrap'),
     hasInjectedImage: false,
     pwnedType: 'undefined',
-    announcement: messages.slice(0, 5).map(({ message }) => message).join('\n'),
+    announcement: messages.slice(0, 3).map(({ message }) => message).join('\n'),
     fontSize: firstPage.fontSize,
     rowsFitVertically: firstPage.rowsFitVertically,
     rowHeights: firstPage.rowHeights,
@@ -461,7 +461,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
     await execute(
       `[...document.querySelectorAll('.message-row')].map((row) => row.dataset.message)`,
     ),
-    ['006請至前廳'],
+    messages.slice(3, 6).map(({ message }) => message),
   );
 
   const longMessage = '超長訊息'.repeat(1_000);

@@ -809,13 +809,13 @@ async function runWorkflow(
     pwnedType: typeof globalThis.displayCorePwned,
   }))()`);
   assert.deepEqual(previewState, {
-    pageTitles: ['第 1 頁', '第 2 頁'],
+    pageTitles: ['第 1 頁', '第 2 頁', '第 3 頁'],
     messages,
     literalChildCount: 0,
     messageCount: '7 則',
-    pageCount: '2 頁',
-    roundDuration: '6 秒',
-    totalDuration: '6 秒',
+    pageCount: '3 頁',
+    roundDuration: '9 秒',
+    totalDuration: '9 秒',
     removeButtonCount: 7,
     pwnedType: 'undefined',
   });
@@ -837,7 +837,7 @@ async function runWorkflow(
     customText: literalHtml,
   }));
 
-  // 七則為兩頁；每頁最短 3 秒、10 整輪，最短總時間為 1 分。
+  // 七則為三頁；每頁最短 3 秒、10 整輪，最短總時間為 1 分 30 秒。
   await setTextInput('round-count-input', '10');
   assert.deepEqual(
     await execute(`(() => ({
@@ -845,7 +845,7 @@ async function runWorkflow(
       totalDuration: document.getElementById('total-duration').textContent,
       startDisabled: document.getElementById('start-program-button').disabled,
     }))()`),
-    { roundDuration: '6 秒', totalDuration: '1 分', startDisabled: false },
+    { roundDuration: '9 秒', totalDuration: '1 分 30 秒', startDisabled: false },
   );
   await execute(`(() => {
     const button = document.getElementById('start-program-button');
@@ -858,21 +858,21 @@ async function runWorkflow(
   assert.equal(await execute('document.activeElement.id'), 'start-program-button');
   assert.deepEqual(
     presentationStore.getSnapshot(),
-    expectedPage(messages.slice(0, 5), 1, {
+    expectedPage(messages.slice(0, 3), 1, {
       pageNumber: 1,
-      pageCount: 2,
+      pageCount: 3,
       roundNumber: 1,
       totalRounds: 10,
     }),
   );
   await assertCurrentDom({
-    message: messages.slice(0, 5).join(''),
-    rows: messages.slice(0, 5),
+    message: messages.slice(0, 3).join(''),
+    rows: messages.slice(0, 3),
     layout: '單行',
-    page: '第 1 / 2 頁',
+    page: '第 1 / 3 頁',
     round: '第 1 / 10 輪',
     revision: '#1',
-    childCount: 5,
+    childCount: 3,
   });
 
   assert.equal(timers.activeCount(), 0, 'Display ready 前不得啟動 timer');
@@ -883,21 +883,21 @@ async function runWorkflow(
   await waitForCurrentDom(2);
   assert.deepEqual(
     presentationStore.getSnapshot(),
-    expectedPage(messages.slice(5), 2, {
+    expectedPage(messages.slice(3, 6), 2, {
       pageNumber: 2,
-      pageCount: 2,
+      pageCount: 3,
       roundNumber: 1,
       totalRounds: 10,
     }),
   );
   await assertCurrentDom({
-    message: messages.slice(5).join(''),
-    rows: messages.slice(5),
+    message: messages.slice(3, 6).join(''),
+    rows: messages.slice(3, 6),
     layout: '單行',
-    page: '第 2 / 2 頁',
+    page: '第 2 / 3 頁',
     round: '第 1 / 10 輪',
     revision: '#2',
-    childCount: 2,
+    childCount: 3,
   });
   reportStaticDisplayReady(2, settingsManager.getSnapshot().revision);
   assert.equal(timers.activeCount(), 1);

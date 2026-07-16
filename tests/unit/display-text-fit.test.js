@@ -13,7 +13,7 @@ async function loadTextFit() {
   return import(moduleUrl);
 }
 
-test('響應式字級邊界會在五行空間不足時安全下修設定最小值', async () => {
+test('響應式字級邊界會在三行空間不足時安全下修設定最小值', async () => {
   const { calculateResponsiveFontBounds } = await loadTextFit();
   const bounds = calculateResponsiveFontBounds({
     availableWidth: 1200,

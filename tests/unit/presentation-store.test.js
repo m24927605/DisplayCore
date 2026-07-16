@@ -36,9 +36,9 @@ test('PresentationStore 以空白 snapshot 與 revision 0 啟動', () => {
   assert.equal(store.shouldScheduleNextPage(), false);
 });
 
-test('六則訊息依五則上限完成兩頁兩輪，最後一頁完整停留後才清空', () => {
+test('四則訊息依三則上限完成兩頁兩輪，最後一頁完整停留後才清空', () => {
   const store = new PresentationStore();
-  const page1Round1 = store.startProgram(createProgram(6));
+  const page1Round1 = store.startProgram(createProgram(4));
   const page2Round1 = store.advanceProgram();
   const page1Round2 = store.advanceProgram();
   const page2Round2 = store.advanceProgram();
@@ -50,8 +50,6 @@ test('六則訊息依五則上限完成兩頁兩輪，最後一頁完整停留�
       { message: '訊息1' },
       { message: '訊息2' },
       { message: '訊息3' },
-      { message: '訊息4' },
-      { message: '訊息5' },
     ],
     layout: 'single-line',
     pageDurationSeconds: 3,
@@ -63,7 +61,7 @@ test('六則訊息依五則上限完成兩頁兩輪，最後一頁完整停留�
   });
   assert.equal(page2Round1.pageNumber, 2);
   assert.equal(page2Round1.roundNumber, 1);
-  assert.deepEqual(page2Round1.messages, [{ message: '訊息6' }]);
+  assert.deepEqual(page2Round1.messages, [{ message: '訊息4' }]);
   assert.equal(page1Round2.pageNumber, 1);
   assert.equal(page1Round2.roundNumber, 2);
   assert.equal(page2Round2.pageNumber, 2);
@@ -74,7 +72,7 @@ test('六則訊息依五則上限完成兩頁兩輪，最後一頁完整停留�
 
 test('持續模式最後一頁回到第一頁，單頁持續模式不建立無意義 transition', () => {
   const multiPageStore = new PresentationStore();
-  multiPageStore.startProgram(createProgram(6, { mode: 'continuous' }));
+  multiPageStore.startProgram(createProgram(4, { mode: 'continuous' }));
   const secondPage = multiPageStore.advanceProgram();
   const firstPageAgain = multiPageStore.advanceProgram();
 

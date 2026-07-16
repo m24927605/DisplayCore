@@ -81,7 +81,7 @@ test('相同 revision 一律視為已處理，不允許衝突內容重畫', asyn
   });
 });
 
-test('Control 拒絕未知欄位、超過五則、錯誤 metadata 與不安全 revision', async () => {
+test('Control 拒絕未知欄位、超過三則、錯誤 metadata 與不安全 revision', async () => {
   const { acceptPresentationSnapshot } = await loadPresentationState();
   const valid = createPageSnapshot();
   const invalidSnapshots = [
@@ -92,7 +92,7 @@ test('Control 拒絕未知欄位、超過五則、錯誤 metadata 與不安全 r
     { ...valid, messages: [] },
     {
       ...valid,
-      messages: Array.from({ length: 6 }, () => ({ message: '超量' })),
+      messages: Array.from({ length: 4 }, () => ({ message: '超量' })),
     },
     { ...valid, messages: [{ message: '合法', title: '禁止欄位' }] },
     { ...valid, pageDurationSeconds: null },

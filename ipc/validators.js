@@ -4,7 +4,7 @@ const { PAGE_PROGRESS_PHASES, PLAYBACK_MODES } = require('./channels');
 const { validateConfig } = require('../config/config-schema');
 
 // 所有限制都由 Main 再驗證，Renderer 的欄位狀態不能視為安全邊界。
-const MESSAGES_PER_PAGE = 5;
+const MESSAGES_PER_PAGE = 3;
 const MAX_MESSAGE_COUNT = 500;
 const MAX_MESSAGE_CODE_POINTS = 10_000;
 const MIN_PAGE_DURATION_SECONDS = 1;
@@ -278,7 +278,9 @@ function validatePageProgressPayload(payload) {
     );
   }
 
-  const maximumPageNumber = MAX_MESSAGE_COUNT / MESSAGES_PER_PAGE;
+  const maximumPageNumber = Math.ceil(
+    MAX_MESSAGE_COUNT / MESSAGES_PER_PAGE,
+  );
   if (
     !Number.isSafeInteger(payload.pageNumber) ||
     payload.pageNumber < 1 ||

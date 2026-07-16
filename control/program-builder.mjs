@@ -12,7 +12,7 @@ export const PLAYBACK_MODES = Object.freeze({
 });
 
 export const PROGRAM_LIMITS = Object.freeze({
-  MESSAGES_PER_PAGE: 5,
+  MESSAGES_PER_PAGE: 3,
   MAX_MESSAGE_COUNT: 500,
   MAX_MESSAGE_CODE_POINTS: 10_000,
   MIN_PAGE_DURATION_SECONDS: 1,

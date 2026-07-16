@@ -7,7 +7,7 @@ const {
 const { PresentationStore } = require('./presentation-store');
 const { MAX_MESSAGE_COUNT, MESSAGES_PER_PAGE } = require('./validators');
 
-const MAX_PAGE_NUMBER = MAX_MESSAGE_COUNT / MESSAGES_PER_PAGE;
+const MAX_PAGE_NUMBER = Math.ceil(MAX_MESSAGE_COUNT / MESSAGES_PER_PAGE);
 
 function hasExactProgressKeys(report) {
   if (report === null || typeof report !== 'object' || Array.isArray(report)) {
