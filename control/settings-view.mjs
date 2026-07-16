@@ -79,6 +79,18 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       elements.minimumFontSizeError,
     ],
   });
+  const fieldFocusTargets = Object.freeze({
+    logo: elements.chooseLogoButton,
+    'logo.path': elements.chooseLogoButton,
+  });
+
+  function focusWhenUnlocked(target) {
+    queueMicrotask(() => {
+      if (target?.isConnected && !target.disabled && !target.hidden) {
+        target.focus();
+      }
+    });
+  }
 
   function clearSettingsErrors() {
     elements.error.textContent = '';
@@ -374,7 +386,9 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
         control.setAttribute('aria-invalid', 'true');
         errorElement.textContent = message;
         errorElement.hidden = false;
-        control.focus();
+        focusWhenUnlocked(fieldFocusTargets[field] ?? control);
+      } else {
+        focusWhenUnlocked(elements.error);
       }
     },
 

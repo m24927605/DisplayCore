@@ -16,6 +16,9 @@ const { IPC_ROLES } = require(path.join(projectRoot, 'ipc', 'channels'));
 const { IpcCoordinator } = require(
   path.join(projectRoot, 'ipc', 'ipc-coordinator'),
 );
+const { ConfigValidationError } = require(
+  path.join(projectRoot, 'config', 'config-manager'),
+);
 const { PresentationService } = require(
   path.join(projectRoot, 'ipc', 'presentation-service'),
 );
@@ -229,6 +232,7 @@ function expectedBlank(revision) {
 }
 
 function createSettingsManager() {
+  let pendingValidationError = null;
   let snapshot = {
     config: structuredClone(defaultConfig),
     defaults: structuredClone(defaultConfig),
@@ -242,6 +246,13 @@ function createSettingsManager() {
     },
     async saveConfig(config, expectedRevision) {
       assert.equal(expectedRevision, snapshot.revision);
+
+      if (pendingValidationError) {
+        const validationError = pendingValidationError;
+        pendingValidationError = null;
+        throw new ConfigValidationError(validationError);
+      }
+
       snapshot = {
         config: structuredClone(config),
         defaults: snapshot.defaults,
@@ -249,6 +260,9 @@ function createSettingsManager() {
         notice: null,
       };
       return this.getSnapshot();
+    },
+    rejectNextSave(validationError) {
+      pendingValidationError = validationError;
     },
   };
 }
@@ -278,6 +292,17 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
     dirty: '所有變更皆已儲存',
     saveDisabled: true,
   });
+
+  await click('logo-enabled-input');
+  await execute(`document.getElementById('settings-form').requestSubmit()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('logo-path-error').hidden === false &&
+      document.activeElement?.id === 'choose-logo-button'
+    )()`),
+    'Logo 錯誤聚焦可修正操作',
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 0);
 
   await setTextInput('background-color-input', '#123456');
   await click('choose-logo-button');
@@ -312,6 +337,24 @@ async function runSettingsWorkflow(settingsManager, presentationStore) {
   );
 
   await setTextInput('minimum-font-size-input', '3.25');
+  settingsManager.rejectNextSave({
+    code: 'VALIDATION_FAILED',
+    field: 'appearance.minimumFontSizeRem',
+    message: 'Main 拒絕此最小字級。',
+  });
+  await execute(`document.getElementById('settings-form').requestSubmit()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('minimum-font-size-error').textContent ===
+        'Main 拒絕此最小字級。' &&
+      document.getElementById('settings-form').getAttribute('aria-busy') ===
+        'false' &&
+      document.activeElement?.id === 'minimum-font-size-input'
+    )()`),
+    'Main 欄位錯誤解鎖後聚焦',
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 0);
+
   await execute(`document.getElementById('settings-form').requestSubmit()`);
   await waitFor(
     () => execute(`document.getElementById('settings-dialog').open === false`),
