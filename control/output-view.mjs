@@ -17,7 +17,7 @@ const HDMI_PRESENTATION = Object.freeze({
   detecting: Object.freeze({ label: '正在偵測 HDMI…', tone: 'detecting' }),
   connected: Object.freeze({ label: 'HDMI 已連接', tone: 'connected' }),
   'not-connected': Object.freeze({ label: 'HDMI 未連接', tone: 'not-connected' }),
-  unknown: Object.freeze({ label: 'HDMI 狀態未知', tone: 'unknown' }),
+  unknown: Object.freeze({ label: 'HDMI 無法判定', tone: 'unknown' }),
 });
 
 function isRecord(value) {

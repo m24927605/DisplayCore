@@ -201,6 +201,19 @@ test('偵測、無目標與未知狀態使用明確但不武斷的提示', async
   );
   assert.equal(document.getElementById('output-status-notice').dataset.tone, 'warning');
   assert.equal(document.getElementById('output-status-panel').getAttribute('aria-busy'), 'true');
+
+  view.renderOutputStatus(
+    createSnapshot({ hdmiConnectionStatus: 'unknown' }),
+    createUx('unknown', 'applied'),
+  );
+  assert.equal(
+    document.getElementById('hdmi-status-text').textContent,
+    'HDMI 無法判定',
+  );
+  assert.notEqual(
+    document.getElementById('hdmi-status-text').textContent,
+    'HDMI 未連接',
+  );
 });
 
 test('錯誤與螢幕名稱只透過 textContent 寫入且不會建立可執行標記', async () => {
