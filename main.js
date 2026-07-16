@@ -4,6 +4,7 @@ const path = require('node:path');
 const {
   app,
   BrowserWindow,
+  dialog,
   ipcMain,
   Menu,
   net,
@@ -12,6 +13,8 @@ const {
 } = require('electron');
 const isSquirrelStartup = require('electron-squirrel-startup');
 
+const { ConfigManager } = require('./config/config-manager');
+const { LogoImporter } = require('./config/logo-importer');
 const { ApplicationController } = require('./main/application-controller');
 const { IPC_ROLES } = require('./ipc/channels');
 const { IpcCoordinator } = require('./ipc/ipc-coordinator');
@@ -36,8 +39,8 @@ const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
 /**
  * DisplayCore 主程序 composition root。
  *
- * 本檔只負責組合 Electron API 與各單一職責模組。正式 Display Renderer、
- * 設定管理與 HDMI 偵測會依後續開發步驟加入。
+ * 本檔只負責組合 Electron API 與各單一職責模組。顯示設定的實際套用與
+ * HDMI 偵測會依後續開發步驟加入。
  */
 async function bootstrap() {
   // Squirrel.Windows 安裝或解除安裝時會短暫啟動程式，此時不可建立視窗。
@@ -58,6 +61,9 @@ async function bootstrap() {
   registerAppScheme(protocol);
 
   const isMainProcessSmokeTest = process.argv.includes(MAIN_PROCESS_SMOKE_FLAG);
+  const dataRoot = isMainProcessSmokeTest
+    ? path.join(app.getPath('temp'), `displaycore-main-smoke-${process.pid}`)
+    : path.join(app.getPath('userData'), 'displaycore-data');
   let appSession = null;
 
   const windowManager = new WindowManager({
@@ -88,9 +94,21 @@ async function bootstrap() {
       console.error('[DisplayCore] 顯示狀態發布失敗。', error);
     },
   });
+  const settingsManager = new ConfigManager({
+    defaultConfigPath: path.join(PROJECT_ROOT, 'config.json'),
+    configPath: path.join(dataRoot, 'config.json'),
+    logger: console,
+  });
+  const logoImporter = new LogoImporter({
+    dialog,
+    getParentWindow: () => windowManager.getControlWindow(),
+    assetDirectory: path.join(dataRoot, 'logos'),
+  });
   const ipcCoordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
+    settingsManager,
+    logoImporter,
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return windowManager.getControlWindow();
@@ -124,6 +142,7 @@ async function bootstrap() {
         net,
         appRoot: PROJECT_ROOT,
       });
+      await settingsManager.initialize();
       ipcCoordinator.register();
     },
     shutdownRuntime: () => {

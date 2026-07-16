@@ -326,9 +326,12 @@ async function runWorkflow(presentationStore, timers) {
     moduleType: 'undefined',
     bufferType: 'undefined',
     bridgeMethods: [
+      'chooseLogo',
       'clearPresentation',
       'getPresentation',
+      'getSettings',
       'onPresentationChanged',
+      'saveSettings',
       'showEmergency',
       'startProgram',
     ],
