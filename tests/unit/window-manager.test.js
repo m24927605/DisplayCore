@@ -257,6 +257,66 @@ test('Display Renderer 崩潰時會原子重建整組視窗', async () => {
   assert.equal(closeNotifications, 0);
 });
 
+test('目前 Display Renderer 即使回報 clean-exit 也視為意外消失並重建', async () => {
+  const { manager } = createManager();
+  await manager.createWindows();
+  const [oldControlWindow, oldDisplayWindow] = FakeBrowserWindow.instances;
+
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'clean-exit' },
+  );
+  await flushAsyncWork();
+
+  assert.equal(oldControlWindow.destroyed, true);
+  assert.equal(oldDisplayWindow.destroyed, true);
+  assert.equal(FakeBrowserWindow.instances.length, 4);
+  assert.equal(manager.hasWindows(), true);
+});
+
+test('已被取代視窗的延遲 renderer 事件不會再次重建', async () => {
+  const { manager } = createManager();
+  await manager.createWindows();
+  const [, oldDisplayWindow] = FakeBrowserWindow.instances;
+
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'crashed' },
+  );
+  await flushAsyncWork();
+  assert.equal(FakeBrowserWindow.instances.length, 4);
+
+  oldDisplayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'clean-exit' },
+  );
+  await flushAsyncWork();
+
+  assert.equal(FakeBrowserWindow.instances.length, 4);
+  assert.equal(manager.hasWindows(), true);
+});
+
+test('程式進入正常退出後忽略 renderer clean-exit', async () => {
+  const { manager } = createManager();
+  await manager.createWindows();
+  const [controlWindow, displayWindow] = FakeBrowserWindow.instances;
+
+  manager.prepareForQuit();
+  displayWindow.webContents.emit(
+    'render-process-gone',
+    {},
+    { reason: 'clean-exit' },
+  );
+  await flushAsyncWork();
+
+  assert.equal(FakeBrowserWindow.instances.length, 2);
+  assert.equal(controlWindow.destroyed, false);
+  assert.equal(displayWindow.destroyed, false);
+});
+
 test('Display Window 意外關閉時不會留下孤立的 Control Window', async () => {
   let closeNotifications = 0;
   const { manager } = createManager({

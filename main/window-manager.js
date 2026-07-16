@@ -222,10 +222,11 @@ class WindowManager {
     for (const browserWindow of [controlWindow, displayWindow]) {
       browserWindow.webContents.on(
         'render-process-gone',
-        (_event, details = {}) => {
-          if (details.reason !== 'clean-exit') {
-            this.scheduleWindowPairRecovery(controlWindow, displayWindow);
-          }
+        () => {
+          // BrowserWindow 仍是目前視窗但 Renderer 已消失時，即使
+          // Electron 標示 clean-exit，對無人顯示系統仍是必須復原的
+          // 異常狀態。正常 app 退出由 isQuitting 明確抑制重建。
+          this.scheduleWindowPairRecovery(controlWindow, displayWindow);
         },
       );
     }
