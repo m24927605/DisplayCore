@@ -44,7 +44,7 @@ function createSecureWebPreferences({ preloadPath, session, devTools }) {
 /**
  * 建立 Control Window 的視窗選項。
  *
- * 視窗只提供安全外殼；第 5 步 Control Renderer 透過 preload bridge 使用
+ * 視窗只提供安全外殼；Control Renderer 透過 preload bridge 使用
  * 固定用途 IPC，仍不能直接接觸 Node.js 或 Electron API。
  *
  * @param {object} options
