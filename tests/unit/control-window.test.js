@@ -1,0 +1,115 @@
+'use strict';
+
+const assert = require('node:assert/strict');
+const { readFile } = require('node:fs/promises');
+const path = require('node:path');
+const test = require('node:test');
+
+const projectRoot = path.resolve(__dirname, '..', '..');
+
+async function readControlFile(fileName) {
+  return readFile(path.join(projectRoot, 'control', fileName), 'utf8');
+}
+
+test('Control HTML 提供語意化的一般訊息操作與精確預覽', async () => {
+  const html = await readControlFile('index.html');
+
+  assert.match(html, /<form[^>]+id="message-form"/);
+  assert.match(html, /<label[^>]+for="recipient-input"/);
+  assert.match(html, /<input[^>]+id="recipient-input"/);
+  assert.match(html, /<fieldset[^>]+id="action-fieldset"/);
+  assert.match(html, /<legend[^>]*>[^<]*動作指令/);
+
+  for (const action of ['go-to-lobby', 'lobby-code', 'custom']) {
+    assert.match(
+      html,
+      new RegExp(`<input[^>]+name="action"[^>]+value="${action}"`),
+    );
+  }
+
+  assert.match(html, /<label[^>]+for="custom-message-input"/);
+  assert.match(html, /<input[^>]+id="custom-message-input"/);
+  assert.match(html, /<output[^>]+id="message-preview"/);
+  assert.match(html, /<button[^>]+id="show-message-button"[^>]+type="submit"/);
+  assert.match(html, /<button[^>]+id="clear-display-button"[^>]+type="button"/);
+});
+
+test('Control 將目前 Main 狀態與尚未送出的預覽清楚分開', async () => {
+  const html = await readControlFile('index.html');
+
+  assert.match(html, /id="current-presentation"/);
+  assert.match(html, /id="current-message"/);
+  assert.match(html, /id="current-layout"/);
+  assert.match(html, /id="current-revision"/);
+  assert.match(html, /id="operation-status"[^>]+role="status"/);
+  assert.match(html, /aria-live="polite"/);
+});
+
+test('555 與 888 使用獨立按鈕及原生確認對話框防止誤觸', async () => {
+  const html = await readControlFile('index.html');
+
+  assert.match(
+    html,
+    /<button[^>]+id="inspection-555-button"[^>]+data-emergency-code="555"[^>]+type="button"/,
+  );
+  assert.match(
+    html,
+    /<button[^>]+id="inspection-888-button"[^>]+data-emergency-code="888"[^>]+type="button"/,
+  );
+  assert.match(html, /<dialog[^>]+id="inspection-confirm-dialog"/);
+  assert.match(html, /id="inspection-dialog-title"/);
+  assert.match(html, /id="inspection-code-preview"/);
+  assert.match(html, /id="inspection-confirm-button"/);
+  assert.match(html, /id="inspection-cancel-button"[^>]+autofocus/);
+});
+
+test('尚未進入的設定與螢幕功能明確標示步驟且不可操作', async () => {
+  const html = await readControlFile('index.html');
+
+  assert.match(html, /id="future-system-features"/);
+  assert.match(html, /HDMI[^<]*第 9 步/);
+  assert.match(html, /輸出螢幕[^<]*第 9 步/);
+  assert.match(html, /系統設定[^<]*第 7 步/);
+  assert.match(html, /<button[^>]+disabled/);
+});
+
+test('Control 只載入本機 module，且 Renderer 僅使用最小權限 bridge', async () => {
+  const [html, appSource] = await Promise.all([
+    readControlFile('index.html'),
+    readControlFile('app.mjs'),
+  ]);
+
+  assert.match(html, /<script[^>]+type="module"[^>]+src="\.\/app\.mjs"/);
+  assert.doesNotMatch(html, /https?:\/\//i);
+  assert.doesNotMatch(html, /<script(?![^>]+src=)[^>]*>/i);
+  assert.doesNotMatch(html, /<style[\s>]/i);
+  assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
+
+  assert.match(appSource, /window\.displayCoreControl/);
+  assert.match(appSource, /\.textContent\s*=/);
+  assert.doesNotMatch(appSource, /\.innerHTML\s*=/);
+  assert.doesNotMatch(appSource, /\brequire\s*\(|\bprocess\.|\bipcRenderer\b/);
+
+  const subscribePosition = appSource.indexOf('.onPresentationChanged(');
+  const snapshotPosition = appSource.indexOf('.getPresentation(');
+  assert.ok(subscribePosition >= 0);
+  assert.ok(snapshotPosition > subscribePosition);
+});
+
+test('Control 樣式具響應式、可存取與精確動效細節', async () => {
+  const css = await readControlFile('control.css');
+
+  assert.match(css, /display:\s*grid/);
+  assert.match(css, /display:\s*flex/);
+  assert.match(css, /@media\s*\([^)]*max-width/);
+  assert.match(css, /clamp\(/);
+  assert.match(css, /min-block-size:\s*2\.75rem/);
+  assert.match(css, /-webkit-font-smoothing:\s*antialiased/);
+  assert.match(css, /font-variant-numeric:\s*tabular-nums/);
+  assert.match(css, /text-wrap:\s*balance/);
+  assert.match(css, /text-wrap:\s*pretty/);
+  assert.match(css, /scale\(0\.96\)/);
+  assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
+  assert.doesNotMatch(css, /transition(?:-property)?:\s*all\b/);
+  assert.doesNotMatch(css, /will-change:\s*all\b/);
+});

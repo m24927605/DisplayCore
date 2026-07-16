@@ -4,17 +4,287 @@
     <meta charset="UTF-8">
     <meta
       http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
     >
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>DisplayCore 控制台</title>
-    <link rel="stylesheet" href="./scaffold.css">
+    <link rel="stylesheet" href="./control.css">
   </head>
   <body>
-    <main class="shell" aria-labelledby="page-title">
-      <p class="eyebrow">DISPLAYCORE</p>
-      <h1 id="page-title">Control Window</h1>
-      <p>安全的主程序視窗外殼已就緒，操作介面將於第 5 步建立。</p>
-    </main>
+    <div class="app-shell">
+      <header class="topbar">
+        <div class="brand-cluster">
+          <div class="brand-mark" aria-hidden="true">DC</div>
+          <div>
+            <p class="eyebrow">DISPLAYCORE</p>
+            <h1 id="page-title">顯示控制台</h1>
+          </div>
+        </div>
+        <div class="offline-badge" aria-label="系統以本機離線模式運作">
+          <span class="status-dot" aria-hidden="true"></span>
+          本機離線模式
+        </div>
+      </header>
+
+      <main class="dashboard" aria-labelledby="page-title">
+        <section class="panel composer-panel" aria-labelledby="composer-title">
+          <div class="section-heading">
+            <div>
+              <p class="section-kicker">一般顯示</p>
+              <h2 id="composer-title">建立顯示訊息</h2>
+            </div>
+            <span class="step-badge">第 5 步</span>
+          </div>
+
+          <form id="message-form" novalidate>
+            <div class="field-group">
+              <div class="label-row">
+                <label for="recipient-input">編號或花名</label>
+                <span class="field-note">固定動作必填</span>
+              </div>
+              <input
+                id="recipient-input"
+                name="recipient"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="recipient-help recipient-error"
+                placeholder="例如：001 或 Nancy"
+              >
+              <p id="recipient-help" class="field-help">
+                使用文字欄位保留 001 的前導零與所有原始字元。
+              </p>
+              <p id="recipient-error" class="field-error" hidden></p>
+            </div>
+
+            <fieldset id="action-fieldset" class="field-group action-fieldset">
+              <legend>動作指令</legend>
+              <div class="action-grid">
+                <label class="action-option">
+                  <input
+                    type="radio"
+                    name="action"
+                    value="go-to-lobby"
+                    checked
+                  >
+                  <span class="action-copy">
+                    <span class="action-title">請至前廳</span>
+                    <span class="action-example">001請至前廳</span>
+                  </span>
+                </label>
+
+                <label class="action-option">
+                  <input type="radio" name="action" value="lobby-code">
+                  <span class="action-copy">
+                    <span class="action-title">前廳000</span>
+                    <span class="action-example">Nancy前廳000</span>
+                  </span>
+                </label>
+
+                <label class="action-option">
+                  <input type="radio" name="action" value="custom">
+                  <span class="action-copy">
+                    <span class="action-title">自定義</span>
+                    <span class="action-example">公告或其他內容</span>
+                  </span>
+                </label>
+              </div>
+              <p id="action-error" class="field-error" hidden></p>
+            </fieldset>
+
+            <div id="custom-message-field" class="field-group" hidden>
+              <div class="label-row">
+                <label for="custom-message-input">自定義內容</label>
+                <span class="field-note">編號／花名可留空</span>
+              </div>
+              <input
+                id="custom-message-input"
+                name="customMessage"
+                type="text"
+                autocomplete="off"
+                spellcheck="false"
+                aria-describedby="custom-message-help custom-message-error"
+                placeholder="例如：公告今日停止服務"
+                disabled
+              >
+              <p id="custom-message-help" class="field-help">
+                內容會直接接在編號／花名後方，不插入分隔符號。
+              </p>
+              <p id="custom-message-error" class="field-error" hidden></p>
+            </div>
+
+            <div class="preview-block" aria-labelledby="preview-title">
+              <div class="preview-heading">
+                <div>
+                  <p class="section-kicker">送出前確認</p>
+                  <h3 id="preview-title">完整訊息預覽</h3>
+                </div>
+                <span id="preview-layout" class="layout-badge">單行</span>
+              </div>
+              <output
+                id="message-preview"
+                class="message-preview is-placeholder"
+                for="recipient-input action-fieldset custom-message-input"
+              >請先輸入編號、花名或自定義內容</output>
+              <p class="preview-note">預覽與 Main 目前狀態分開，送出成功後才會更新電視。</p>
+            </div>
+
+            <div class="form-actions">
+              <button
+                id="show-message-button"
+                class="button button-primary button-wide"
+                type="submit"
+                disabled
+              >
+                顯示到電視
+              </button>
+              <button
+                id="clear-display-button"
+                class="button button-secondary"
+                type="button"
+                disabled
+              >
+                清除畫面
+              </button>
+            </div>
+          </form>
+        </section>
+
+        <div class="side-stack">
+          <section
+            id="current-presentation"
+            class="panel current-panel"
+            aria-labelledby="current-title"
+          >
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="section-kicker">Main Process</p>
+                <h2 id="current-title">目前顯示狀態</h2>
+              </div>
+              <span id="current-layout" class="layout-badge">單行</span>
+            </div>
+            <p id="current-message" class="current-message is-placeholder">
+              正在取得目前畫面…
+            </p>
+            <div class="state-meta">
+              <span>狀態版本</span>
+              <span id="current-revision" class="revision-value">—</span>
+            </div>
+          </section>
+
+          <section
+            id="inspection-actions"
+            class="panel emergency-panel"
+            aria-labelledby="inspection-title"
+          >
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="section-kicker warning-kicker">重要操作</p>
+                <h2 id="inspection-title">臨檢滿屏代碼</h2>
+              </div>
+              <span class="emergency-symbol" aria-hidden="true">!</span>
+            </div>
+            <p class="section-description">
+              代碼會立即覆蓋目前訊息，並以不受單行限制的滿屏模式顯示。
+            </p>
+            <div class="emergency-actions">
+              <button
+                id="inspection-555-button"
+                class="button emergency-button inspection-button"
+                data-emergency-code="555"
+                type="button"
+                disabled
+              >
+                <span class="button-code">555</span>
+                <span>臨檢滿屏</span>
+              </button>
+              <button
+                id="inspection-888-button"
+                class="button emergency-button clear-code-button"
+                data-emergency-code="888"
+                type="button"
+                disabled
+              >
+                <span class="button-code">888</span>
+                <span>解除臨檢滿屏</span>
+              </button>
+            </div>
+          </section>
+
+          <section
+            id="future-system-features"
+            class="panel future-panel"
+            aria-labelledby="future-title"
+          >
+            <div class="section-heading compact-heading">
+              <div>
+                <p class="section-kicker">後續階段</p>
+                <h2 id="future-title">系統與輸出</h2>
+              </div>
+              <span class="pending-badge">尚未完成</span>
+            </div>
+            <ul class="future-list">
+              <li>
+                <span class="future-label">HDMI 狀態：第 9 步啟用偵測</span>
+                <span class="future-state">待建立</span>
+              </li>
+              <li>
+                <span class="future-label">輸出螢幕與全螢幕：第 9 步提供</span>
+                <span class="future-state">待建立</span>
+              </li>
+              <li>
+                <span class="future-label">系統設定：第 7 步提供</span>
+                <span class="future-state">待建立</span>
+              </li>
+            </ul>
+            <button class="button button-secondary future-button" type="button" disabled>
+              後續步驟開放
+            </button>
+          </section>
+        </div>
+      </main>
+
+      <footer class="operation-footer">
+        <span class="footer-indicator" aria-hidden="true"></span>
+        <p id="operation-status" role="status" aria-live="polite">
+          正在連接主程序…
+        </p>
+        <p id="operation-error" role="alert" aria-live="assertive" hidden></p>
+      </footer>
+    </div>
+
+    <dialog
+      id="inspection-confirm-dialog"
+      aria-labelledby="inspection-dialog-title"
+      aria-describedby="inspection-dialog-description"
+    >
+      <div class="dialog-surface">
+        <p class="section-kicker warning-kicker">滿屏代碼確認</p>
+        <h2 id="inspection-dialog-title">確認覆蓋目前顯示？</h2>
+        <p id="inspection-dialog-description" class="dialog-description">
+          此操作會立即覆蓋目前訊息，請確認現場狀況後再繼續。
+        </p>
+        <output id="inspection-code-preview" class="dialog-code">---</output>
+        <div class="dialog-actions">
+          <button
+            id="inspection-cancel-button"
+            class="button button-secondary"
+            type="button"
+            autofocus
+          >
+            取消
+          </button>
+          <button
+            id="inspection-confirm-button"
+            class="button dialog-confirm-button"
+            type="button"
+          >
+            確認顯示
+          </button>
+        </div>
+      </div>
+    </dialog>
+
+    <script type="module" src="./app.mjs"></script>
   </body>
 </html>

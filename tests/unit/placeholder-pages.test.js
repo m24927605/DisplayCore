@@ -7,7 +7,7 @@ const test = require('node:test');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 
-test('Control 與 Display 占位頁只載入本機樣式並設定嚴格 CSP', async () => {
+test('Control 與 Display 頁面只載入本機資源並設定嚴格 CSP', async () => {
   for (const pageName of ['control', 'display']) {
     const html = await readFile(
       path.join(projectRoot, pageName, 'index.html'),
@@ -20,10 +20,25 @@ test('Control 與 Display 占位頁只載入本機樣式並設定嚴格 CSP', as
     assert.match(html, /connect-src 'none'/);
     assert.match(html, /style-src 'self'/);
     assert.doesNotMatch(html, /https?:\/\//i);
-    assert.doesNotMatch(html, /<script[\s>]/i);
     assert.doesNotMatch(html, /<style[\s>]/i);
     assert.doesNotMatch(html, /\son[a-z]+\s*=/i);
   }
+
+  const controlHtml = await readFile(
+    path.join(projectRoot, 'control', 'index.html'),
+    'utf8',
+  );
+  const displayHtml = await readFile(
+    path.join(projectRoot, 'display', 'index.html'),
+    'utf8',
+  );
+
+  assert.match(
+    controlHtml,
+    /<script[^>]+type="module"[^>]+src="\.\/app\.mjs"[^>]*><\/script>/i,
+  );
+  assert.doesNotMatch(controlHtml, /<script(?![^>]+src=)[^>]*>/i);
+  assert.doesNotMatch(displayHtml, /<script[\s>]/i);
 });
 
 test('Display preload 只使用 sandbox 允許的 Electron bridge', async () => {
