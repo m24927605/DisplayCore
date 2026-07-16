@@ -9,6 +9,7 @@ const {
   Menu,
   net,
   protocol,
+  screen,
   session,
 } = require('electron');
 const isSquirrelStartup = require('electron-squirrel-startup');
@@ -16,6 +17,13 @@ const isSquirrelStartup = require('electron-squirrel-startup');
 const { ConfigManager } = require('./config/config-manager');
 const { LogoImporter } = require('./config/logo-importer');
 const { ApplicationController } = require('./main/application-controller');
+const {
+  DisplayPlacementController,
+} = require('./main/display-placement-controller');
+const {
+  DisplayTopologyService,
+} = require('./main/display-topology-service');
+const { HdmiDetector } = require('./main/hdmi-detector');
 const { IPC_ROLES } = require('./ipc/channels');
 const { IpcCoordinator } = require('./ipc/ipc-coordinator');
 const { PresentationService } = require('./ipc/presentation-service');
@@ -39,8 +47,8 @@ const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
 /**
  * DisplayCore 主程序 composition root。
  *
- * 本檔只負責組合 Electron API 與各單一職責模組。HDMI 偵測、實體輸出
- * 螢幕選擇與全螢幕切換會依後續開發步驟加入。
+ * 本檔只負責組合 Electron API 與各單一職責模組；螢幕查詢、定位、IPC、
+ * 設定持久化與顯示排程仍由各自模組處理。
  */
 async function bootstrap() {
   // Squirrel.Windows 安裝或解除安裝時會短暫啟動程式，此時不可建立視窗。
@@ -65,6 +73,7 @@ async function bootstrap() {
     ? path.join(app.getPath('temp'), `displaycore-main-smoke-${process.pid}`)
     : path.join(app.getPath('userData'), 'displaycore-data');
   let appSession = null;
+  let displayPlacementController = null;
 
   const windowManager = new WindowManager({
     BrowserWindow,
@@ -84,6 +93,16 @@ async function bootstrap() {
       console.error('[DisplayCore] 視窗自動復原失敗。', error);
       app.exit(1);
     },
+    configureDisplayWindow: isMainProcessSmokeTest
+      ? null
+      : (displayWindow) => {
+        if (
+          !displayPlacementController ||
+          !displayPlacementController.applyToWindow(displayWindow)
+        ) {
+          throw new Error('Display Window 無法套用目前輸出位置。');
+        }
+      },
     windowedDisplay: isMainProcessSmokeTest,
     controlDevTools: !app.isPackaged && !isMainProcessSmokeTest,
   });
@@ -97,6 +116,18 @@ async function bootstrap() {
   const settingsManager = new ConfigManager({
     defaultConfigPath: path.join(PROJECT_ROOT, 'config.json'),
     configPath: path.join(dataRoot, 'config.json'),
+    logger: console,
+  });
+  const hdmiDetector = new HdmiDetector({ logger: console });
+  const displayTopologyService = new DisplayTopologyService({
+    screen,
+    settingsManager,
+    hdmiDetector,
+    logger: console,
+  });
+  displayPlacementController = new DisplayPlacementController({
+    topologyService: displayTopologyService,
+    getDisplayWindow: () => windowManager.getDisplayWindow(),
     logger: console,
   });
   const logoImporter = new LogoImporter({
@@ -148,10 +179,14 @@ async function bootstrap() {
         },
       });
       await settingsManager.initialize();
+      await displayTopologyService.initialize();
+      displayPlacementController.initialize();
       ipcCoordinator.register();
     },
     shutdownRuntime: () => {
       ipcCoordinator.dispose();
+      displayPlacementController.dispose();
+      displayTopologyService.dispose();
       presentationService.dispose();
     },
   });
