@@ -52,6 +52,10 @@ test('package.json 定義 DisplayCore 與 Electron Forge 指令', async () => {
     packageJson.scripts['start:smoke'],
     'electron-forge start -- --displaycore-smoke-test',
   );
+  assert.equal(
+    packageJson.scripts['start:main-smoke'],
+    'electron-forge start -- --displaycore-main-smoke-test',
+  );
   assert.equal(packageJson.scripts.package, 'electron-forge package');
   assert.equal(packageJson.scripts.make, 'electron-forge make');
   assert.equal(packageJson.scripts.test, 'node --test');
@@ -106,6 +110,20 @@ test('Forge 開發工具鏈覆寫為已修補的封裝與暫存套件', async ()
 
   assert.equal(packageJson.overrides.tar, '7.5.20');
   assert.equal(packageJson.overrides.tmp, '0.2.7');
+});
+
+test('Electron 封裝排除根目錄測試與覆蓋率資料', () => {
+  const forgeConfig = require('../../forge.config');
+  const ignoredPaths = forgeConfig.packagerConfig.ignore;
+  const isIgnored = (relativePath) =>
+    ignoredPaths.some((pattern) => pattern.test(relativePath));
+
+  assert.ok(Array.isArray(ignoredPaths));
+  assert.equal(isIgnored('/tests/unit/window-manager.test.js'), true);
+  assert.equal(isIgnored('/coverage/lcov.info'), true);
+  assert.equal(isIgnored('/control/index.html'), false);
+  assert.equal(isIgnored('/display/index.html'), false);
+  assert.equal(isIgnored('/node_modules/example/tests/index.js'), false);
 });
 
 test('.gitignore 排除建置產物、相依套件、測試覆蓋率與日誌', async () => {

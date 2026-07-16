@@ -12,6 +12,12 @@ module.exports = {
   packagerConfig: {
     asar: true,
     executableName: 'DisplayCore',
+    // Electron Packager 以「/」開頭的專案根相對路徑套用 ignore。
+    // 只排除開發產物，避免誤傷 node_modules 內同名目錄或正式 Renderer 資源。
+    ignore: [
+      /^\/tests(?:\/|$)/,
+      /^\/coverage(?:\/|$)/,
+    ],
   },
   rebuildConfig: {},
   makers: [

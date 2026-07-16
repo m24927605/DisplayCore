@@ -13,6 +13,7 @@
   "scripts": {
     "start": "electron-forge start",
     "start:smoke": "electron-forge start -- --displaycore-smoke-test",
+    "start:main-smoke": "electron-forge start -- --displaycore-main-smoke-test",
     "test": "node --test",
     "package": "electron-forge package",
     "make": "electron-forge make"

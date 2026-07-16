@@ -1,0 +1,26 @@
+:root {
+  color-scheme: dark;
+  font-family: "Microsoft JhengHei UI", "Noto Sans TC", sans-serif;
+  background: #000000;
+  color: #7f8a96;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  display: grid;
+  min-block-size: 100vh;
+  margin: 0;
+  overflow: hidden;
+  place-items: center;
+  user-select: none;
+}
+
+p {
+  margin: 0;
+  font-size: clamp(1rem, 2vw, 2rem);
+  letter-spacing: 0.16em;
+  opacity: 0.45;
+}

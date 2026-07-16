@@ -1,34 +1,116 @@
 'use strict';
 
-const { app } = require('electron');
+const path = require('node:path');
+const {
+  app,
+  BrowserWindow,
+  Menu,
+  net,
+  protocol,
+  session,
+} = require('electron');
 const isSquirrelStartup = require('electron-squirrel-startup');
 
+const { ApplicationController } = require('./main/application-controller');
+const {
+  installLocalProtocol,
+  registerAppScheme,
+} = require('./main/local-protocol');
+const {
+  configureOfflineSession,
+  hardenWebContents,
+} = require('./main/security-policy');
+const { WindowManager } = require('./main/window-manager');
+
+const PROJECT_ROOT = __dirname;
+const CONTROL_URL = 'displaycore://app/control/index.html';
+const DISPLAY_URL = 'displaycore://app/display/index.html';
+const SCAFFOLD_SMOKE_FLAG = '--displaycore-smoke-test';
+const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
+
 /**
- * DisplayCore 主程序入口。
+ * DisplayCore 主程序 composition root。
  *
- * 第 2 步只建立可安裝、可驗證的 Electron 專案骨架。
- * 應用程式生命週期與視窗建立會在第 3 步實作。
+ * 本檔只負責組合 Electron API 與各單一職責模組。IPC、設定管理、Renderer
+ * 功能與 HDMI 偵測會依後續開發步驟加入，不提前放進主程序生命週期。
  */
 async function bootstrap() {
-  // Squirrel.Windows 在安裝或解除安裝時會短暫啟動程式，此時不應建立視窗。
+  // Squirrel.Windows 安裝或解除安裝時會短暫啟動程式，此時不可建立視窗。
   if (isSquirrelStartup) {
     app.quit();
     return;
   }
 
-  await app.whenReady();
-
-  if (process.argv.includes('--displaycore-smoke-test')) {
+  // 保留第 2 步的純 Electron 環境煙霧測試，不建立 Chromium 視窗。
+  if (process.argv.includes(SCAFFOLD_SMOKE_FLAG)) {
+    await app.whenReady();
     console.info('[DisplayCore] Electron 專案骨架啟動成功。');
-  } else {
-    console.info('[DisplayCore] 專案骨架已就緒，主程序將於第 3 步建立。');
+    app.quit();
+    return;
   }
 
-  // 第 2 步沒有視窗，完成環境驗證後應主動結束，避免留下隱形背景程序。
-  app.quit();
+  // Electron 規定 privileged scheme 必須在 app ready 之前完成註冊。
+  registerAppScheme(protocol);
+
+  const isMainProcessSmokeTest = process.argv.includes(MAIN_PROCESS_SMOKE_FLAG);
+  let appSession = null;
+
+  const windowManager = new WindowManager({
+    BrowserWindow,
+    // Session 只能在 ready 後建立，因此以 provider 延後到 createWindows 取用。
+    sessionProvider: () => appSession,
+    controlPreloadPath: path.join(PROJECT_ROOT, 'preload.js'),
+    displayPreloadPath: path.join(
+      PROJECT_ROOT,
+      'preload',
+      'display-preload.js',
+    ),
+    controlUrl: CONTROL_URL,
+    displayUrl: DISPLAY_URL,
+    hardenWebContents,
+    onControlClosed: () => app.quit(),
+    onRecoveryFailed: (error) => {
+      console.error('[DisplayCore] 視窗自動復原失敗。', error);
+      app.exit(1);
+    },
+    windowedDisplay: isMainProcessSmokeTest,
+    controlDevTools: !app.isPackaged && !isMainProcessSmokeTest,
+  });
+
+  const controller = new ApplicationController({
+    app,
+    windowManager,
+    platform: process.platform,
+    logger: console,
+    initializeRuntime: async () => {
+      Menu.setApplicationMenu(null);
+
+      // 不加 persist: 前綴，確保權限、Cookie 與快取不跨執行階段保留。
+      appSession = session.fromPartition('displaycore', { cache: false });
+      configureOfflineSession(appSession);
+      installLocalProtocol({
+        protocol: appSession.protocol,
+        net,
+        appRoot: PROJECT_ROOT,
+      });
+    },
+  });
+
+  const started = await controller.start();
+
+  if (!started) {
+    return;
+  }
+
+  if (isMainProcessSmokeTest) {
+    console.info('[DisplayCore] Main Process 雙視窗啟動成功。');
+    app.quit();
+  } else {
+    console.info('[DisplayCore] Main Process 已啟動。');
+  }
 }
 
 bootstrap().catch((error) => {
-  console.error('[DisplayCore] 專案骨架啟動失敗。', error);
+  console.error('[DisplayCore] Main Process 啟動失敗。', error);
   app.exit(1);
 });
