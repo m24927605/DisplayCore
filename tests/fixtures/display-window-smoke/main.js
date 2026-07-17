@@ -328,7 +328,7 @@ async function verifyDisplayedClockOffset(expectedOffsetSeconds, description) {
   assert.ok(measurement.circularDifference <= 1);
 }
 
-/** 真實 BrowserWindow 驗證待機背景、Logo、歡迎文字與時間的層級。 */
+/** 真實 BrowserWindow 驗證待機只顯示大時鐘並保留 Logo、背景層級。 */
 async function verifyStandbyPresentation(
   expectedLogoUrl,
   expectedStandbyBackgroundUrl,
@@ -356,8 +356,9 @@ async function verifyStandbyPresentation(
     const background = backgroundElement.getBoundingClientRect();
     const logoElement = document.getElementById('display-logo');
     const logo = logoElement.getBoundingClientRect();
-    const message = document.getElementById('standby-message').getBoundingClientRect();
-    const clock = document.getElementById('display-clock').getBoundingClientRect();
+    const clockElement = document.getElementById('display-clock');
+    const clock = clockElement.getBoundingClientRect();
+    const canvas = document.getElementById('standby-sand-transition');
     const center = (box) => box.left + (box.width / 2);
     return {
       layerHidden: layerElement.hidden,
@@ -379,10 +380,17 @@ async function verifyStandbyPresentation(
       logoFilter: getComputedStyle(logoElement).filter,
       logoTreatment: document.getElementById('logo-frame').dataset.logoTreatment,
       logoCenterError: Math.abs(center(logo) - center(stage)),
-      messageCenterError: Math.abs(center(message) - center(stage)),
       clockCenterError: Math.abs(center(clock) - center(stage)),
-      verticalOrder:
-        logo.bottom <= message.top + 0.5 && message.bottom <= clock.top + 0.5,
+      logoAboveClock: logo.bottom <= clock.top + 0.5,
+      clockText: clockElement.textContent,
+      clockFontSize: Number.parseFloat(getComputedStyle(clockElement).fontSize),
+      expectedClockFontSize: Math.min(stage.width, stage.height) * 0.14,
+      standbyLayerExists: document.getElementById('standby-layer') !== null,
+      standbyMessageExists: document.getElementById('standby-message') !== null,
+      hasWelcomeText: document.body.innerText.includes('歡迎光臨'),
+      firstImageTransition: document.getElementById('display-stage')
+        .dataset.standbyTransition ?? null,
+      firstImageCanvasHidden: canvas.hidden,
       rootOverflow:
         document.documentElement.scrollWidth > document.documentElement.clientWidth ||
         document.documentElement.scrollHeight > document.documentElement.clientHeight,
@@ -402,9 +410,18 @@ async function verifyStandbyPresentation(
   assert.equal(inspection.logoTreatment, 'bright-white');
   await verifyLogoRenderedBrightWhite('待機');
   assert.ok(inspection.logoCenterError < 1);
-  assert.ok(inspection.messageCenterError < 1);
   assert.ok(inspection.clockCenterError < 1);
-  assert.equal(inspection.verticalOrder, true);
+  assert.equal(inspection.logoAboveClock, true);
+  assert.match(inspection.clockText, /^\d{2}:\d{2}:\d{2}$/);
+  assert.ok(
+    Math.abs(inspection.clockFontSize - inspection.expectedClockFontSize) <= 1,
+    `待機時鐘未使用原歡迎文字 14cqmin 大字級：${JSON.stringify(inspection)}`,
+  );
+  assert.equal(inspection.standbyLayerExists, false);
+  assert.equal(inspection.standbyMessageExists, false);
+  assert.equal(inspection.hasWelcomeText, false);
+  assert.equal(inspection.firstImageTransition, null);
+  assert.equal(inspection.firstImageCanvasHidden, true);
   assert.equal(inspection.rootOverflow, false);
   assert.doesNotMatch(
     inspection.backgroundSource,
@@ -805,6 +822,152 @@ async function verifyConfiguredRenderResolutions() {
   }
 }
 
+async function showAndMeasurePage(messages, description) {
+  presentationService.startProgram({
+    messages,
+    pageDurationSeconds: 3_600,
+    repeat: { mode: 'finite', rounds: 1 },
+  });
+  const revision = presentationService.getSnapshot().revision;
+  await waitForRevision(revision);
+
+  return execute(`(() => {
+    const page = document.getElementById('page-layer');
+    const pageBox = page.getBoundingClientRect();
+    const rows = [...document.querySelectorAll('.message-row')];
+    const firstRow = rows[0];
+    const firstRowBox = firstRow.getBoundingClientRect();
+    const firstText = firstRow.querySelector('.message-text, .marquee-copy');
+    const firstTextBox = firstText.getBoundingClientRect();
+    return {
+      description: ${JSON.stringify(description)},
+      layout: page.dataset.layout,
+      rowCount: rows.length,
+      gridTrackCount: getComputedStyle(page).gridTemplateRows
+        .split(/\\s+/).filter(Boolean).length,
+      fontSize: Number.parseFloat(getComputedStyle(page).fontSize),
+      pageTop: pageBox.top,
+      pageLeft: pageBox.left,
+      pageCenterX: pageBox.left + pageBox.width / 2,
+      pageCenterY: pageBox.top + pageBox.height / 2,
+      firstRowTop: firstRowBox.top,
+      firstRowLeft: firstRowBox.left,
+      firstRowHeight: firstRowBox.height,
+      firstRowCenterX: firstRowBox.left + firstRowBox.width / 2,
+      firstRowCenterY: firstRowBox.top + firstRowBox.height / 2,
+      firstTextTop: firstTextBox.top,
+      firstTextLeft: firstTextBox.left,
+      firstTextCenterX: firstTextBox.left + firstTextBox.width / 2,
+      firstTextCenterY: firstTextBox.top + firstTextBox.height / 2,
+      firstRowAlignItems: getComputedStyle(firstRow).alignItems,
+      firstRowJustifyContent: getComputedStyle(firstRow).justifyContent,
+      firstRowTextAlign: getComputedStyle(firstRow).textAlign,
+      marquee: firstRow.classList.contains('is-marquee'),
+      marqueeTrackCount: firstRow.querySelectorAll('.marquee-track').length,
+    };
+  })()`);
+}
+
+/** 實際排版驗證：一般訊息固定三槽置頂置左，營運訊息保持居中。 */
+async function verifyFixedMessageLayout() {
+  displayWindow.setContentSize(1_600, 900, false);
+  await waitFor(
+    () => execute('window.innerWidth === 1600 && window.innerHeight === 900'),
+    '固定訊息排版 viewport',
+  );
+
+  const config = structuredClone(settingsManager.getSnapshot().config);
+  config.logo.enabled = false;
+  config.dateTime.enabled = false;
+  config.display.renderResolution = 'auto';
+  config.appearance.fontSizePercent = 100;
+  config.appearance.lineSpacingPercent = 100;
+  config.marquee.enabled = true;
+  const settingsRevision = settingsManager.publish(config).revision;
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.settingsRevision === ` +
+      `'${settingsRevision}'`,
+    ),
+    '固定訊息排版設定套用',
+  );
+
+  const shortMessages = [
+    { message: '001請至前廳', alignment: 'left' },
+    { message: '002前廳000', alignment: 'left' },
+    { message: '003聯絡櫃台', alignment: 'left' },
+  ];
+  const layouts = [];
+
+  for (let count = 1; count <= 3; count += 1) {
+    layouts.push(await showAndMeasurePage(
+      shortMessages.slice(0, count),
+      `${count} 則一般訊息`,
+    ));
+  }
+
+  const [oneMessage] = layouts;
+  for (const [index, layout] of layouts.entries()) {
+    assert.equal(layout.layout, 'messages', layout.description);
+    assert.equal(layout.rowCount, index + 1, layout.description);
+    assert.equal(layout.gridTrackCount, 3, `${layout.description} 固定三槽`);
+    assert.equal(layout.firstRowAlignItems, 'flex-start', layout.description);
+    assert.equal(layout.firstRowJustifyContent, 'flex-start', layout.description);
+    assert.equal(layout.firstRowTextAlign, 'left', layout.description);
+    assert.ok(
+      Math.abs(layout.fontSize - oneMessage.fontSize) <= 0.1,
+      `${layout.description} 字級不得隨數量改變`,
+    );
+    assert.ok(
+      Math.abs(layout.firstRowHeight - oneMessage.firstRowHeight) <= 0.5,
+      `${layout.description} 第一槽高度必須一致`,
+    );
+    assert.ok(
+      Math.abs(layout.firstRowTop - oneMessage.firstRowTop) <= 0.5 &&
+        Math.abs(layout.firstRowLeft - oneMessage.firstRowLeft) <= 0.5,
+      `${layout.description} 第一列必須保持置頂置左`,
+    );
+    assert.ok(
+      Math.abs(layout.firstRowTop - layout.pageTop) <= 0.5 &&
+        Math.abs(layout.firstRowLeft - layout.pageLeft) <= 0.5 &&
+        Math.abs(layout.firstTextTop - layout.firstRowTop) <= 0.5 &&
+        Math.abs(layout.firstTextLeft - layout.firstRowLeft) <= 0.5,
+      `${layout.description} 文字必須貼齊第一槽左上角`,
+    );
+  }
+
+  const longMessage = '超長一般訊息'.repeat(1_000);
+  const marquee = await showAndMeasurePage(
+    [{ message: longMessage, alignment: 'left' }],
+    '長一般訊息',
+  );
+  assert.equal(marquee.layout, 'messages');
+  assert.equal(marquee.gridTrackCount, 3);
+  assert.equal(marquee.marquee, true);
+  assert.equal(marquee.marqueeTrackCount, 1);
+  assert.ok(
+    Math.abs(marquee.fontSize - oneMessage.fontSize) <= 0.1,
+    '長訊息啟用跑馬燈後仍必須保持固定字級',
+  );
+  assert.ok(
+    Math.abs(marquee.firstRowTop - oneMessage.firstRowTop) <= 0.5 &&
+      Math.abs(marquee.firstRowLeft - oneMessage.firstRowLeft) <= 0.5,
+    '長訊息仍必須保持置頂置左',
+  );
+
+  const operation = await showAndMeasurePage(
+    [{ message: '請輕聲細語', alignment: 'center' }],
+    '單獨營運訊息',
+  );
+  assert.equal(operation.layout, 'operation');
+  assert.equal(operation.gridTrackCount, 1);
+  assert.equal(operation.firstRowAlignItems, 'center');
+  assert.equal(operation.firstRowJustifyContent, 'center');
+  assert.equal(operation.firstRowTextAlign, 'center');
+  assert.ok(Math.abs(operation.firstTextCenterX - operation.pageCenterX) <= 1);
+  assert.ok(Math.abs(operation.firstTextCenterY - operation.pageCenterY) <= 1);
+}
+
 async function runWorkflow(
   timers,
   expectedLogoUrl,
@@ -883,21 +1046,123 @@ async function runWorkflow(
   });
 
   delayedSecondBackgroundRead.release();
-  await waitFor(
+  const sandTransition = await waitFor(
     () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const layer = document.getElementById('standby-background-layer')
+        .getBoundingClientRect();
+      const canvas = document.getElementById('standby-sand-transition');
+      const canvasBox = canvas.getBoundingClientRect();
       const image = [...document.querySelectorAll('.standby-background-image')]
         .find((candidate) => !candidate.hidden);
-      return document.getElementById('display-stage').dataset.mode === 'blank' &&
-        image?.complete && image.naturalWidth > 0 &&
+
+      if (
+        stage.dataset.mode !== 'blank' ||
+        stage.dataset.standbyTransition !== 'sand' ||
+        !(Number(stage.dataset.sandProgress) > 0 &&
+          Number(stage.dataset.sandProgress) < 1) ||
+        canvas.hidden || canvas.width <= 1 || canvas.height <= 1 ||
+        image?.getAttribute('src') !== '${secondStandbyBackgroundUrl}'
+      ) {
+        return false;
+      }
+
+      const context = canvas.getContext('2d');
+      const sampleColumns = 32;
+      const sampleRows = 8;
+      let transparentSamples = 0;
+      let leftAlpha = 0;
+      let rightAlpha = 0;
+      let leftCount = 0;
+      let rightCount = 0;
+
+      for (let column = 0; column < sampleColumns; column += 1) {
+        const x = Math.min(
+          canvas.width - 1,
+          Math.floor(((column + 0.5) / sampleColumns) * canvas.width),
+        );
+        for (let row = 0; row < sampleRows; row += 1) {
+          const y = Math.min(
+            canvas.height - 1,
+            Math.floor(((row + 0.5) / sampleRows) * canvas.height),
+          );
+          const alpha = context.getImageData(x, y, 1, 1).data[3];
+          if (alpha < 16) {
+            transparentSamples += 1;
+          }
+          if (column < sampleColumns / 4) {
+            leftAlpha += alpha;
+            leftCount += 1;
+          } else if (column >= sampleColumns * 3 / 4) {
+            rightAlpha += alpha;
+            rightCount += 1;
+          }
+        }
+      }
+
+      const progress = transparentSamples / (sampleColumns * sampleRows);
+      const averageLeftAlpha = leftAlpha / leftCount;
+      const averageRightAlpha = rightAlpha / rightCount;
+      if (
+        progress <= 0 || progress >= 1 ||
+        averageLeftAlpha >= averageRightAlpha
+      ) {
+        return false;
+      }
+
+      return {
+        transition: stage.dataset.standbyTransition,
+        reportedProgress: Number(stage.dataset.sandProgress),
+        canvasHidden: canvas.hidden,
+        canvasWidth: canvas.width,
+        canvasHeight: canvas.height,
+        canvasCoversLayer:
+          Math.abs(canvasBox.left - layer.left) <= 0.5 &&
+          Math.abs(canvasBox.top - layer.top) <= 0.5 &&
+          Math.abs(canvasBox.width - layer.width) <= 0.5 &&
+          Math.abs(canvasBox.height - layer.height) <= 0.5,
+        progress,
+        averageLeftAlpha,
+        averageRightAlpha,
+        visibleSource: image.getAttribute('src'),
+      };
+    })()`),
+    '第二張背景由左向右吹沙轉場進行中',
+  );
+  assert.equal(sandTransition.transition, 'sand');
+  assert.ok(
+    sandTransition.reportedProgress > 0 &&
+      sandTransition.reportedProgress < 1,
+  );
+  assert.equal(sandTransition.canvasHidden, false);
+  assert.ok(sandTransition.canvasWidth > 1);
+  assert.ok(sandTransition.canvasHeight > 1);
+  assert.equal(sandTransition.canvasCoversLayer, true);
+  assert.ok(sandTransition.progress > 0 && sandTransition.progress < 1);
+  assert.ok(
+    sandTransition.averageLeftAlpha < sandTransition.averageRightAlpha,
+    '左側必須先溶解，沙風方向才是向右',
+  );
+  assert.equal(sandTransition.visibleSource, secondStandbyBackgroundUrl);
+
+  await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const canvas = document.getElementById('standby-sand-transition');
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return stage.dataset.mode === 'blank' &&
+        stage.dataset.standbyTransition === undefined &&
+        canvas.hidden && image?.complete && image.naturalWidth > 0 &&
         image.getAttribute('src') === '${secondStandbyBackgroundUrl}';
     })()`),
-    '待機背景成功載入後原子切換至第二張',
+    '吹沙轉場完成後保留第二張背景',
   );
 
   const literalHtml = '<img src=x onerror="globalThis.displayPwned=true">\n純文字';
   const messages = [
     { message: '001請至前廳', alignment: 'left' },
-    { message: '歡迎光臨', alignment: 'center' },
+    { message: '002請至前廳', alignment: 'left' },
     { message: literalHtml, alignment: 'left' },
     { message: '004請至櫃檯', alignment: 'left' },
     { message: '請輕聲細語', alignment: 'center' },
@@ -983,9 +1248,9 @@ async function runWorkflow(
     mode: 'page',
     settingsRevision: '0',
     messages: messages.slice(0, 3).map(({ message }) => message),
-    alignments: ['left', 'center', 'left'],
-    justifyContents: ['flex-start', 'center', 'flex-start'],
-    textAlignments: ['left', 'center', 'left'],
+    alignments: ['left', 'left', 'left'],
+    justifyContents: ['flex-start', 'flex-start', 'flex-start'],
+    textAlignments: ['left', 'left', 'left'],
     rowCount: 3,
     pageHidden: false,
     fillHidden: true,
@@ -1214,10 +1479,6 @@ async function runWorkflow(
   assert.equal(inspection.pageHidden, true);
   assert.equal(inspection.fillHidden, false);
   assert.equal(
-    await execute(`document.getElementById('standby-layer').hidden`),
-    true,
-  );
-  assert.equal(
     await execute(`document.getElementById('display-clock').hidden`),
     true,
   );
@@ -1229,6 +1490,11 @@ async function runWorkflow(
   assert.equal(inspection.backgroundColor, 'rgb(127, 29, 29)');
   assert.equal(inspection.viewportBackgroundColor, 'rgb(127, 29, 29)');
   assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
+  assert.equal(timers.active().length, 0, '555 不得建立時間限制 timer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(presentationService.getSnapshot().revision, 5);
+  assert.equal(presentationService.getSnapshot().mode, 'emergency');
+  assert.equal(presentationService.getSnapshot().messages[0].message, '555');
 
   presentationService.showEmergency('888');
   await waitForRevision(6, false);
@@ -1244,16 +1510,21 @@ async function runWorkflow(
     await execute(`getComputedStyle(document.body).backgroundColor`),
     'rgb(20, 83, 45)',
   );
+  assert.equal(timers.active().length, 0, '888 不得建立時間限制 timer');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(presentationService.getSnapshot().revision, 6);
+  assert.equal(presentationService.getSnapshot().mode, 'emergency');
+  assert.equal(presentationService.getSnapshot().messages[0].message, '888');
 
   presentationService.clearPresentation();
   await waitForRevision(7, false);
-  const standby = await execute(`(() => {
+  const standby = await waitFor(() => execute(`(() => {
     const stage = document.getElementById('display-stage').getBoundingClientRect();
-    const message = document.getElementById('standby-message').getBoundingClientRect();
     const clock = document.getElementById('display-clock').getBoundingClientRect();
     const background = [...document.querySelectorAll('.standby-background-image')]
       .find((image) => !image.hidden);
-    return {
+    const canvas = document.getElementById('standby-sand-transition');
+    const result = {
       mode: document.getElementById('display-stage').dataset.mode,
       announcement: document.getElementById('display-announcement').textContent,
       pageChildren: document.getElementById('page-layer').children.length,
@@ -1266,16 +1537,24 @@ async function runWorkflow(
       standbyBackgroundObjectFit: background
         ? getComputedStyle(background).objectFit
         : null,
-      standbyHidden: document.getElementById('standby-layer').hidden,
-      standbyText: document.getElementById('standby-message').textContent,
       clockText: document.getElementById('display-clock').textContent,
-      messageCenter: message.left + (message.width / 2),
       clockCenter: clock.left + (clock.width / 2),
       stageCenter: stage.left + (stage.width / 2),
+      standbyLayerExists: document.getElementById('standby-layer') !== null,
+      standbyMessageExists: document.getElementById('standby-message') !== null,
+      hasWelcomeText: document.body.innerText.includes('歡迎光臨'),
+      transition: document.getElementById('display-stage')
+        .dataset.standbyTransition ?? null,
+      canvasHidden: canvas.hidden,
     };
-  })()`);
+    return result.mode === 'blank' &&
+      result.standbyBackgroundSource === '${expectedStandbyBackgroundUrl}' &&
+      result.transition === null && result.canvasHidden
+      ? result
+      : false;
+  })()`), '由訊息或緊急畫面回待機時第一張直接顯示');
   assert.equal(standby.mode, 'blank');
-  assert.equal(standby.announcement, '歡迎光臨');
+  assert.equal(standby.announcement, '');
   assert.equal(standby.pageChildren, 0);
   assert.equal(standby.fillChildren, 0);
   assert.equal(standby.normalHidden, false);
@@ -1286,16 +1565,41 @@ async function runWorkflow(
     expectedStandbyBackgroundUrl,
   );
   assert.equal(standby.standbyBackgroundObjectFit, 'cover');
-  assert.equal(standby.standbyHidden, false);
-  assert.equal(standby.standbyText, '歡迎光臨');
+  assert.equal(standby.standbyLayerExists, false);
+  assert.equal(standby.standbyMessageExists, false);
+  assert.equal(standby.hasWelcomeText, false);
+  assert.equal(standby.transition, null);
+  assert.equal(standby.canvasHidden, true);
   assert.equal(
     await execute(`getComputedStyle(document.body).backgroundColor`),
     'rgb(32, 64, 96)',
   );
   assert.match(standby.clockText, /^\d{2}:\d{2}:\d{2}$/);
-  assert.ok(Math.abs(standby.messageCenter - standby.stageCenter) < 1);
   assert.ok(Math.abs(standby.clockCenter - standby.stageCenter) < 1);
   await verifyDisplayedClockOffset(3_661, '待機時保留離線時間偏移');
+
+  const resumedSlideshow = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const canvas = document.getElementById('standby-sand-transition');
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return stage.dataset.mode === 'blank' &&
+        stage.dataset.standbyTransition === 'sand' && !canvas.hidden &&
+        image?.getAttribute('src') === '${secondStandbyBackgroundUrl}'
+        ? {
+            transition: stage.dataset.standbyTransition,
+            source: image.getAttribute('src'),
+          }
+        : false;
+    })()`),
+    '回待機後第一張停留結束並進入第二張吹沙轉場',
+  );
+  assert.deepEqual(resumedSlideshow, {
+    transition: 'sand',
+    source: secondStandbyBackgroundUrl,
+  });
+
   await verifyConfiguredRenderResolutions();
   await verifyLogoSizeScaling('blank');
 
@@ -1307,6 +1611,7 @@ async function runWorkflow(
   const logoPageRevision = presentationService.getSnapshot().revision;
   await waitForRevision(logoPageRevision);
   await verifyLogoSizeScaling('page');
+  await verifyFixedMessageLayout();
 }
 
 async function run() {
