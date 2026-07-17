@@ -1,6 +1,10 @@
 import { createDisplayClock } from './date-time.mjs';
 import { createDisplayController } from './display-controller.mjs';
 import { createPageProgressReporter } from './page-progress.mjs';
+import {
+  classifyLogoAlpha,
+  LOGO_TREATMENTS,
+} from './logo-appearance.mjs';
 import { createDisplaySettingsController } from './settings-controller.mjs';
 import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
 import { resolveRenderResolution } from './render-resolution.mjs';
@@ -12,6 +16,7 @@ import {
 const FILL_CELL_COUNT = 24;
 const FIT_PRECISION_PX = 0.25;
 const MESSAGE_LINE_HEIGHT = 1.08;
+const LOGO_ALPHA_SAMPLE_EDGE = 64;
 const LAYOUT_GENERATION_STORAGE_KEY = 'displaycore-layout-generation';
 
 const elements = Object.freeze({
@@ -424,6 +429,9 @@ function handleLogoLoad() {
   }
 
   logoReady = elements.logo.naturalWidth > 0 && elements.logo.naturalHeight > 0;
+  if (logoReady) {
+    applyLogoTreatment();
+  }
   elements.stage.dataset.logoState = logoReady ? 'ready' : 'error';
   updateChromeVisibility();
   scheduleFit();
@@ -438,6 +446,7 @@ function handleLogoError() {
   }
 
   logoReady = false;
+  elements.logoFrame.removeAttribute('data-logo-treatment');
   elements.stage.dataset.logoState = 'error';
   updateChromeVisibility();
   scheduleFit();
@@ -451,6 +460,7 @@ function applyLogo() {
   if (nextUrl === null) {
     expectedLogoUrl = null;
     logoReady = false;
+    elements.logoFrame.removeAttribute('data-logo-treatment');
     elements.logo.removeAttribute('src');
     elements.stage.dataset.logoState = 'disabled';
     updateChromeVisibility();
@@ -465,15 +475,48 @@ function applyLogo() {
     elements.logo.naturalWidth > 0
   ) {
     logoReady = true;
+    applyLogoTreatment();
     elements.stage.dataset.logoState = 'ready';
     updateChromeVisibility();
     return;
   }
 
   logoReady = false;
+  elements.logoFrame.removeAttribute('data-logo-treatment');
   elements.stage.dataset.logoState = 'loading';
   elements.logo.src = nextUrl;
   updateChromeVisibility();
+}
+
+/**
+ * 以最多 64×64 的離屏樣本辨識透明背景；失敗時保留原圖並使用亮白底襯。
+ * Canvas 不加入 DOM，分析後也不保存任何像素資料。
+ */
+function applyLogoTreatment() {
+  let treatment = LOGO_TREATMENTS.LIGHT_PLATE;
+
+  try {
+    const scale = Math.min(
+      1,
+      LOGO_ALPHA_SAMPLE_EDGE / elements.logo.naturalWidth,
+      LOGO_ALPHA_SAMPLE_EDGE / elements.logo.naturalHeight,
+    );
+    const canvas = document.createElement('canvas');
+    canvas.width = Math.max(1, Math.round(elements.logo.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(elements.logo.naturalHeight * scale));
+    const context = canvas.getContext('2d', { willReadFrequently: true });
+
+    if (context) {
+      context.drawImage(elements.logo, 0, 0, canvas.width, canvas.height);
+      treatment = classifyLogoAlpha(
+        context.getImageData(0, 0, canvas.width, canvas.height).data,
+      );
+    }
+  } catch {
+    // 解碼器或 Canvas 拒絕讀取時採保守底襯，不讓 Logo 消失。
+  }
+
+  elements.logoFrame.dataset.logoTreatment = treatment;
 }
 
 function handleStandbyBackgroundLoad() {

@@ -47,7 +47,7 @@ const DISPLAY_URL = 'displaycore://app/display/index.html';
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const TIMEOUT_MS = 20_000;
 const LOGO_BYTES = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'iVBORw0KGgoAAAANSUhEUgAAAAcAAAAHCAYAAADEUlfTAAAAGUlEQVR4nGNgQID/SBgDYJX8jwdTIEmegwDYmyDgo5Y0vwAAAABJRU5ErkJggg==',
   'base64',
 );
 const STANDBY_BACKGROUND_BYTES = Buffer.from(
@@ -337,6 +337,7 @@ async function verifyStandbyPresentation(
       logoSizeScale: getComputedStyle(document.documentElement)
         .getPropertyValue('--logo-size-scale').trim(),
       logoFilter: getComputedStyle(logoElement).filter,
+      logoTreatment: document.getElementById('logo-frame').dataset.logoTreatment,
       logoCenterError: Math.abs(center(logo) - center(stage)),
       messageCenterError: Math.abs(center(message) - center(stage)),
       clockCenterError: Math.abs(center(clock) - center(stage)),
@@ -358,6 +359,7 @@ async function verifyStandbyPresentation(
   assert.equal(inspection.logoSource, expectedLogoUrl);
   assert.equal(inspection.logoSizeScale, '1');
   assertLogoHighlight(inspection.logoFilter, '待機');
+  assert.equal(inspection.logoTreatment, 'bright-white');
   await verifyLogoRenderedBrightWhite('待機');
   assert.ok(inspection.logoCenterError < 1);
   assert.ok(inspection.messageCenterError < 1);
@@ -407,6 +409,7 @@ async function verifyLogoSizeScaling(mode) {
         frameMaxWidth: Number.parseFloat(getComputedStyle(frame).maxInlineSize),
         imageMaxWidth: Number.parseFloat(getComputedStyle(logo).maxInlineSize),
         filter: getComputedStyle(logo).filter,
+        treatment: frame.dataset.logoTreatment,
         standbyBackgroundHidden:
           document.getElementById('standby-background-layer').hidden,
       };
@@ -419,6 +422,7 @@ async function verifyLogoSizeScaling(mode) {
     assert.ok(Number.isFinite(measurement.imageMaxWidth));
     assert.equal(measurement.standbyBackgroundHidden, mode === 'page');
     assertLogoHighlight(measurement.filter, `${mode} ${sizePercent}%`);
+    assert.equal(measurement.treatment, 'bright-white');
     measurements.push(measurement);
   }
 

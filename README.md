@@ -70,7 +70,7 @@ npm run make
 - Main 只將 Display 所需的唯讀設定白名單投影至專用 IPC，不會傳送預設設定、警告內容、本機路徑或 Control 寫入能力。
 - Logo 與待機背景透過各自的 `displaycore://app/managed/...` 受限路由載入；每次請求都重新核對目前設定、檔案類型、大小、簽章與內容雜湊。
 - Logo 大小、待機背景、背景色、字型、字色、整體字體比例、行距、最小字級、555／888 背景、時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
-- Logo 尺寸可在 50%～200% 之間以 5% 調整，一般訊息與待機畫面共用；Display 固定將 Logo 呈現為亮白輪廓，搭配白色光暈與深色邊緣，純黑 Logo 在深色或圖片背景上也能保持白字等級的辨識度。
+- Logo 尺寸可在 50%～200% 之間以 5% 調整，一般訊息與待機畫面共用；透明背景 Logo 會呈現為亮白輪廓，JPG 或不透明圖片則保留原圖並使用亮白底襯，避免整張變成白色方塊。
 - 待機時間置中顯示；一般訊息頁的時間固定於右下角。兩者都只顯示 24 小時制 `HH:mm:ss`，並對齊下一個整秒更新。
 - 管理員可用 `HH:mm:ss` 校正 DisplayCore 顯示時間；程式只保存日內偏移，不修改 Windows 系統時間，也不需要網路或系統管理員權限。
 - 一般畫面會為 Logo 與右下角時間保留比例式安全區；臨檢滿屏會隱藏所有裝飾資訊。
@@ -84,7 +84,7 @@ npm run make
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
-- Node.js 24.18.0 完整自動化測試 313/313 通過，覆蓋播放設定持久化、一鍵顯示、Logo 尺寸／高亮、待機 Logo／背景、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
+- Node.js 24.18.0 完整自動化測試 315/315 通過，覆蓋播放設定持久化、一鍵顯示、Logo 尺寸／透明度處理／高亮、待機 Logo／背景、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
 - 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
@@ -191,7 +191,8 @@ Control：
 Display：
 
 - `display/index.html`：無互動元素的唯讀顯示舞台。
-- `display/display.css`：Logo 響應式尺寸／亮白輪廓、時鐘安全區、待機滿版背景、單行分頁、跑馬燈與 6×4 滿屏排版。
+- `display/display.css`：Logo 響應式尺寸／亮白輪廓與底襯、時鐘安全區、待機滿版背景、單行分頁、跑馬燈與 6×4 滿屏排版。
+- `display/logo-appearance.mjs`：依縮小後的 alpha 樣本選擇亮白輪廓或亮白底襯，不保存圖片像素。
 - `display/presentation-state.mjs`：Display snapshot 白名單與 revision 驗證。
 - `display/display-controller.mjs`：先訂閱後查詢與亂序防護。
 - `display/settings-state.mjs`：Display 設定白名單、型別驗證、安全預設值與 revision 防亂序規則。

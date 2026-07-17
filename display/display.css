@@ -242,7 +242,10 @@ body {
   object-fit: contain;
   border-radius: 0.2rem;
   box-shadow: 0 0 0 max(0.0625rem, 0.08cqmin) var(--logo-outline);
-  /* 統一轉為白字等級的亮白輪廓，純黑 Logo 也不會只剩外圍光暈。 */
+}
+
+/* 有明確透明背景時，把圖形本體轉為白字等級的亮白輪廓。 */
+.logo-frame[data-logo-treatment="bright-white"] .display-logo {
   filter:
     brightness(0)
     invert(1)
@@ -255,6 +258,29 @@ body {
       clamp(0.08rem, 0.18cqmin, 0.45rem)
       rgb(0 0 0 / 70%)
     );
+}
+
+/* JPG／不透明圖保留原圖，以亮白底襯避免濾鏡把整張圖片變白。 */
+.logo-frame[data-logo-treatment="light-plate"] {
+  background: rgb(255 255 255 / 96%);
+  padding: clamp(0.25rem, 0.55cqmin, 1.2rem);
+  border-radius: clamp(0.35rem, 0.7cqmin, 1.5rem);
+  box-shadow:
+    0 0 clamp(0.25rem, 0.5cqmin, 1rem) rgb(255 255 255 / 35%),
+    0 clamp(0.0625rem, 0.12cqmin, 0.3rem)
+      clamp(0.12rem, 0.3cqmin, 0.75rem) rgb(0 0 0 / 45%);
+  place-items: center;
+}
+
+.logo-frame[data-logo-treatment="light-plate"] .display-logo {
+  block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
+  box-shadow: none;
+  filter: drop-shadow(
+    0 clamp(0.03125rem, 0.06cqmin, 0.15rem)
+      clamp(0.0625rem, 0.1cqmin, 0.25rem) rgb(0 0 0 / 35%)
+  );
 }
 
 .display-clock {

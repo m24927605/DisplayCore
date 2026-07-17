@@ -87,7 +87,15 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   );
   assert.match(
     css,
-    /\.display-logo\s*{[^}]*filter:\s*brightness\(0\)\s*invert\(1\)\s*drop-shadow\([^;]*rgb\(255 255 255 \/ 45%\)[^;]*\)\s*drop-shadow\([^;]*rgb\(0 0 0 \/ 70%\)[^;]*\)/s,
+    /\.logo-frame\[data-logo-treatment="bright-white"\]\s+\.display-logo\s*{[^}]*filter:\s*brightness\(0\)\s*invert\(1\)\s*drop-shadow\([^;]*rgb\(255 255 255 \/ 45%\)[^;]*\)\s*drop-shadow\([^;]*rgb\(0 0 0 \/ 70%\)[^;]*\)/s,
+  );
+  assert.match(
+    css,
+    /\.logo-frame\[data-logo-treatment="light-plate"\]\s*{[^}]*background:\s*rgb\(255 255 255 \/ 96%\)[^}]*padding:/s,
+  );
+  assert.match(
+    css,
+    /\.logo-frame\[data-logo-treatment="light-plate"\]\s+\.display-logo\s*{[^}]*filter:\s*drop-shadow\([^;]*rgb\(0 0 0 \/ 35%\)[^;]*\)/s,
   );
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   assert.match(css, /\.display-clock\s*{[^}]*position:\s*absolute[^}]*inset-inline-end:/s);
@@ -141,6 +149,7 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /createPageProgressReporter/);
   assert.match(source, /SAFE_DISPLAY_SETTINGS/);
   assert.match(source, /findLargestFittingFontSize/);
+  assert.match(source, /classifyLogoAlpha/);
   assert.match(source, /\.textContent\s*=/);
   assert.match(source, /new ResizeObserver/);
   assert.match(source, /renderResolution/);
@@ -167,6 +176,8 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /'--viewport-background'/);
   assert.match(source, /standby\.backgroundImageUrl/);
   assert.match(source, /standbyBackgroundImage/);
+  assert.match(source, /getImageData/);
+  assert.match(source, /dataset\.logoTreatment/);
   assert.match(source, /addEventListener\('load',\s*handleStandbyBackgroundLoad\)/);
   assert.match(source, /addEventListener\('error',\s*handleStandbyBackgroundError\)/);
   assert.match(

@@ -200,7 +200,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   );
   assert.match(
     logoFieldset,
-    /id="logo-size-percent-help"[^>]*>[^<]*一般訊息[^<]*待機[^<]*Logo[^<]*亮白/,
+    /id="logo-size-percent-help"[^>]*>[^<]*一般訊息[^<]*待機[^<]*Logo[^<]*亮白輪廓[^<]*亮白底襯/,
   );
   assert.match(logoFieldset, /id="logo-size-percent-error"[^>]+class="field-error"[^>]+hidden/);
   assert.equal(
