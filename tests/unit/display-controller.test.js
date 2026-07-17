@@ -22,13 +22,29 @@ function deferred() {
 function createPage(revision, message) {
   return {
     mode: 'page',
-    messages: [{ message }],
+    messages: [{ message, alignment: 'left' }],
     layout: 'single-line',
     pageDurationSeconds: 3,
     pageNumber: 1,
     pageCount: 1,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: null,
+    revision,
+  };
+}
+
+function createEmergency(revision, code = '555') {
+  return {
+    mode: 'emergency',
+    messages: [{ message: code, alignment: 'center' }],
+    layout: 'fill-screen',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    emergencyTone: code === '555' ? 'inspection' : 'release',
     revision,
   };
 }
@@ -64,11 +80,11 @@ test('Display 先訂閱再 GET；新 event 不會被較舊的啟動回應覆蓋'
   const startPromise = controller.start();
 
   assert.deepEqual(order, ['subscribe', 'get']);
-  listener(createPage(2, '最新頁'));
+  listener(createEmergency(2));
   initial.resolve({ ok: true, data: createPage(1, '過期頁') });
 
   assert.equal(await startPromise, true);
-  assert.deepEqual(rendered, [createPage(2, '最新頁')]);
+  assert.deepEqual(rendered, [createEmergency(2)]);
 
   controller.dispose();
   controller.dispose();

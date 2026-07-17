@@ -30,6 +30,7 @@ function createBlankSnapshot(revision = 0, contentRevision = 0) {
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: null,
     revision,
     contentRevision,
   };
@@ -42,13 +43,34 @@ function createPageSnapshot(
 ) {
   return {
     mode: 'page',
-    messages: [{ message }],
+    messages: [{ message, alignment: 'left' }],
     layout: 'single-line',
     pageDurationSeconds: 3,
     pageNumber: 1,
     pageCount: 1,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: null,
+    revision,
+    contentRevision,
+  };
+}
+
+function createEmergencySnapshot(
+  revision,
+  code = '555',
+  contentRevision = 1,
+) {
+  return {
+    mode: 'emergency',
+    messages: [{ message: code, alignment: 'center' }],
+    layout: 'fill-screen',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    emergencyTone: code === '555' ? 'inspection' : 'release',
     revision,
     contentRevision,
   };
@@ -106,7 +128,7 @@ test('啟動時先訂閱再取 snapshot，較舊 query 不覆蓋較新 event', a
 
   assert.deepEqual(callOrder, ['subscribe', 'get']);
 
-  eventListener(createPageSnapshot(2, '新事件'));
+  eventListener(createEmergencySnapshot(2));
   initialResponse.resolve({
     ok: true,
     data: createPageSnapshot(1, '舊 snapshot'),
@@ -115,7 +137,7 @@ test('啟動時先訂閱再取 snapshot，較舊 query 不覆蓋較新 event', a
 
   assert.deepEqual(
     calls.filter(([type]) => type === 'presentation'),
-    [['presentation', createPageSnapshot(2, '新事件')]],
+    [['presentation', createEmergencySnapshot(2)]],
   );
 
   controller.dispose();
@@ -143,6 +165,7 @@ test('啟動播放只傳完整 program，並同步阻擋重複提交', async () 
   const program = {
     messages: Array.from({ length: 7 }, (_value, index) => ({
       message: `${String(index + 1).padStart(3, '0')}請至前廳`,
+      alignment: 'left',
     })),
     pageDurationSeconds: 3,
     repeat: { mode: 'finite', rounds: 10 },
@@ -150,7 +173,7 @@ test('啟動播放只傳完整 program，並同步阻擋重複提交', async () 
 
   const firstOperation = controller.startProgram(program, '清單已顯示。');
   const duplicateOperation = await controller.startProgram(
-    { ...program, messages: [{ message: '重複' }] },
+    { ...program, messages: [{ message: '重複', alignment: 'left' }] },
     '不應顯示。',
   );
 
@@ -243,7 +266,7 @@ test('invoke rejection 與畸形 response 只顯示固定本機錯誤', async ()
   assert.equal(
     await controller.startProgram(
       {
-        messages: [{ message: '公告' }],
+        messages: [{ message: '公告', alignment: 'left' }],
         pageDurationSeconds: 3,
         repeat: { mode: 'continuous' },
       },

@@ -46,7 +46,7 @@ npm run make
 - 「歡迎光臨」、「請輕聲細語」與自定訊息都以單一「顯示」動作立即更新電視，沒有待播清單或二次確認流程。
 - 每頁最多 3 則；第 4 則起自動分頁，最後一頁不足 3 則仍至少完整停留指定秒數。
 - 可設定每頁 1～3,600 秒的最短停留時間、整輪顯示 1～999 次，或改用持續顯示。
-- Control 只顯示目前電視頁的最多 3 則訊息，可逐筆移除或一次清除畫面；播放秒數與整輪次數收納在齒輪設定內。
+- Control 右側分開呈現唯讀「即時狀態」與可操作「顯示清單」；清單每頁最多 3 則，可獨立翻頁、逐筆刪除或全部刪除，不會因電視自動換頁而跳動。
 - Main Process 同時等待「Display layout ready 後的最短停留時間」與「目前頁所有跑馬燈各完成一輪」，兩者都滿足才翻頁。
 - 有限模式播完最後一輪、最後一頁的最短時間，且所有跑馬燈完成後才自動清空。
 - 新訊息內容、清除畫面、555 或 888 會使舊 timer 失效，不會自動恢復舊播放。
@@ -55,7 +55,7 @@ npm run make
 - 一般訊息固定為每頁 1～3 行，每則維持單行、不換行、不分段、不省略；到達有效最小字級仍放不下時，依設定使用水平跑馬燈或水平壓縮。
 - 啟用跑馬燈時以 DisplayCore 設定為準，不受作業系統 `prefers-reduced-motion` 停用；多列跑馬燈必須每列各完成第一次 traversal。
 - Resize、外觀設定變更、同一 WebContents reload 或 Display Renderer 重建會使舊 timer 與動畫事件失效；Main 核發新的 Display 可見世代，新 layout 未 ready 前採 fail-closed 保留目前頁。
-- `555` 臨檢與 `888` 解除臨檢使用獨立 IPC、確認對話框與 6×4 滿屏排版，不受單行限制，並固定採黑底白字以維持緊急狀態辨識度。
+- `555` 臨檢與 `888` 解除臨檢使用獨立 IPC、確認對話框與 6×4 滿屏排版，不受單行限制；兩者可分別設定背景顏色。
 - 啟動時先訂閱再取得 snapshot，並以 revision 防止舊狀態覆蓋新事件。
 - Control、Display、IPC、排程器、安全邊界與真實 Electron Renderer 的自動化測試。
 - 封裝內 `config.json` 作為唯讀、版本化的原廠預設值；執行期不會寫回應用程式目錄。
@@ -68,9 +68,10 @@ npm run make
 - Control 提供獨立設定對話框、未儲存狀態、載入預設值、欄位錯誤與安全儲存流程。
 - Main 只將 Display 所需的唯讀設定白名單投影至專用 IPC，不會傳送預設設定、警告內容、本機路徑或 Control 寫入能力。
 - Logo 透過同源的 `displaycore://app/managed/logo/...` 受限路由載入；每次請求都重新核對目前設定、檔案類型、大小、簽章與內容雜湊。
-- Logo、背景色、字型、字色、最小字級、日期時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
-- 日期時間依設定語系與 12／24 小時制格式化，更新排程對齊下一個整分鐘，避免長時間運作累積漂移。
-- 一般畫面會為 Logo 與日期時間保留比例式安全區；空白畫面與臨檢滿屏會隱藏所有裝飾資訊。
+- Logo、背景色、字型、字色、整體字體比例、行距、最小字級、555／888 背景、時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
+- 時間固定於右下角，只顯示 24 小時制 `HH:mm:ss`，並對齊下一個整秒更新。
+- 一般畫面會為 Logo 與右下角時間保留比例式安全區；空白畫面與臨檢滿屏會隱藏所有裝飾資訊。
+- 一般與自定義訊息靠左對齊；「歡迎光臨」、「請輕聲細語」、555／888 與時間維持置中或其專用位置。對齊方式由 Main 明確傳遞，Display 不解析文字內容猜測用途。
 - 真實 Electron Renderer 自動驗證 1366×768、1600×900、1920×1080、2560×1440 與 3840×2160，包含溢位、重疊、字體縮放、跑馬燈切換及即時設定更新。
 - Main Process 透過 Electron `screen` 維護可用螢幕拓樸，監聽新增、移除、尺寸／DPI 變更，以及系統恢復與解鎖。
 - 輸出路由完全自動：優先使用外接螢幕，拔除後回退主螢幕，重新接入時自動返回外接螢幕。
@@ -79,7 +80,7 @@ npm run make
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
-- Node.js 24.18.0 完整自動化測試 261/261 通過，覆蓋一鍵顯示、3＋1 分頁、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
+- Node.js 24.18.0 完整自動化測試 272/272 通過，覆蓋一鍵顯示、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
 - 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
@@ -102,7 +103,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 1. 要顯示固定營運訊息時，直接按「歡迎光臨」或「請輕聲細語」；內容會立即加入目前電視畫面。
 2. 要顯示一般訊息時，在「編號或花名」輸入 `001`、`Nancy` 或其他原始文字，再選擇「請至前廳」、「前廳000」或「自定義」。
 3. 確認完整 `message` 預覽後按「顯示」；內容會立即加入目前電視畫面，不需要再送出一次清單。
-4. 右側「目前螢幕內容」只顯示當前頁的最多 3 則；第 4 則起自動分頁。可逐筆移除，也可直接清除整個電視畫面。
+4. 右側「即時狀態」只供觀看，反映電視真正正在播放的頁面；「顯示清單」可獨立分頁瀏覽，每頁最多 3 則，並提供逐筆刪除與全部刪除。
 5. 齒輪設定內的「每頁顯示秒數」、「整輪顯示次數」或「持續顯示」不需另外儲存，會套用於下一次顯示或移除操作；Logo、外觀與顯示行為則需按「儲存設定」。
 6. `555` 與 `888` 會先開啟確認對話框；確認後立即覆蓋一般訊息，並使用不受單行限制的滿屏排版。
 7. 頁首只讀顯示 HDMI 與目前輸出目標。DisplayCore 會自動選擇外接螢幕，沒有外接螢幕時使用主螢幕。
@@ -116,11 +117,12 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 可設定欄位包括：
 
 - Logo 是否顯示與受管理的相對資產名稱。
-- 背景顏色、字型、字體顏色與最小字體大小。
-- 是否顯示日期時間、12／24 小時制與日期語系。
+- 背景顏色、字型、字體顏色、整體字體大小比例、行距與最小字體大小；字體比例也套用於 555／888。
+- 555 臨檢與 888 解除臨檢各自的背景顏色。
+- 是否顯示右下角的 24 小時制 `HH:mm:ss` 時間。
 - 最小字體仍放不下時是否使用水平跑馬燈。
 
-`configVersion: 1` 的 `display` 欄位暫時只為舊設定檔結構相容而保留；程式不會依這些欄位提供手動輸出或視窗模式。
+目前設定格式為 `configVersion: 2`。既有的有效 v1 使用者設定會在載入時於記憶體安全遷移至 v2，下一次儲存才原子寫回；舊 `display` 欄位只為結構相容而保留，程式不會據此提供手動輸出或視窗模式。
 
 Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到受管理目錄；設定只保存 `logos/...` 相對名稱。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
 
@@ -153,14 +155,16 @@ IPC：
 
 - `config.json`：封裝內唯讀預設設定。
 - `config/config-schema.js`：完整設定 schema、正規化與資源上限。
+- `config/config-migrations.js`：舊版設定的嚴格、不可變遷移。
 - `config/config-manager.js`：初始化、snapshot、revision 與原子持久化。
 - `config/logo-importer.js`：原生選檔、圖片驗證及受管理資產匯入。
 
 Control：
 
-- `control/index.html`：固定營運訊息、單則編輯、目前頁面、滿屏代碼與齒輪設定對話框。
+- `control/index.html`：固定營運訊息、單則編輯、唯讀即時狀態、可分頁顯示清單、滿屏代碼與齒輪設定對話框。
 - `control/control.css`：響應式版面、可存取互動與視覺層級。
 - `control/message-composer.mjs`：固定動作、自定義與滿屏代碼組合規則。
+- `control/message-list-pagination.mjs`：顯示清單獨立分頁、頁碼修正與全域項目索引。
 - `control/program-builder.mjs`：不可變草稿、分頁計算、整輪 program 與時間試算。
 - `control/presentation-state.mjs`：snapshot 結構與 revision 防亂序規則。
 - `control/control-controller.mjs`：IPC envelope、操作鎖定與狀態協調。
@@ -180,12 +184,12 @@ Display：
 - `display/display-controller.mjs`：先訂閱後查詢與亂序防護。
 - `display/settings-state.mjs`：Display 設定白名單、型別驗證、安全預設值與 revision 防亂序規則。
 - `display/settings-controller.mjs`：獨立於播放狀態的設定訂閱、查詢與錯誤復原。
-- `display/date-time.mjs`：本機日期時間格式化與整分鐘對齊排程。
+- `display/date-time.mjs`：本機 24 小時制 `HH:mm:ss` 格式化與整秒對齊排程。
 - `display/text-fit.mjs`：依實際列高計算有效字級範圍並執行有界二分搜尋。
 - `display/page-progress.mjs`：layout generation、跑馬燈列完成追蹤、舊 DOM listener 取消及暫時性 IPC 失敗重試。
 - `display/app.mjs`：純文字呈現、即時視覺設定、Logo、時鐘、字體適配、跑馬燈與 ResizeObserver。
 
-Presentation 中每個項目只有一個完整 `message`，不會拆成 title、編號、花名或動作欄位。Main 與 Display 不依一般文字內容判斷 555／888。
+Presentation 中每個項目只有一個完整 `message`，不會拆成 title、編號、花名或動作欄位；額外的 `alignment` 只描述呈現方式。555／888 的模式由專用 IPC 狀態傳遞，Display 不依文字內容判斷緊急類型。
 
 ## HDMI 判定範圍
 

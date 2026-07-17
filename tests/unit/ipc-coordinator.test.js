@@ -99,6 +99,7 @@ function createProgram(
   return {
     messages: Array.from({ length: messageCount }, (_value, index) => ({
       message: `訊息${index + 1}`,
+      alignment: 'left',
     })),
     pageDurationSeconds: 3,
     repeat,
@@ -452,10 +453,11 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 1,
+      configVersion: 2,
       logo: { enabled: false, url: null },
       appearance: defaultConfig.appearance,
       dateTime: defaultConfig.dateTime,
+      emergency: defaultConfig.emergency,
       marquee: defaultConfig.marquee,
       revision: 0,
     },
@@ -492,10 +494,11 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 1,
+    configVersion: 2,
     logo: { enabled: false, url: null },
     appearance: config.appearance,
     dateTime: config.dateTime,
+    emergency: config.emergency,
     marquee: config.marquee,
     revision: 1,
   });
@@ -639,29 +642,37 @@ test('Control 取得完整內容版本，Display 只取得目前頁面 snapshot'
 
   assert.equal(initial.ok, true);
   assert.equal(initial.data.mode, 'blank');
+  assert.equal(initial.data.emergencyTone, null);
   assert.equal(initial.data.contentRevision, 0);
   assert.deepEqual(shown, {
     ok: true,
     data: {
       mode: 'page',
-      messages: [{ message: '訊息1' }],
+      messages: [{ message: '訊息1', alignment: 'left' }],
       layout: 'single-line',
       pageDurationSeconds: 3,
       pageNumber: 1,
       pageCount: 1,
       roundNumber: null,
       totalRounds: null,
+      emergencyTone: null,
       revision: 1,
       contentRevision: 1,
     },
   });
   assert.equal(displaySnapshot.ok, true);
   assert.equal(displaySnapshot.data.mode, 'page');
+  assert.equal(displaySnapshot.data.emergencyTone, null);
   assert.equal(Object.hasOwn(displaySnapshot.data, 'contentRevision'), false);
   assert.equal(emergency.data.mode, 'emergency');
-  assert.equal(emergency.data.messages[0].message, '888');
+  assert.deepEqual(emergency.data.messages[0], {
+    message: '888',
+    alignment: 'center',
+  });
+  assert.equal(emergency.data.emergencyTone, 'release');
   assert.equal(emergency.data.contentRevision, 2);
   assert.equal(cleared.data.mode, 'blank');
+  assert.equal(cleared.data.emergencyTone, null);
   assert.equal(cleared.data.revision, 3);
   assert.equal(cleared.data.contentRevision, 3);
 

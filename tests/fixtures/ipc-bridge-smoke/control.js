@@ -1,14 +1,18 @@
 'use strict';
 
 const PROGRAM_MESSAGES = Object.freeze([
-  Object.freeze({ message: '555\nNancy原樣<script>不是標籤</script>' }),
-  Object.freeze({ message: '002請至前廳' }),
-  Object.freeze({ message: '歡迎光臨' }),
-  Object.freeze({ message: '請輕聲細語' }),
+  Object.freeze({
+    message: '555\nNancy原樣<script>不是標籤</script>',
+    alignment: 'left',
+  }),
+  Object.freeze({ message: '002請至前廳', alignment: 'left' }),
+  Object.freeze({ message: '歡迎光臨', alignment: 'center' }),
+  Object.freeze({ message: '請輕聲細語', alignment: 'center' }),
 ]);
 
 const CONTROL_SNAPSHOT_KEYS = Object.freeze([
   'contentRevision',
+  'emergencyTone',
   'layout',
   'messages',
   'mode',
@@ -38,8 +42,9 @@ function hasExpectedMessages(messages, expectedMessages) {
     messages.length === expectedMessages.length &&
     messages.every(
       (item, index) =>
-        hasExactKeys(item, ['message']) &&
-        item.message === expectedMessages[index].message,
+        hasExactKeys(item, ['alignment', 'message']) &&
+        item.message === expectedMessages[index].message &&
+        item.alignment === expectedMessages[index].alignment,
     )
   );
 }
@@ -55,6 +60,7 @@ function isExpectedBlankSnapshot(snapshot, revision, contentRevision) {
     snapshot.pageCount === null &&
     snapshot.roundNumber === null &&
     snapshot.totalRounds === null &&
+    snapshot.emergencyTone === null &&
     snapshot.revision === revision &&
     snapshot.contentRevision === contentRevision
   );
@@ -71,6 +77,7 @@ function isExpectedControlSnapshot(snapshot) {
     snapshot.pageCount === 2 &&
     snapshot.roundNumber === null &&
     snapshot.totalRounds === null &&
+    snapshot.emergencyTone === null &&
     snapshot.revision === 2 &&
     snapshot.contentRevision === 2
   );

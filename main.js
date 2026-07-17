@@ -73,6 +73,10 @@ async function bootstrap() {
   const dataRoot = isMainProcessSmokeTest
     ? path.join(app.getPath('temp'), `displaycore-main-smoke-${process.pid}`)
     : path.join(app.getPath('userData'), 'displaycore-data');
+  if (isMainProcessSmokeTest) {
+    // 讓測試擁有獨立 singleton namespace，不受操作員正在執行的正式程式影響。
+    app.setPath('userData', dataRoot);
+  }
   let appSession = null;
   let displayPlacementController = null;
   let presentationService = null;

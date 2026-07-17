@@ -40,13 +40,38 @@
             <input id="font-color-picker" type="color" value="#ffffff">
             <input id="font-color-input" type="text" value="#FFFFFF">
             <p id="font-color-error" hidden></p>
+            <input id="font-size-percent-input" type="number" value="100">
+            <p id="font-size-percent-error" hidden></p>
+            <input id="line-spacing-percent-input" type="number" value="100">
+            <p id="line-spacing-percent-error" hidden></p>
             <input id="minimum-font-size-input" type="number" value="3">
             <p id="minimum-font-size-error" hidden></p>
+            <input
+              id="inspection-background-color-picker"
+              type="color"
+              value="#000000"
+            >
+            <input
+              id="inspection-background-color-input"
+              type="text"
+              value="#000000"
+            >
+            <p id="inspection-background-color-error" hidden></p>
+            <input
+              id="release-background-color-picker"
+              type="color"
+              value="#000000"
+            >
+            <input
+              id="release-background-color-input"
+              type="text"
+              value="#000000"
+            >
+            <p id="release-background-color-error" hidden></p>
           </fieldset>
 
           <fieldset id="behavior-settings-fieldset">
             <input id="date-time-enabled-input" type="checkbox">
-            <input id="hour12-input" type="checkbox">
             <input id="marquee-enabled-input" type="checkbox">
           </fieldset>
 
@@ -62,17 +87,20 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
+        configVersion: 2,
         logo: Object.freeze({ enabled: false, path: null }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
           fontFamily: 'Arial, sans-serif',
           fontColor: '#FFFFFF',
           minimumFontSizeRem: 3,
+          fontSizePercent: 100,
+          lineSpacingPercent: 100,
         }),
-        dateTime: Object.freeze({
-          enabled: false,
-          hour12: false,
-          locale: 'zh-TW',
+        dateTime: Object.freeze({ enabled: false }),
+        emergency: Object.freeze({
+          inspectionBackgroundColor: '#000000',
+          releaseBackgroundColor: '#000000',
         }),
         marquee: Object.freeze({ enabled: true }),
         display: Object.freeze({

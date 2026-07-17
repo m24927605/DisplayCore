@@ -241,6 +241,7 @@ async function verifyResponsiveResolutions() {
       const normal = document.getElementById('normal-layer').getBoundingClientRect();
       const chrome = document.getElementById('display-chrome').getBoundingClientRect();
       const logo = document.getElementById('display-logo').getBoundingClientRect();
+      const clock = document.getElementById('display-clock').getBoundingClientRect();
       const page = document.getElementById('page-layer').getBoundingClientRect();
       const rows = [...document.querySelectorAll('.message-row')];
       return {
@@ -268,6 +269,12 @@ async function verifyResponsiveResolutions() {
             textBox && textBox.height <= box.height + 0.5 &&
             getComputedStyle(row).whiteSpace === 'nowrap';
         }),
+        clockInside:
+          clock.left >= -0.5 && clock.top >= -0.5 &&
+          clock.right <= viewport.width + 0.5 &&
+          clock.bottom <= viewport.height + 0.5,
+        clockDoesNotOverlap:
+          rows.length === 0 || rows.at(-1).getBoundingClientRect().bottom <= clock.top + 0.5,
         fontSize: Number.parseFloat(getComputedStyle(
           document.getElementById('page-layer')
         ).fontSize),
@@ -284,6 +291,12 @@ async function verifyResponsiveResolutions() {
     );
     assert.equal(inspection.pageInside, true, `${width}×${height} page bounds`);
     assert.equal(inspection.rowsInside, true, `${width}×${height} row bounds`);
+    assert.equal(inspection.clockInside, true, `${width}×${height} clock bounds`);
+    assert.equal(
+      inspection.clockDoesNotOverlap,
+      true,
+      `${width}×${height} clock overlaps message`,
+    );
     assert.ok(inspection.logoWidth > 0, `${width}×${height} logo width`);
     assert.ok(
       inspection.logoHeight >= height * 0.04,
@@ -344,12 +357,12 @@ async function runWorkflow(timers, expectedLogoUrl) {
 
   const literalHtml = '<img src=x onerror="globalThis.displayPwned=true">\n純文字';
   const messages = [
-    { message: '001請至前廳' },
-    { message: '002請至前廳' },
-    { message: literalHtml },
-    { message: '004請至櫃檯' },
-    { message: '005請至前廳' },
-    { message: '006請至前廳' },
+    { message: '001請至前廳', alignment: 'left' },
+    { message: '歡迎光臨', alignment: 'center' },
+    { message: literalHtml, alignment: 'left' },
+    { message: '004請至櫃檯', alignment: 'left' },
+    { message: '請輕聲細語', alignment: 'center' },
+    { message: '006請至前廳', alignment: 'left' },
   ];
   presentationService.startProgram({
     messages,
@@ -370,11 +383,15 @@ async function runWorkflow(timers, expectedLogoUrl) {
       mode: stage.dataset.mode,
       settingsRevision: stage.dataset.settingsRevision,
       messages: rows.map((row) => row.dataset.message),
+      alignments: rows.map((row) => row.dataset.alignment),
+      justifyContents: rows.map((row) => getComputedStyle(row).justifyContent),
+      textAlignments: rows.map((row) => getComputedStyle(row).textAlign),
       rowCount: rows.length,
       pageHidden: document.getElementById('page-layer').hidden,
       fillHidden: document.getElementById('fill-layer').hidden,
       normalHidden: document.getElementById('normal-layer').hidden,
-      normalHasChrome: document.getElementById('normal-layer').classList.contains('has-chrome'),
+      normalHasLogo: document.getElementById('normal-layer').classList.contains('has-logo'),
+      normalHasClock: document.getElementById('normal-layer').classList.contains('has-clock'),
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoHidden: document.getElementById('display-logo').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
@@ -409,11 +426,15 @@ async function runWorkflow(timers, expectedLogoUrl) {
     mode: 'page',
     settingsRevision: '0',
     messages: messages.slice(0, 3).map(({ message }) => message),
+    alignments: ['left', 'center', 'left'],
+    justifyContents: ['flex-start', 'center', 'flex-start'],
+    textAlignments: ['left', 'center', 'left'],
     rowCount: 3,
     pageHidden: false,
     fillHidden: true,
     normalHidden: false,
-    normalHasChrome: true,
+    normalHasLogo: true,
+    normalHasClock: true,
     chromeHidden: false,
     logoHidden: false,
     logoSource: expectedLogoUrl,
@@ -434,7 +455,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
     viewportHasOverflow: false,
   });
   assert.ok(firstPage.fontSize > 0);
-  assert.match(firstPage.clockText, /\d/);
+  assert.match(firstPage.clockText, /^\d{2}:\d{2}:\d{2}$/);
   assert.match(firstPage.clockDateTime, /^\d{4}-\d{2}-\d{2}T/);
   assert.match(firstPage.fontFamily, /^Arial/i);
   assert.doesNotMatch(firstPage.logoSource, /file:|Users|userData/i);
@@ -468,8 +489,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
   const secondLongMessage = '第二列更長訊息'.repeat(700);
   presentationService.startProgram({
     messages: [
-      { message: longMessage },
-      { message: secondLongMessage },
+      { message: longMessage, alignment: 'left' },
+      { message: secondLongMessage, alignment: 'left' },
     ],
     pageDurationSeconds: 1,
     repeat: { mode: 'finite', rounds: 1 },
@@ -493,6 +514,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
   nextConfig.logo.enabled = false;
   nextConfig.appearance.backgroundColor = '#204060';
   nextConfig.appearance.fontColor = '#ABCDEF';
+  nextConfig.appearance.fontSizePercent = 75;
+  nextConfig.appearance.lineSpacingPercent = 200;
   nextConfig.dateTime.enabled = false;
   nextConfig.marquee.enabled = true;
   settingsManager.publish(nextConfig);
@@ -525,7 +548,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
       clockText: document.getElementById('display-clock').textContent,
-      normalHasChrome: document.getElementById('normal-layer').classList.contains('has-chrome'),
+      normalHasLogo: document.getElementById('normal-layer').classList.contains('has-logo'),
+      normalHasClock: document.getElementById('normal-layer').classList.contains('has-clock'),
       normalGap: getComputedStyle(document.getElementById('normal-layer')).gap,
       animationName: getComputedStyle(row.querySelector('.marquee-track')).animationName,
       animationDuration: Number.parseFloat(
@@ -546,7 +570,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
     chromeHidden: true,
     logoSource: null,
     clockText: '',
-    normalHasChrome: false,
+    normalHasLogo: false,
+    normalHasClock: false,
     normalGap: '0px',
     animationName: 'display-marquee',
     animationDuration: marquee.animationDuration,
@@ -600,7 +625,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(inspection.marqueeCount, 0);
   assert.equal(inspection.announcement, '555');
   assert.equal(inspection.ariaLive, 'assertive');
-  assert.equal(inspection.backgroundColor, 'rgb(0, 0, 0)');
+  assert.equal(inspection.backgroundColor, 'rgb(127, 29, 29)');
   assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
 
   presentationService.showEmergency('888');
@@ -608,6 +633,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(
     await execute(`document.querySelector('.fill-cell').textContent`),
     '888',
+  );
+  assert.equal(
+    await execute(`getComputedStyle(document.getElementById('display-stage')).backgroundColor`),
+    'rgb(20, 83, 45)',
   );
 
   presentationService.clearPresentation();
@@ -659,6 +688,7 @@ async function run() {
   const initialConfig = structuredClone(defaultConfig);
   initialConfig.logo = { enabled: true, path: logoAssetPath };
   initialConfig.appearance = {
+    ...initialConfig.appearance,
     backgroundColor: '#102030',
     fontFamily: 'Arial, sans-serif',
     fontColor: '#F4F5F6',
@@ -666,8 +696,10 @@ async function run() {
   };
   initialConfig.dateTime = {
     enabled: true,
-    locale: 'zh-TW',
-    hour12: false,
+  };
+  initialConfig.emergency = {
+    inspectionBackgroundColor: '#7F1D1D',
+    releaseBackgroundColor: '#14532D',
   };
   initialConfig.marquee = { enabled: false };
   settingsManager = createSettingsManager(initialConfig);

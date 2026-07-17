@@ -3,12 +3,16 @@
 let latestRevision = -1;
 
 const EXPECTED_PAGE_MESSAGES = Object.freeze([
-  '555\nNancy原樣<script>不是標籤</script>',
-  '002請至前廳',
-  '歡迎光臨',
+  Object.freeze({
+    message: '555\nNancy原樣<script>不是標籤</script>',
+    alignment: 'left',
+  }),
+  Object.freeze({ message: '002請至前廳', alignment: 'left' }),
+  Object.freeze({ message: '歡迎光臨', alignment: 'center' }),
 ]);
 
 const DISPLAY_SNAPSHOT_KEYS = Object.freeze([
+  'emergencyTone',
   'layout',
   'messages',
   'mode',
@@ -38,8 +42,9 @@ function hasExpectedPageMessages(messages) {
     messages.length === EXPECTED_PAGE_MESSAGES.length &&
     messages.every(
       (item, index) =>
-        hasExactKeys(item, ['message']) &&
-        item.message === EXPECTED_PAGE_MESSAGES[index],
+        hasExactKeys(item, ['alignment', 'message']) &&
+        item.message === EXPECTED_PAGE_MESSAGES[index].message &&
+        item.alignment === EXPECTED_PAGE_MESSAGES[index].alignment,
     )
   );
 }
@@ -55,6 +60,7 @@ function isExpectedDisplaySnapshot(snapshot) {
     snapshot.pageCount === 2 &&
     snapshot.roundNumber === null &&
     snapshot.totalRounds === null &&
+    snapshot.emergencyTone === null &&
     snapshot.revision === 2
   );
 }

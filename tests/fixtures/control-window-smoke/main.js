@@ -140,32 +140,50 @@ async function waitForRevision(store, revision) {
   );
 }
 
-async function waitForMessages(expectedMessages, expectedSummary) {
+async function waitForLiveMessages(expectedMessages, expectedSummary) {
   await waitFor(
     () => execute(`(() => {
-      const messages = [...document.querySelectorAll('.current-message-text')]
+      const messages = [...document.querySelectorAll(
+        '#live-message-list .current-message-text'
+      )]
         .map((element) => element.textContent);
       return JSON.stringify(messages) === ${JSON.stringify(
         JSON.stringify(expectedMessages),
       )} &&
-        document.getElementById('current-page-summary').textContent ===
+        document.getElementById('live-page-summary').textContent ===
           ${JSON.stringify(expectedSummary)};
     })()`),
-    `目前內容 ${expectedMessages.join('、') || '空白'}`,
+    `電視目前內容 ${expectedMessages.join('、') || '空白'}`,
   );
 }
 
 function readCurrentDom() {
   return execute(`(() => ({
-    summary: document.getElementById('current-page-summary').textContent,
-    messages: [...document.querySelectorAll('.current-message-text')]
+    liveSummary: document.getElementById('live-page-summary').textContent,
+    liveMessages: [...document.querySelectorAll(
+      '#live-message-list .current-message-text'
+    )]
       .map((element) => element.textContent),
-    indices: [...document.querySelectorAll('.current-message-index')]
+    displaySummary: document.getElementById('display-list-summary').textContent,
+    displayMessages: [...document.querySelectorAll(
+      '#display-message-list .current-message-text'
+    )]
       .map((element) => element.textContent),
-    removeIndices: [...document.querySelectorAll('.current-remove-button')]
+    displayIndices: [...document.querySelectorAll(
+      '#display-message-list .current-message-index'
+    )]
+      .map((element) => element.textContent),
+    removeIndices: [...document.querySelectorAll(
+      '#display-message-list .current-remove-button'
+    )]
       .map((element) => element.dataset.messageIndex),
-    emptyHidden: document.getElementById('current-empty-state').hidden,
-    listHidden: document.getElementById('current-message-list').hidden,
+    liveEmptyHidden: document.getElementById('live-empty-state').hidden,
+    liveListHidden: document.getElementById('live-message-list').hidden,
+    displayEmptyHidden:
+      document.getElementById('display-list-empty-state').hidden,
+    displayListHidden: document.getElementById('display-message-list').hidden,
+    previousDisabled: document.getElementById('display-list-prev').disabled,
+    nextDisabled: document.getElementById('display-list-next').disabled,
     clearDisabled: document.getElementById('clear-display-button').disabled,
     status: document.getElementById('operation-status').textContent,
     errorHidden: document.getElementById('operation-error').hidden,
@@ -349,6 +367,14 @@ async function openPlaybackSettings(settingsManager) {
     hasDisplaySelect: document.getElementById('default-display-select') !== null,
     hasFullscreenToggle:
       document.getElementById('display-fullscreen-input') !== null,
+    fontSizePercent: document.getElementById('font-size-percent-input').value,
+    lineSpacingPercent:
+      document.getElementById('line-spacing-percent-input').value,
+    inspectionBackground:
+      document.getElementById('inspection-background-color-input').value,
+    releaseBackground:
+      document.getElementById('release-background-color-input').value,
+    hasHour12: document.getElementById('hour12-input') !== null,
   }))()`);
   assert.deepEqual(settingsShape, {
     pageDuration: '3',
@@ -357,6 +383,11 @@ async function openPlaybackSettings(settingsManager) {
     hasManualDisplay: false,
     hasDisplaySelect: false,
     hasFullscreenToggle: false,
+    fontSizePercent: '100',
+    lineSpacingPercent: '100',
+    inspectionBackground: '#000000',
+    releaseBackground: '#000000',
+    hasHour12: false,
   });
 
   // 原生檔案選擇取消後，焦點必須回到原按鈕，鍵盤操作才不會掉回 body。
@@ -498,37 +529,41 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     button.click();
   })()`);
   await waitForRevision(store, 1);
-  await waitForMessages(['歡迎光臨'], '第 1 / 1 頁 · 1 / 3 則');
+  await waitForLiveMessages(
+    ['歡迎光臨'],
+    '播放第 1 / 1 頁 · 第 1 / 2 輪',
+  );
   await waitFor(
     () => execute(`document.activeElement?.id === 'operation-welcome-button'`),
     '罐頭訊息顯示後恢復原操作焦點',
   );
   assert.deepEqual(store.getControlSnapshot(), {
     mode: 'page',
-    messages: [{ message: '歡迎光臨' }],
+    messages: [{ message: '歡迎光臨', alignment: 'center' }],
     layout: 'single-line',
     pageDurationSeconds: 4,
     pageNumber: 1,
     pageCount: 1,
     roundNumber: 1,
     totalRounds: 2,
+    emergencyTone: null,
     revision: 1,
     contentRevision: 1,
   });
 
   await click('operation-quiet-button');
   await waitForRevision(store, 2);
-  await waitForMessages(
+  await waitForLiveMessages(
     ['歡迎光臨', '請輕聲細語'],
-    '第 1 / 1 頁 · 2 / 3 則',
+    '播放第 1 / 1 頁 · 第 1 / 2 輪',
   );
 
   // 一般表單也是一次 submit 就立即更新 Main 內容。
   await submitNormalMessage('001', 'go-to-lobby', '001請至前廳');
   await waitForRevision(store, 3);
-  await waitForMessages(
+  await waitForLiveMessages(
     ['歡迎光臨', '請輕聲細語', '001請至前廳'],
-    '第 1 / 1 頁 · 3 / 3 則',
+    '播放第 1 / 1 頁 · 第 1 / 2 輪',
   );
 
   await submitNormalMessage('Nancy', 'lobby-code', 'Nancy前廳000');
@@ -539,53 +574,95 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     '001請至前廳',
     'Nancy前廳000',
   ];
-  await waitForMessages(
+  const allPresentations = [
+    { message: '歡迎光臨', alignment: 'center' },
+    { message: '請輕聲細語', alignment: 'center' },
+    { message: '001請至前廳', alignment: 'left' },
+    { message: 'Nancy前廳000', alignment: 'left' },
+  ];
+  await waitForLiveMessages(
     allMessages.slice(0, 3),
-    '第 1 / 2 頁 · 3 / 3 則',
+    '播放第 1 / 2 頁 · 第 1 / 2 輪',
   );
-  assert.deepEqual(
-    store.getControlSnapshot().messages.map(({ message }) => message),
-    allMessages,
-  );
+  assert.deepEqual(store.getControlSnapshot().messages, allPresentations);
   assert.deepEqual(
     store.getSnapshot().messages.map(({ message }) => message),
     allMessages.slice(0, 3),
   );
   assert.deepEqual(await readCurrentDom(), {
-    summary: '第 1 / 2 頁 · 3 / 3 則',
-    messages: allMessages.slice(0, 3),
-    indices: ['01', '02', '03'],
-    removeIndices: ['0', '1', '2'],
-    emptyHidden: true,
-    listHidden: false,
+    liveSummary: '播放第 1 / 2 頁 · 第 1 / 2 輪',
+    liveMessages: allMessages.slice(0, 3),
+    displaySummary: '瀏覽第 2 / 2 頁 · 共 4 則',
+    displayMessages: ['Nancy前廳000'],
+    displayIndices: ['04'],
+    removeIndices: ['3'],
+    liveEmptyHidden: true,
+    liveListHidden: false,
+    displayEmptyHidden: true,
+    displayListHidden: false,
+    previousDisabled: false,
+    nextDisabled: true,
     clearDisabled: false,
     status: '訊息已顯示。',
     errorHidden: true,
     error: '',
   });
 
-  // 每頁最多三則；完成第一頁的 4 秒後，第二頁只顯示第四則。
+  // 瀏覽清單切回第一頁不會切換電視實際播放頁面。
+  await click('display-list-prev');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('display-list-summary').textContent ===
+        '瀏覽第 1 / 2 頁 · 共 4 則' &&
+      JSON.stringify([...document.querySelectorAll(
+        '#display-message-list .current-message-text'
+      )].map((element) => element.textContent)) ===
+        ${JSON.stringify(JSON.stringify(allMessages.slice(0, 3)))}
+    )()`),
+    '顯示清單獨立瀏覽第一頁',
+  );
+
+  // 每頁最多三則；完成第一頁的 4 秒後，只有即時狀態切到第二頁。
   assert.equal(timers.activeCount(), 0, 'Display ready 前不得啟動 timer');
   reportStaticDisplayReady(1, settingsManager.getSnapshot().revision);
   assert.equal(timers.activeCount(), 1);
   await execute(`document.querySelector(
-    '.current-remove-button[data-message-index="0"]'
+    '#display-message-list .current-remove-button[data-message-index="0"]'
   ).focus()`);
   timers.fireNext(4_000);
   await waitForRevision(store, 5);
-  await waitForMessages(['Nancy前廳000'], '第 2 / 2 頁 · 1 / 3 則');
-  await waitFor(
-    () => execute(`document.activeElement?.id === 'current-page-summary'`),
-    '翻頁移除原焦點項目後聚焦目前頁摘要',
+  await waitForLiveMessages(
+    ['Nancy前廳000'],
+    '播放第 2 / 2 頁 · 第 1 / 2 輪',
   );
-  assert.deepEqual((await readCurrentDom()).removeIndices, ['3']);
+  await waitFor(
+    () => execute(`(() =>
+      document.activeElement?.dataset?.messageIndex === '0' &&
+      document.getElementById('display-list-summary').textContent ===
+        '瀏覽第 1 / 2 頁 · 共 4 則'
+    )()`),
+    '電視翻頁不重建顯示清單或移走操作焦點',
+  );
+  assert.deepEqual((await readCurrentDom()).removeIndices, ['0', '1', '2']);
+
+  await click('display-list-next');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('display-list-summary').textContent ===
+        '瀏覽第 2 / 2 頁 · 共 4 則' &&
+      document.querySelector(
+        '#display-message-list .current-remove-button'
+      )?.dataset.messageIndex === '3'
+    )()`),
+    '顯示清單獨立瀏覽第二頁',
+  );
 
   // 防護：無效播放秒數時按移除，只顯示欄位錯誤，不得送出或改變內容。
   const beforeInvalidRemoval = structuredClone(store.getControlSnapshot());
   const startCallsBeforeInvalidRemoval = metrics.startProgramCalls;
   await setInput('page-duration-input', '0');
   await execute(`document.querySelector(
-    '.current-remove-button[data-message-index="3"]'
+    '#display-message-list .current-remove-button[data-message-index="3"]'
   ).click()`);
   await waitFor(
     () => execute(`(() =>
@@ -602,13 +679,22 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval);
   assert.deepEqual(await execute(`(() => ({
     operationErrorHidden: document.getElementById('operation-error').hidden,
-    messages: [...document.querySelectorAll('.current-message-text')]
+    liveMessages: [...document.querySelectorAll(
+      '#live-message-list .current-message-text'
+    )]
       .map((element) => element.textContent),
-    summary: document.getElementById('current-page-summary').textContent,
+    displayMessages: [...document.querySelectorAll(
+      '#display-message-list .current-message-text'
+    )]
+      .map((element) => element.textContent),
+    liveSummary: document.getElementById('live-page-summary').textContent,
+    displaySummary: document.getElementById('display-list-summary').textContent,
   }))()`), {
     operationErrorHidden: true,
-    messages: ['Nancy前廳000'],
-    summary: '第 2 / 2 頁 · 1 / 3 則',
+    liveMessages: ['Nancy前廳000'],
+    displayMessages: ['Nancy前廳000'],
+    liveSummary: '播放第 2 / 2 頁 · 第 1 / 2 輪',
+    displaySummary: '瀏覽第 2 / 2 頁 · 共 4 則',
   });
 
   await setInput('page-duration-input', '4');
@@ -622,12 +708,12 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     '修正播放秒數後關閉設定',
   );
   await execute(`document.querySelector(
-    '.current-remove-button[data-message-index="3"]'
+    '#display-message-list .current-remove-button[data-message-index="3"]'
   ).click()`);
   await waitForRevision(store, 6);
-  await waitForMessages(
+  await waitForLiveMessages(
     allMessages.slice(0, 3),
-    '第 1 / 1 頁 · 3 / 3 則',
+    '播放第 1 / 1 頁 · 第 1 / 2 輪',
   );
   assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval + 1);
   assert.equal((await readCurrentDom()).status, '訊息已移除。');
@@ -641,8 +727,12 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   await waitForRevision(store, 7);
   await waitFor(
     () => execute(`(() =>
-      document.getElementById('current-empty-state').hidden === false &&
-      document.getElementById('current-message-list').hidden === true &&
+      document.getElementById('live-empty-state').hidden === false &&
+      document.getElementById('live-message-list').hidden === true &&
+      document.getElementById('display-list-empty-state').hidden === false &&
+      document.getElementById('display-message-list').hidden === true &&
+      document.getElementById('display-list-prev').disabled === true &&
+      document.getElementById('display-list-next').disabled === true &&
       document.getElementById('clear-display-button').disabled === true
     )()`),
     '清除目前畫面',
@@ -678,16 +768,17 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   assert.equal(store.getControlSnapshot().revision, 7);
   await click('inspection-confirm-button');
   await waitForRevision(store, 8);
-  await waitForMessages(['555'], '滿屏顯示');
+  await waitForLiveMessages(['555'], '滿屏顯示');
   assert.deepEqual(store.getControlSnapshot(), {
     mode: 'emergency',
-    messages: [{ message: '555' }],
+    messages: [{ message: '555', alignment: 'center' }],
     layout: 'fill-screen',
     pageDurationSeconds: null,
     pageNumber: null,
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: 'inspection',
     revision: 8,
     contentRevision: 7,
   });
@@ -710,9 +801,20 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   );
   await click('inspection-confirm-button');
   await waitForRevision(store, 9);
-  await waitForMessages(['888'], '滿屏顯示');
-  assert.equal(store.getControlSnapshot().layout, 'fill-screen');
-  assert.equal(store.getControlSnapshot().contentRevision, 8);
+  await waitForLiveMessages(['888'], '滿屏顯示');
+  assert.deepEqual(store.getControlSnapshot(), {
+    mode: 'emergency',
+    messages: [{ message: '888', alignment: 'center' }],
+    layout: 'fill-screen',
+    pageDurationSeconds: null,
+    pageNumber: null,
+    pageCount: null,
+    roundNumber: null,
+    totalRounds: null,
+    emergencyTone: 'release',
+    revision: 9,
+    contentRevision: 8,
+  });
 
   await click('clear-display-button');
   await waitForRevision(store, 10);
