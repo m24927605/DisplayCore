@@ -2,6 +2,13 @@
 const HARD_MAXIMUM_PARTICLE_COUNT = 2_400;
 const DEFAULT_PARTICLE_COUNT = 1_600;
 const EROSION_GROWTH_PROGRESS = 0.1;
+const WIND_BAND_COUNT = 14;
+const WIND_START_PROGRESS = 0.01;
+// 間距約為單層作用時間的一半，讓相鄰風帶持續重疊而不會吹吹停停。
+const WIND_BAND_STRIDE_PROGRESS = 0.052;
+const WIND_SWEEP_PROGRESS = 0.095;
+const WIND_VERTICAL_STAGGER_PROGRESS = 0.015;
+const PARTICLE_FINAL_FADE_START_PROGRESS = 0.88;
 
 export const SAND_TRANSITION_LIMITS = Object.freeze({
   maximumParticleCount: HARD_MAXIMUM_PARTICLE_COUNT,
@@ -29,9 +36,9 @@ function validateStartOptions({ width, height, durationMs, onComplete }) {
 /**
  * 以固定數量的完整網格建立舊圖片碎片與侵蝕孔資料。
  *
- * 每個取樣點只保存來源座標、左下角起砂時間及運動參數，不讀取圖片像素，
- * 因此解析度提高到 4K 時仍維持固定且有界的 CPU／記憶體成本。呼叫端可用
- * sourceX、sourceY 從舊圖片裁出粒粒分明的方形沙粒。
+ * 每個取樣點只保存來源座標、水平風帶啟動時間及運動參數，不讀取圖片像素，
+ * 因此解析度提高到 4K 時，此引擎的取樣計算與粒子資料量仍固定且有界。
+ * 呼叫端可用 sourceX、sourceY 從舊圖片裁出粒粒分明的方形沙粒。
  */
 function createSamples({ width, height, sampleCount, random }) {
   const aspectRatio = width / height;
@@ -44,7 +51,6 @@ function createSamples({ width, height, sampleCount, random }) {
   const cellWidth = width / columns;
   const cellHeight = height / rows;
   const shortestSide = Math.min(width, height);
-  const cornerDistanceMaximum = Math.hypot(1, 0.82);
   const samples = new Array(actualSampleCount);
 
   for (let index = 0; index < actualSampleCount; index += 1) {
@@ -63,15 +69,18 @@ function createSamples({ width, height, sampleCount, random }) {
     ) * cellHeight);
     const normalizedX = sourceX / width;
     const distanceFromBottom = (height - sourceY) / height;
-    const cornerDistance = Math.hypot(
-      normalizedX,
-      distanceFromBottom * 0.82,
-    ) / cornerDistanceMaximum;
+    const bandPosition = Math.min(
+      WIND_BAND_COUNT - Number.EPSILON,
+      distanceFromBottom * WIND_BAND_COUNT,
+    );
+    const bandIndex = Math.floor(bandPosition);
+    const heightWithinBand = bandPosition - bandIndex;
     const phase = (
       index * 2.399963 + sourceX * 0.013 + sourceY * 0.009
     ) % (Math.PI * 2);
-    const activationNoise =
-      (liftRandom - 0.5) * 0.16 + Math.sin(phase) * 0.035;
+    const plumeStrength = Math.exp(
+      -0.5 * ((normalizedX - 0.68) / 0.16) ** 2,
+    );
     const sourceSize = Math.max(
       2,
       shortestSide * (0.0015 + sizeRandom * 0.003),
@@ -83,23 +92,31 @@ function createSamples({ width, height, sampleCount, random }) {
       sourceSize,
       erosionRadius: Math.hypot(cellWidth, cellHeight) *
         (0.58 + sizeRandom * 0.12),
-      driftDistance: width * (0.08 + driftRandom * 0.2),
-      liftDistance: height * (0.06 + liftRandom * 0.14),
-      turbulenceDistance: width * (0.006 + sizeRandom * 0.012),
+      driftDistance: width * (
+        0.03 + driftRandom * 0.07 + plumeStrength * 0.035
+      ),
+      liftDistance: height * (
+        0.035 + liftRandom * 0.055 + plumeStrength * 0.08
+      ),
+      turbulenceDistance: width * (0.004 + sizeRandom * 0.008),
       phase,
       activation: clamp(
-        cornerDistance * 0.78 + activationNoise,
+        WIND_START_PROGRESS +
+          bandIndex * WIND_BAND_STRIDE_PROGRESS +
+          normalizedX * WIND_SWEEP_PROGRESS +
+          heightWithinBand * WIND_VERTICAL_STAGGER_PROGRESS,
         0,
-        0.76,
+        0.85,
       ),
-      lifeProgress: 0.24 + sizeRandom * 0.1,
+      lifeProgress: 0.22 + sizeRandom * 0.04 + plumeStrength * 0.04,
+      opacityScale: 0.28 + plumeStrength * 0.72,
     };
   }
 
   return samples;
 }
 
-/** 侵蝕孔由左下角向外擴張，圓孔大小漸增以避免形成筆直的 wipe 邊界。 */
+/** 侵蝕孔隨水平風帶逐層上移，圓孔大小漸增以保留粒狀邊緣。 */
 function createErosionFrame(samples, progress) {
   if (progress <= 0) {
     return [];
@@ -130,11 +147,14 @@ function createErosionFrame(samples, progress) {
 }
 
 function createParticleFrame(samples, progress) {
-  if (progress <= 0) {
+  if (progress <= 0 || progress >= 1) {
     return [];
   }
 
   const particles = [];
+  const finalFade = progress <= PARTICLE_FINAL_FADE_START_PROGRESS
+    ? 1
+    : (1 - progress) / (1 - PARTICLE_FINAL_FADE_START_PROGRESS);
 
   for (const sample of samples) {
     const age = (progress - sample.activation) / sample.lifeProgress;
@@ -167,7 +187,7 @@ function createParticleFrame(samples, progress) {
       x: sample.sourceX + horizontalTravel,
       y: sample.sourceY - upwardTravel,
       size: Math.max(2, sample.sourceSize * (1 - age * 0.38)),
-      opacity: (1 - age) ** 1.35,
+      opacity: sample.opacityScale * (1 - age) ** 1.25 * finalFade,
     });
   }
 
@@ -241,7 +261,6 @@ export function createSandTransition({
         width: transition.width,
         height: transition.height,
         progress,
-        erosionOrigin: { x: 0, y: transition.height },
         sampleCount: transition.samples.length,
         erosionPatches: createErosionFrame(transition.samples, progress),
         particles: createParticleFrame(transition.samples, progress),

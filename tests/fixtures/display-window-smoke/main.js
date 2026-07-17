@@ -1183,6 +1183,28 @@ async function captureSandFrame({
       };
 
       const visibleBox = visibleImage.getBoundingClientRect();
+      const particleDraws = canvas.__displayCoreSandTelemetry?.draws ?? [];
+      const particleHorizontalMass = new Array(5).fill(0);
+      for (const particle of particleDraws) {
+        const bucket = Math.min(
+          particleHorizontalMass.length - 1,
+          Math.max(
+            0,
+            Math.floor(
+              particle.centerX / canvas.width * particleHorizontalMass.length,
+            ),
+          ),
+        );
+        particleHorizontalMass[bucket] +=
+          particle.opacity * particle.width * particle.height;
+      }
+      const activeBandIndex = Math.max(
+        0,
+        Math.min(13, Math.round((progress - 0.082) / 0.052)),
+      );
+      const activeBandCenterY = 1 - (activeBandIndex + 0.5) / 14;
+      const activeBandMinimumY = Math.max(0.005, activeBandCenterY - 0.025);
+      const activeBandMaximumY = Math.min(0.995, activeBandCenterY + 0.025);
       const toBox = (box) => ({
         left: box.left,
         top: box.top,
@@ -1207,11 +1229,40 @@ async function captureSandFrame({
         canvasBox: toBox(canvasBox),
         visibleImageBox: toBox(visibleBox),
         regions: {
-          topLeft: sampleRegion(0.04, 0.28, 0.05, 0.29),
-          topRight: sampleRegion(0.72, 0.96, 0.05, 0.29),
-          bottomLeft: sampleRegion(0.04, 0.28, 0.71, 0.95),
-          bottomRight: sampleRegion(0.72, 0.96, 0.71, 0.95),
+          topLeft: sampleRegion(0.04, 0.28, 0.03, 0.11, 18, 12),
+          topRight: sampleRegion(0.72, 0.96, 0.03, 0.11, 18, 12),
+          middleLeft: sampleRegion(0.04, 0.28, 0.39, 0.48, 18, 12),
+          middleRight: sampleRegion(0.72, 0.96, 0.39, 0.48, 18, 12),
+          bottomLeft: sampleRegion(0.04, 0.28, 0.77, 0.86, 18, 12),
+          bottomRight: sampleRegion(0.72, 0.96, 0.77, 0.86, 18, 12),
           leftColumn: sampleRegion(0.115, 0.125, 0.04, 0.96, 1, 64),
+        },
+        particleTelemetry: {
+          drawCount: particleDraws.length,
+          horizontalMass: particleHorizontalMass,
+          strongestBucket: particleHorizontalMass.indexOf(
+            Math.max(...particleHorizontalMass),
+          ),
+        },
+        activeBand: {
+          index: activeBandIndex,
+          centerY: activeBandCenterY,
+          left: sampleRegion(
+            0.04,
+            0.28,
+            activeBandMinimumY,
+            activeBandMaximumY,
+            18,
+            10,
+          ),
+          right: sampleRegion(
+            0.72,
+            0.96,
+            activeBandMinimumY,
+            activeBandMaximumY,
+            18,
+            10,
+          ),
         },
         imageMotion: images.map((image) => {
           const style = getComputedStyle(image);
@@ -1227,6 +1278,62 @@ async function captureSandFrame({
     })()`),
     description,
   );
+}
+
+/**
+ * 僅在 smoke Renderer 包裝既有 Canvas 方法；每次仍呼叫原生 drawImage，
+ * 但額外記錄小型來源圖塊的實際繪製位置，避免把侵蝕圓反鋸齒誤判成沙粒。
+ */
+async function installSandParticleTelemetry() {
+  const installed = await execute(`(() => {
+    const canvas = document.getElementById('standby-sand-transition');
+    const context = canvas.getContext('2d');
+    if (!context) {
+      return false;
+    }
+    if (canvas.__displayCoreSandTelemetry) {
+      return true;
+    }
+
+    const telemetry = { draws: [] };
+    const originalClearRect = context.clearRect.bind(context);
+    const originalDrawImage = context.drawImage.bind(context);
+
+    context.clearRect = (...args) => {
+      telemetry.draws = [];
+      return originalClearRect(...args);
+    };
+    context.drawImage = (...args) => {
+      if (args.length === 9) {
+        const destinationX = Number(args[5]);
+        const destinationY = Number(args[6]);
+        const destinationWidth = Number(args[7]);
+        const destinationHeight = Number(args[8]);
+        const isParticle =
+          destinationWidth > 0 && destinationHeight > 0 &&
+          destinationWidth < canvas.width * 0.1 &&
+          destinationHeight < canvas.height * 0.1;
+        if (isParticle) {
+          telemetry.draws.push({
+            centerX: destinationX + destinationWidth / 2,
+            centerY: destinationY + destinationHeight / 2,
+            width: destinationWidth,
+            height: destinationHeight,
+            opacity: context.globalAlpha,
+          });
+        }
+      }
+      return originalDrawImage(...args);
+    };
+
+    Object.defineProperty(canvas, '__displayCoreSandTelemetry', {
+      value: telemetry,
+      configurable: true,
+    });
+    return true;
+  })()`);
+
+  assert.equal(installed, true, '必須能觀測真實 Canvas 沙粒繪製');
 }
 
 function assertImagesRemainStationary(imageMotion, description) {
@@ -1344,12 +1451,13 @@ async function runWorkflow(
   assert.equal(beforeSandGeometry.visibleImageCoversLayer, true);
   assertImagesRemainStationary(beforeSandGeometry.imageMotion, '轉場前');
 
+  await installSandParticleTelemetry();
   delayedSecondBackgroundRead.release();
   const earlySandFrame = await captureSandFrame({
-    minimumProgress: 0.18,
-    maximumProgress: 0.32,
+    minimumProgress: 0.15,
+    maximumProgress: 0.34,
     expectedVisibleSource: secondStandbyBackgroundUrl,
-    description: '左下起砂早段 Canvas 幀',
+    description: '下層水平風帶 Canvas 幀',
   });
   assert.equal(earlySandFrame.transition, 'sand');
   assert.equal(earlySandFrame.canvasCoversLayer, true);
@@ -1357,19 +1465,14 @@ async function runWorkflow(
   assert.equal(earlySandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(earlySandFrame.imageMotion, '轉場早段');
   assert.ok(
-    earlySandFrame.regions.bottomLeft.transparentRatio >=
-      earlySandFrame.regions.topLeft.transparentRatio + 0.15,
-    `早段左下必須明顯早於左上：${JSON.stringify(earlySandFrame.regions)}`,
+    earlySandFrame.activeBand.centerY > 0.6,
+    `早段風帶必須位於畫面下方：${JSON.stringify(earlySandFrame.activeBand)}`,
   );
   assert.ok(
-    earlySandFrame.regions.bottomLeft.transparentRatio >=
-      earlySandFrame.regions.bottomRight.transparentRatio + 0.15,
-    `早段左下必須明顯早於右下：${JSON.stringify(earlySandFrame.regions)}`,
-  );
-  assert.ok(
-    earlySandFrame.regions.bottomLeft.transparentRatio >=
-      earlySandFrame.regions.topRight.transparentRatio + 0.2,
-    `早段右上必須仍晚於左下：${JSON.stringify(earlySandFrame.regions)}`,
+    earlySandFrame.activeBand.left.transparentRatio >=
+      earlySandFrame.activeBand.right.transparentRatio + 0.08,
+    `下層作用中的風帶必須由左吹向右：` +
+      JSON.stringify(earlySandFrame.activeBand),
   );
   assert.ok(
     earlySandFrame.regions.leftColumn.transparent > 0 &&
@@ -1377,12 +1480,16 @@ async function runWorkflow(
     `同一左側欄必須同時有透明與不透明點，不可是 vertical wipe：` +
       JSON.stringify(earlySandFrame.regions.leftColumn),
   );
+  assert.ok(
+    earlySandFrame.particleTelemetry.drawCount > 0,
+    '下層風帶必須繪出舊圖片來源沙粒',
+  );
 
   const middleSandFrame = await captureSandFrame({
-    minimumProgress: 0.56,
-    maximumProgress: 0.68,
+    minimumProgress: 0.35,
+    maximumProgress: 0.62,
     expectedVisibleSource: secondStandbyBackgroundUrl,
-    description: '左下起砂中段 Canvas 幀',
+    description: '中層水平風帶 Canvas 幀',
   });
   assert.equal(middleSandFrame.transition, 'sand');
   assert.equal(middleSandFrame.canvasCoversLayer, true);
@@ -1390,22 +1497,35 @@ async function runWorkflow(
   assert.equal(middleSandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(middleSandFrame.imageMotion, '轉場中段');
   assert.ok(
-    middleSandFrame.regions.bottomLeft.transparentRatio >=
-      middleSandFrame.regions.topRight.transparentRatio + 0.3,
-    `中段右上仍必須晚於左下：${JSON.stringify(middleSandFrame.regions)}`,
+    middleSandFrame.regions.bottomLeft.transparentRatio >= 0.75 &&
+      middleSandFrame.regions.bottomRight.transparentRatio >= 0.75,
+    `風帶上移後下層左右都必須已吹散：${JSON.stringify(middleSandFrame.regions)}`,
   );
   assert.ok(
-    middleSandFrame.regions.topRight.transparentRatio <
-      middleSandFrame.regions.topLeft.transparentRatio &&
-      middleSandFrame.regions.topRight.transparentRatio <
-        middleSandFrame.regions.bottomRight.transparentRatio,
-    `中段右上必須是四區中較晚侵蝕的區域：` +
-      JSON.stringify(middleSandFrame.regions),
+    middleSandFrame.activeBand.centerY >= 0.2 &&
+      middleSandFrame.activeBand.centerY <= 0.65,
+    `中段風帶必須位於畫面中層：${JSON.stringify(middleSandFrame.activeBand)}`,
+  );
+  assert.ok(
+    middleSandFrame.activeBand.left.transparentRatio >=
+      middleSandFrame.activeBand.right.transparentRatio + 0.08,
+    `中層作用中的風帶仍必須由左吹向右：` +
+      JSON.stringify(middleSandFrame.activeBand),
+  );
+  assert.ok(
+    middleSandFrame.particleTelemetry.drawCount > 0,
+    '中層風帶必須持續繪出舊圖片來源沙粒',
+  );
+  assert.equal(
+    middleSandFrame.particleTelemetry.strongestBucket,
+    3,
+    `實際 Canvas 沙粒質量峰值必須位於畫面 60%～80%：` +
+      JSON.stringify(middleSandFrame.particleTelemetry.horizontalMass),
   );
   assert.ok(
     middleSandFrame.regions.bottomLeft.transparentRatio >=
       earlySandFrame.regions.bottomLeft.transparentRatio,
-    '左下侵蝕量不得隨進度倒退',
+    '下層侵蝕量不得隨進度倒退',
   );
   assert.ok(
     Math.abs(
@@ -1427,6 +1547,36 @@ async function runWorkflow(
     '新圖不得在轉場期間平移或縮放',
   );
 
+  const lateSandFrame = await captureSandFrame({
+    minimumProgress: 0.63,
+    maximumProgress: 0.82,
+    expectedVisibleSource: secondStandbyBackgroundUrl,
+    description: '上層水平風帶 Canvas 幀',
+  });
+  assert.equal(lateSandFrame.transition, 'sand');
+  assert.equal(lateSandFrame.canvasCoversLayer, true);
+  assert.equal(lateSandFrame.visibleImageCoversLayer, true);
+  assert.equal(lateSandFrame.visibleSource, secondStandbyBackgroundUrl);
+  assertImagesRemainStationary(lateSandFrame.imageMotion, '轉場晚段');
+  assert.ok(
+    lateSandFrame.regions.middleLeft.transparentRatio >= 0.75 &&
+      lateSandFrame.regions.middleRight.transparentRatio >= 0.75,
+    `風帶到達上層時中層必須已吹散：${JSON.stringify(lateSandFrame.regions)}`,
+  );
+  assert.ok(
+    lateSandFrame.activeBand.centerY < 0.25,
+    `晚段風帶必須位於畫面上方：${JSON.stringify(lateSandFrame.activeBand)}`,
+  );
+  assert.ok(
+    lateSandFrame.activeBand.left.transparentRatio >=
+      lateSandFrame.activeBand.right.transparentRatio + 0.08,
+    `上層作用中的風帶仍必須由左吹向右：` +
+      JSON.stringify(lateSandFrame.activeBand),
+  );
+  assert.ok(
+    lateSandFrame.particleTelemetry.drawCount > 0,
+    '上層風帶必須延續舊圖片來源沙粒，不能在結尾前中斷',
+  );
   await waitFor(
     () => execute(`(() => {
       const stage = document.getElementById('display-stage');
