@@ -213,6 +213,14 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /standbyBackgroundPlayer\.handleLoad/);
   assert.match(source, /standbyBackgroundPlayer\.handleError/);
   assert.match(source, /standbyBackgroundPlayer\.dispose/);
+  assert.match(
+    source,
+    /function renderBlank\([^)]*\)\s*{[\s\S]*?clearStandbyBackgroundImages\(\)/,
+  );
+  assert.match(
+    source,
+    /if \(snapshot\.mode === 'blank'\)\s*{\s*renderBlank\(snapshot\);[\s\S]*?syncStandbyBackgroundPlayer\(\);\s*return;/,
+  );
   assert.match(source, /sandTransition\.start/);
   assert.match(source, /sandTransition\.cancel/);
   assert.match(source, /sandTransition\.dispose/);

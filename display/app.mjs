@@ -1020,6 +1020,8 @@ function applyDisplaySettings(snapshot) {
 
 function renderBlank(snapshot) {
   clearVisualLayers();
+  // 每次重新進入待機都從乾淨的第一張開始，且第一張不播放轉場。
+  clearStandbyBackgroundImages();
   applyEmergencyBackground(null);
   updateAnnouncement('', 'off');
   elements.normalLayer.hidden = false;
@@ -1101,12 +1103,15 @@ function renderEmergency(snapshot) {
 
 function renderPresentation(snapshot) {
   currentPresentation = snapshot;
-  syncStandbyBackgroundPlayer();
 
   if (snapshot.mode === 'blank') {
     renderBlank(snapshot);
+    // renderBlank 完成清理後才啟動播放器，避免取消第一張的停留計時。
+    syncStandbyBackgroundPlayer();
     return;
   }
+
+  syncStandbyBackgroundPlayer();
 
   if (snapshot.mode === 'emergency') {
     renderEmergency(snapshot);
