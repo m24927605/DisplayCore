@@ -217,8 +217,8 @@ async function bootstrap() {
           const logo = settingsManager.getSnapshot().config.logo;
           return logo.enabled ? logo.path : null;
         },
-        getAllowedStandbyBackgroundPath: () =>
-          settingsManager.getSnapshot().config.standby.backgroundImagePath,
+        getAllowedStandbyBackgroundPaths: () =>
+          settingsManager.getSnapshot().config.standby.backgroundImagePaths,
       });
       await settingsManager.initialize();
       await displayTopologyService.initialize();

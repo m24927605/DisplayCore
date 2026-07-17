@@ -83,7 +83,7 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV6(
+function hasExpectedConfigV7(
   config,
   offsetSeconds,
   renderResolution,
@@ -91,15 +91,26 @@ function hasExpectedConfigV6(
   repeatMode,
   roundCount,
   logoSizePercent,
+  standbyBackgroundMode = 'fixed',
+  standbyBackgroundImagePaths = [],
+  standbySlideDurationSeconds = 10,
 ) {
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 6 &&
+    config.configVersion === 7 &&
     hasExactKeys(config.logo, ['enabled', 'path', 'sizePercent']) &&
     config.logo.sizePercent === logoSizePercent &&
-    hasExactKeys(config.standby, ['backgroundImagePath']) &&
-    config.standby.backgroundImagePath === null &&
+    hasExactKeys(config.standby, [
+      'backgroundImagePaths',
+      'backgroundMode',
+      'slideDurationSeconds',
+    ]) &&
+    config.standby.backgroundMode === standbyBackgroundMode &&
+    Array.isArray(config.standby.backgroundImagePaths) &&
+    JSON.stringify(config.standby.backgroundImagePaths) ===
+      JSON.stringify(standbyBackgroundImagePaths) &&
+    config.standby.slideDurationSeconds === standbySlideDurationSeconds &&
     config.dateTime?.enabled === true &&
     config.dateTime?.offsetSeconds === offsetSeconds &&
     hasExactKeys(config.playback, [
@@ -123,12 +134,15 @@ function isExpectedSettingsSnapshot(
   repeatMode,
   roundCount,
   logoSizePercent,
+  standbyBackgroundMode = 'fixed',
+  standbyBackgroundImagePaths = [],
+  standbySlideDurationSeconds = 10,
 ) {
   return (
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV6(
+    hasExpectedConfigV7(
       snapshot.config,
       offsetSeconds,
       renderResolution,
@@ -136,8 +150,11 @@ function isExpectedSettingsSnapshot(
       repeatMode,
       roundCount,
       logoSizePercent,
+      standbyBackgroundMode,
+      standbyBackgroundImagePaths,
+      standbySlideDurationSeconds,
     ) &&
-    hasExpectedConfigV6(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
+    hasExpectedConfigV7(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
   );
 }
 
@@ -162,6 +179,31 @@ window.addEventListener('DOMContentLoaded', async () => {
       return;
     }
 
+    const fixedBackground =
+      await window.displayCoreControl.chooseStandbyBackground('fixed');
+    const slideshowBackground =
+      await window.displayCoreControl.chooseStandbyBackground('slideshow');
+
+    if (
+      !fixedBackground.ok ||
+      !hasExactKeys(fixedBackground.data, ['assetPaths', 'canceled']) ||
+      fixedBackground.data.canceled !== false ||
+      JSON.stringify(fixedBackground.data.assetPaths) !== JSON.stringify([
+        'standby-backgrounds/0123456789abcdef01234567.png',
+      ]) ||
+      !slideshowBackground.ok ||
+      !hasExactKeys(slideshowBackground.data, ['assetPaths', 'canceled']) ||
+      slideshowBackground.data.canceled !== false ||
+      JSON.stringify(slideshowBackground.data.assetPaths) !== JSON.stringify([
+        'standby-backgrounds/0123456789abcdef01234567.png',
+        'standby-backgrounds/abcdef0123456789abcdef01.webp',
+      ])
+    ) {
+      document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';
+      return;
+    }
+
+    const selectedBackgroundPaths = [...slideshowBackground.data.assetPaths];
     const nextConfig = structuredClone(loadedSettings.data.config);
     nextConfig.dateTime.offsetSeconds = 3_661;
     nextConfig.playback.pageDurationSeconds = 8;
@@ -169,6 +211,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     nextConfig.playback.roundCount = 7;
     nextConfig.display.renderResolution = '2560x1440';
     nextConfig.logo.sizePercent = 150;
+    nextConfig.standby = {
+      backgroundMode: 'slideshow',
+      backgroundImagePaths: selectedBackgroundPaths,
+      slideDurationSeconds: 12,
+    };
     const savedSettings = await window.displayCoreControl.saveSettings(
       nextConfig,
       loadedSettings.data.revision,
@@ -185,6 +232,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         'continuous',
         7,
         150,
+        'slideshow',
+        selectedBackgroundPaths,
+        12,
       )
     ) {
       document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';

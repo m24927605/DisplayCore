@@ -20,6 +20,7 @@ const {
   MAX_PAGE_DURATION_SECONDS,
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
+  validateChooseStandbyBackgroundPayload,
   validateEmergencyPayload,
   validateClearPresentationPayload,
   validatePageProgressPayload,
@@ -103,6 +104,30 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
     PLAYBACK_MODES,
   ]) {
     assert.equal(Object.isFrozen(value), true);
+  }
+});
+
+test('待機背景選檔只接受 fixed 或 slideshow 的 exact payload', () => {
+  assert.deepEqual(
+    validateChooseStandbyBackgroundPayload({ backgroundMode: 'fixed' }),
+    { ok: true, value: { backgroundMode: 'fixed' } },
+  );
+  assert.deepEqual(
+    validateChooseStandbyBackgroundPayload({ backgroundMode: 'slideshow' }),
+    { ok: true, value: { backgroundMode: 'slideshow' } },
+  );
+
+  for (const payload of [
+    null,
+    {},
+    { backgroundMode: 'carousel' },
+    { backgroundMode: 'fixed', multiple: true },
+    { backgroundMode: 1 },
+  ]) {
+    const result = validateChooseStandbyBackgroundPayload(payload);
+    assert.equal(result.ok, false, JSON.stringify(payload));
+    assert.equal(result.error.code, 'VALIDATION_FAILED');
+    assert.equal(result.error.field, 'backgroundMode');
   }
 });
 
@@ -343,7 +368,7 @@ test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推
   }
 });
 
-test('設定儲存接受完整 v6 Logo 尺寸、有限／持續播放偏好與目前 revision', () => {
+test('設定儲存接受完整 v7 Logo、待機背景與播放偏好與目前 revision', () => {
   const finiteConfig = structuredClone(defaultConfig);
   finiteConfig.playback = {
     pageDurationSeconds: 8,

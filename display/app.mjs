@@ -5,8 +5,12 @@ import {
   classifyLogoAlpha,
   LOGO_TREATMENTS,
 } from './logo-appearance.mjs';
+import { calculateLogoLayoutScales } from './logo-size.mjs';
 import { createDisplaySettingsController } from './settings-controller.mjs';
 import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
+import {
+  createStandbyBackgroundPlayer,
+} from './standby-background-player.mjs';
 import { resolveRenderResolution } from './render-resolution.mjs';
 import {
   calculateResponsiveFontBounds,
@@ -25,7 +29,10 @@ const elements = Object.freeze({
   announcement: document.getElementById('display-announcement'),
   normalLayer: document.getElementById('normal-layer'),
   standbyBackgroundLayer: document.getElementById('standby-background-layer'),
-  standbyBackgroundImage: document.getElementById('standby-background-image'),
+  standbyBackgroundImages: Object.freeze([
+    document.getElementById('standby-background-image'),
+    document.getElementById('standby-background-image-buffer'),
+  ]),
   chrome: document.getElementById('display-chrome'),
   logoFrame: document.getElementById('logo-frame'),
   logo: document.getElementById('display-logo'),
@@ -47,6 +54,8 @@ let fitFrame = null;
 let expectedLogoUrl = null;
 let logoReady = false;
 let expectedStandbyBackgroundUrl = null;
+let activeStandbyBackgroundImage = null;
+let pendingStandbyBackgroundImage = null;
 let standbyBackgroundReady = false;
 let clockHasValue = false;
 let clockSignature = null;
@@ -117,6 +126,9 @@ const clock = createDisplayClock({
     }
   },
 });
+const standbyBackgroundPlayer = createStandbyBackgroundPlayer({
+  onSourceChange: applyStandbyBackgroundSource,
+});
 
 function cancelPendingFit() {
   renderGeneration += 1;
@@ -134,7 +146,9 @@ function clearVisualLayers() {
   elements.fillLayer.textContent = '';
   elements.standbyLayer.hidden = true;
   elements.standbyBackgroundLayer.hidden = true;
-  elements.standbyBackgroundImage.hidden = true;
+  for (const image of elements.standbyBackgroundImages) {
+    image.hidden = true;
+  }
   elements.pageLayer.removeAttribute('style');
   elements.stage.dataset.fittedRevision = '';
   elements.stage.dataset.fittedSettingsRevision = '';
@@ -363,7 +377,8 @@ function updateChromeVisibility() {
     currentSettings.logo.enabled &&
     logoReady;
   const showStandbyBackground =
-    standbyVisible && standbyBackgroundReady;
+    standbyVisible && standbyBackgroundReady &&
+    activeStandbyBackgroundImage !== null;
   const showClock =
     (standbyVisible || (pageVisible && currentSettings.dateTime.enabled)) &&
     clockHasValue;
@@ -371,7 +386,10 @@ function updateChromeVisibility() {
   elements.logoFrame.hidden = !showLogo;
   elements.logo.hidden = !showLogo;
   elements.standbyBackgroundLayer.hidden = !showStandbyBackground;
-  elements.standbyBackgroundImage.hidden = !showStandbyBackground;
+  for (const image of elements.standbyBackgroundImages) {
+    image.hidden = !showStandbyBackground ||
+      image !== activeStandbyBackgroundImage;
+  }
   elements.clock.hidden = !showClock;
   elements.normalLayer.classList.toggle('has-logo', showLogo);
   elements.normalLayer.classList.toggle('has-clock', showClock);
@@ -519,69 +537,163 @@ function applyLogoTreatment() {
   elements.logoFrame.dataset.logoTreatment = treatment;
 }
 
-function handleStandbyBackgroundLoad() {
-  if (
-    expectedStandbyBackgroundUrl === null ||
-    elements.standbyBackgroundImage.getAttribute('src') !==
-      expectedStandbyBackgroundUrl
-  ) {
-    return;
+function isExpectedStandbyBackground(image) {
+  return image === pendingStandbyBackgroundImage &&
+    expectedStandbyBackgroundUrl !== null &&
+    image.getAttribute('src') === expectedStandbyBackgroundUrl;
+}
+
+/** 只有 pending 圖成功解碼後才原子替換目前健康背景。 */
+function commitStandbyBackgroundImage(image, url) {
+  if (!isExpectedStandbyBackground(image) || url !== expectedStandbyBackgroundUrl) {
+    return false;
   }
 
-  standbyBackgroundReady =
-    elements.standbyBackgroundImage.naturalWidth > 0 &&
-    elements.standbyBackgroundImage.naturalHeight > 0;
+  activeStandbyBackgroundImage = image;
+  pendingStandbyBackgroundImage = null;
+  expectedStandbyBackgroundUrl = null;
+  standbyBackgroundReady = true;
+  elements.stage.dataset.standbyBackgroundState = 'ready';
+  updateChromeVisibility();
+  standbyBackgroundPlayer.handleLoad(url);
+  return true;
+}
+
+/** 壞圖只清除 pending 槽；目前健康背景持續可見並由播放器有界跳過。 */
+function rejectStandbyBackgroundImage(image, url) {
+  if (!isExpectedStandbyBackground(image) || url !== expectedStandbyBackgroundUrl) {
+    return false;
+  }
+
+  image.hidden = true;
+  image.removeAttribute('src');
+  pendingStandbyBackgroundImage = null;
+  expectedStandbyBackgroundUrl = null;
+  standbyBackgroundReady = activeStandbyBackgroundImage !== null;
   elements.stage.dataset.standbyBackgroundState = standbyBackgroundReady
     ? 'ready'
     : 'error';
   updateChromeVisibility();
+  standbyBackgroundPlayer.handleError(url);
+  return true;
 }
 
-function handleStandbyBackgroundError() {
-  if (
-    expectedStandbyBackgroundUrl === null ||
-    elements.standbyBackgroundImage.getAttribute('src') !==
-      expectedStandbyBackgroundUrl
-  ) {
+function handleStandbyBackgroundLoad(event) {
+  const image = event.currentTarget;
+  if (!isExpectedStandbyBackground(image)) {
     return;
   }
 
-  standbyBackgroundReady = false;
-  elements.stage.dataset.standbyBackgroundState = 'error';
-  updateChromeVisibility();
+  const url = expectedStandbyBackgroundUrl;
+  if (image.naturalWidth > 0 && image.naturalHeight > 0) {
+    commitStandbyBackgroundImage(image, url);
+  } else {
+    rejectStandbyBackgroundImage(image, url);
+  }
 }
 
-/** 待機背景只接受 settings-state 已驗證的同源受管理 URL。 */
-function applyStandbyBackground() {
-  const nextUrl = currentSettings.standby.backgroundImageUrl;
+function handleStandbyBackgroundError(event) {
+  const image = event.currentTarget;
+  if (!isExpectedStandbyBackground(image)) {
+    return;
+  }
 
+  rejectStandbyBackgroundImage(image, expectedStandbyBackgroundUrl);
+}
+
+function clearStandbyBackgroundImages() {
+  expectedStandbyBackgroundUrl = null;
+  activeStandbyBackgroundImage = null;
+  pendingStandbyBackgroundImage = null;
+  standbyBackgroundReady = false;
+
+  for (const image of elements.standbyBackgroundImages) {
+    image.hidden = true;
+    image.removeAttribute('src');
+  }
+}
+
+/**
+ * 將下一張載入隱藏的緩衝槽；解碼完成前保留目前健康背景，不做過場動畫。
+ */
+function applyStandbyBackgroundSource(nextUrl) {
   if (nextUrl === null) {
-    expectedStandbyBackgroundUrl = null;
-    standbyBackgroundReady = false;
-    elements.standbyBackgroundImage.removeAttribute('src');
+    clearStandbyBackgroundImages();
     elements.stage.dataset.standbyBackgroundState = 'disabled';
     updateChromeVisibility();
     return;
   }
 
-  expectedStandbyBackgroundUrl = nextUrl;
-
   if (
-    elements.standbyBackgroundImage.getAttribute('src') === nextUrl &&
-    elements.standbyBackgroundImage.complete &&
-    elements.standbyBackgroundImage.naturalWidth > 0 &&
-    elements.standbyBackgroundImage.naturalHeight > 0
+    activeStandbyBackgroundImage?.getAttribute('src') === nextUrl &&
+    activeStandbyBackgroundImage.complete &&
+    activeStandbyBackgroundImage.naturalWidth > 0 &&
+    activeStandbyBackgroundImage.naturalHeight > 0
   ) {
+    if (pendingStandbyBackgroundImage) {
+      pendingStandbyBackgroundImage.hidden = true;
+      pendingStandbyBackgroundImage.removeAttribute('src');
+      pendingStandbyBackgroundImage = null;
+      expectedStandbyBackgroundUrl = null;
+    }
     standbyBackgroundReady = true;
     elements.stage.dataset.standbyBackgroundState = 'ready';
     updateChromeVisibility();
+    standbyBackgroundPlayer.handleLoad(nextUrl);
     return;
   }
 
-  standbyBackgroundReady = false;
+  const targetImage = elements.standbyBackgroundImages.find(
+    (image) => image !== activeStandbyBackgroundImage,
+  );
+  if (!targetImage) {
+    standbyBackgroundPlayer.handleError(nextUrl);
+    return;
+  }
+
+  if (
+    pendingStandbyBackgroundImage &&
+    pendingStandbyBackgroundImage !== targetImage
+  ) {
+    pendingStandbyBackgroundImage.hidden = true;
+    pendingStandbyBackgroundImage.removeAttribute('src');
+  }
+
+  pendingStandbyBackgroundImage = targetImage;
+  expectedStandbyBackgroundUrl = nextUrl;
+  targetImage.hidden = true;
   elements.stage.dataset.standbyBackgroundState = 'loading';
-  elements.standbyBackgroundImage.src = nextUrl;
+
+  if (
+    targetImage.getAttribute('src') === nextUrl &&
+    targetImage.complete &&
+    targetImage.naturalWidth > 0 &&
+    targetImage.naturalHeight > 0
+  ) {
+    commitStandbyBackgroundImage(targetImage, nextUrl);
+    return;
+  }
+
+  if (
+    targetImage.getAttribute('src') === nextUrl &&
+    targetImage.complete
+  ) {
+    // 已失敗的同 URL 在新一輪可重試一次；移除後重設以確保事件重新送達。
+    targetImage.removeAttribute('src');
+  }
+
+  targetImage.src = nextUrl;
   updateChromeVisibility();
+}
+
+/** 設定更新或顯示模式切換皆建立新世代；回待機固定從第一張開始。 */
+function syncStandbyBackgroundPlayer() {
+  standbyBackgroundPlayer.update({
+    active: currentPresentation?.mode === 'blank',
+    backgroundMode: currentSettings.standby.backgroundMode,
+    backgroundImageUrls: currentSettings.standby.backgroundImageUrls,
+    slideDurationSeconds: currentSettings.standby.slideDurationSeconds,
+  });
 }
 
 function calculateLogoOutline(backgroundColor) {
@@ -628,6 +740,7 @@ function applyDisplaySettings(snapshot) {
   cancelPendingFit();
   currentSettings = snapshot;
   const rootStyle = document.documentElement.style;
+  const logoScales = calculateLogoLayoutScales(snapshot.logo.sizePercent);
   rootStyle.setProperty(
     '--display-background',
     snapshot.appearance.backgroundColor,
@@ -639,7 +752,15 @@ function applyDisplaySettings(snapshot) {
   );
   rootStyle.setProperty(
     '--logo-size-scale',
-    String(snapshot.logo.sizePercent / 100),
+    String(logoScales.configuredScale),
+  );
+  rootStyle.setProperty(
+    '--logo-page-size-scale',
+    String(logoScales.pageScale),
+  );
+  rootStyle.setProperty(
+    '--logo-standby-size-scale',
+    String(logoScales.standbyScale),
   );
   rootStyle.setProperty(
     '--message-font-scale',
@@ -661,7 +782,7 @@ function applyDisplaySettings(snapshot) {
   applyRenderResolution();
   applyEmergencyBackground(currentPresentation?.emergencyTone);
   applyLogo();
-  applyStandbyBackground();
+  syncStandbyBackgroundPlayer();
   syncClock();
   updateChromeVisibility();
   scheduleFit();
@@ -748,6 +869,7 @@ function renderEmergency(snapshot) {
 
 function renderPresentation(snapshot) {
   currentPresentation = snapshot;
+  syncStandbyBackgroundPlayer();
 
   if (snapshot.mode === 'blank') {
     renderBlank(snapshot);
@@ -775,8 +897,10 @@ function hasRequiredBridge(api) {
 
 elements.logo.addEventListener('load', handleLogoLoad);
 elements.logo.addEventListener('error', handleLogoError);
-elements.standbyBackgroundImage.addEventListener('load', handleStandbyBackgroundLoad);
-elements.standbyBackgroundImage.addEventListener('error', handleStandbyBackgroundError);
+for (const image of elements.standbyBackgroundImages) {
+  image.addEventListener('load', handleStandbyBackgroundLoad);
+  image.addEventListener('error', handleStandbyBackgroundError);
+}
 applyDisplaySettings(SAFE_DISPLAY_SETTINGS);
 
 const resizeObserver = new ResizeObserver(() => {
@@ -848,17 +972,14 @@ window.addEventListener(
     unsubscribeRefitRequested?.();
     unsubscribeRefitRequested = null;
     clock.dispose();
+    standbyBackgroundPlayer.dispose();
     resizeObserver.disconnect();
     elements.logo.removeEventListener('load', handleLogoLoad);
     elements.logo.removeEventListener('error', handleLogoError);
-    elements.standbyBackgroundImage.removeEventListener(
-      'load',
-      handleStandbyBackgroundLoad,
-    );
-    elements.standbyBackgroundImage.removeEventListener(
-      'error',
-      handleStandbyBackgroundError,
-    );
+    for (const image of elements.standbyBackgroundImages) {
+      image.removeEventListener('load', handleStandbyBackgroundLoad);
+      image.removeEventListener('error', handleStandbyBackgroundError);
+    }
     cancelPendingFit();
   },
   { once: true },

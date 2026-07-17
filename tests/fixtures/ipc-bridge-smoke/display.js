@@ -81,15 +81,25 @@ function isExpectedSettingsSnapshot(snapshot) {
       'revision',
       'standby',
     ]) &&
-    snapshot.configVersion === 6 &&
+    snapshot.configVersion === 7 &&
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'sizePercent', 'url']) &&
     snapshot.logo.enabled === false &&
     snapshot.logo.url === null &&
     snapshot.logo.sizePercent === 150 &&
-    hasExactKeys(snapshot.standby, ['backgroundImageUrl']) &&
-    snapshot.standby.backgroundImageUrl === null &&
+    hasExactKeys(snapshot.standby, [
+      'backgroundImageUrls',
+      'backgroundMode',
+      'slideDurationSeconds',
+    ]) &&
+    snapshot.standby.backgroundMode === 'slideshow' &&
+    Array.isArray(snapshot.standby.backgroundImageUrls) &&
+    JSON.stringify(snapshot.standby.backgroundImageUrls) === JSON.stringify([
+      'displaycore://app/managed/standby-background/0123456789abcdef01234567.png',
+      'displaycore://app/managed/standby-background/abcdef0123456789abcdef01.webp',
+    ]) &&
+    snapshot.standby.slideDurationSeconds === 12 &&
     hasExactKeys(snapshot.appearance, [
       'backgroundColor',
       'fontColor',

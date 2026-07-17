@@ -15,6 +15,7 @@ function invalidSnapshot() {
 
 function freezeDisplaySettings(settings) {
   Object.freeze(settings.logo);
+  Object.freeze(settings.standby.backgroundImageUrls);
   Object.freeze(settings.standby);
   Object.freeze(settings.appearance);
   Object.freeze(settings.dateTime);
@@ -50,7 +51,7 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
 
   const config = validation.value;
   let logoUrl = null;
-  let backgroundImageUrl = null;
+  const backgroundImageUrls = [];
 
   if (config.logo.enabled) {
     const match = MANAGED_LOGO_PATH.exec(config.logo.path || '');
@@ -62,17 +63,16 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
     logoUrl = `${DISPLAY_LOGO_URL_PREFIX}${match[1]}`;
   }
 
-  if (config.standby.backgroundImagePath !== null) {
-    const match = MANAGED_STANDBY_BACKGROUND_PATH.exec(
-      config.standby.backgroundImagePath,
-    );
+  for (const backgroundImagePath of config.standby.backgroundImagePaths) {
+    const match = MANAGED_STANDBY_BACKGROUND_PATH.exec(backgroundImagePath);
 
     if (!match) {
       return invalidSnapshot();
     }
 
-    backgroundImageUrl =
-      `${DISPLAY_STANDBY_BACKGROUND_URL_PREFIX}${match[1]}`;
+    backgroundImageUrls.push(
+      `${DISPLAY_STANDBY_BACKGROUND_URL_PREFIX}${match[1]}`,
+    );
   }
 
   return freezeDisplaySettings({
@@ -82,7 +82,11 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
       url: logoUrl,
       sizePercent: config.logo.sizePercent,
     },
-    standby: { backgroundImageUrl },
+    standby: {
+      backgroundMode: config.standby.backgroundMode,
+      backgroundImageUrls,
+      slideDurationSeconds: config.standby.slideDurationSeconds,
+    },
     appearance: {
       backgroundColor: config.appearance.backgroundColor,
       fontFamily: config.appearance.fontFamily,

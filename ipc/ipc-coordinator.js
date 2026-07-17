@@ -4,6 +4,7 @@ const { IPC_CHANNELS, IPC_ROLES } = require('./channels');
 const { createDisplaySettingsSnapshot } = require('./display-settings');
 const { createControlOutputSnapshot } = require('./output-status');
 const {
+  validateChooseStandbyBackgroundPayload,
   validateEmergencyPayload,
   validateClearPresentationPayload,
   validatePageProgressPayload,
@@ -239,12 +240,10 @@ class IpcCoordinator {
     );
     this.ipcMain.handle(
       IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
-      (event) => this.handleAsyncRequest(
+      (event, payload) => this.handleAsyncRequest(
         IPC_ROLES.CONTROL,
         event,
-        async () => success(
-          await this.standbyBackgroundImporter.chooseAndImport(),
-        ),
+        () => this.chooseStandbyBackground(payload),
       ),
     );
     this.ipcMain.handle(
@@ -450,6 +449,21 @@ class IpcCoordinator {
         validation.value.config,
         validation.value.expectedRevision,
       ),
+    );
+  }
+
+  async chooseStandbyBackground(payload) {
+    const validation = validateChooseStandbyBackgroundPayload(payload);
+
+    if (!validation.ok) {
+      return validation;
+    }
+
+    return success(
+      await this.standbyBackgroundImporter.chooseAndImport({
+        // Renderer 只能傳入白名單模式，不能操作原生 dialog 選項。
+        multiple: validation.value.backgroundMode === 'slideshow',
+      }),
     );
   }
 

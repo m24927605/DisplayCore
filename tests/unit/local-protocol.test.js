@@ -278,8 +278,19 @@ test('受管理 Logo 每次重驗一般檔案、magic bytes 與內容雜湊', as
   assert.equal(response.status, 404);
 });
 
-test('受管理待機背景只以目前設定的同源雜湊 URL 提供正確 MIME', async (t) => {
+test('受管理待機背景只以目前陣列成員的同源雜湊 URL 提供正確 MIME', async (t) => {
   const background = await createManagedStandbyBackgroundHarness(t);
+  const secondContents = Buffer.concat([PNG_SIGNATURE, Buffer.from('second')]);
+  const secondDigest = createHash('sha256')
+    .update(secondContents)
+    .digest('hex')
+    .slice(0, 24);
+  const secondFileName = `${secondDigest}.png`;
+  const secondAssetPath = `standby-backgrounds/${secondFileName}`;
+  await fileSystem.writeFile(
+    path.join(background.managedStandbyBackgroundDirectory, secondFileName),
+    secondContents,
+  );
   const fetchedUrls = [];
   const handler = createLocalProtocolHandler({
     appRoot,
@@ -291,7 +302,10 @@ test('受管理待機背景只以目前設定的同源雜湊 URL 提供正確 MI
     },
     managedStandbyBackgroundDirectory:
       background.managedStandbyBackgroundDirectory,
-    getAllowedStandbyBackgroundPath: () => background.assetPath,
+    getAllowedStandbyBackgroundPaths: () => [
+      background.assetPath,
+      secondAssetPath,
+    ],
   });
   const url =
     `displaycore://app/managed/standby-background/${background.fileName}`;
@@ -310,6 +324,16 @@ test('受管理待機背景只以目前設定的同源雜湊 URL 提供正確 MI
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), PNG_SIGNATURE);
   assert.deepEqual(fetchedUrls, []);
 
+  const secondResponse = await handler({
+    method: 'GET',
+    url: `displaycore://app/managed/standby-background/${secondFileName}`,
+  });
+  assert.equal(secondResponse.status, 200);
+  assert.deepEqual(
+    Buffer.from(await secondResponse.arrayBuffer()),
+    secondContents,
+  );
+
   const headResponse = await handler({ method: 'HEAD', url });
   assert.equal(headResponse.status, 200);
   assert.equal(headResponse.headers.get('content-length'), String(PNG_SIGNATURE.length));
@@ -318,13 +342,13 @@ test('受管理待機背景只以目前設定的同源雜湊 URL 提供正確 MI
 
 test('受管理待機背景拒絕變形路由、未選取檔案、非唯讀方法與內容篡改', async (t) => {
   const background = await createManagedStandbyBackgroundHarness(t);
-  let allowedPath = background.assetPath;
+  let allowedPaths = [background.assetPath];
   const handler = createLocalProtocolHandler({
     appRoot,
     net: { fetch: async () => new Response('static') },
     managedStandbyBackgroundDirectory:
       background.managedStandbyBackgroundDirectory,
-    getAllowedStandbyBackgroundPath: () => allowedPath,
+    getAllowedStandbyBackgroundPaths: () => allowedPaths,
   });
   const validUrl =
     `displaycore://app/managed/standby-background/${background.fileName}`;
@@ -342,9 +366,11 @@ test('受管理待機背景拒絕變形路由、未選取檔案、非唯讀方�
     assert.equal(await response.text(), 'Not Found');
   }
 
-  allowedPath = null;
+  allowedPaths = [];
   assert.equal((await handler({ method: 'GET', url: validUrl })).status, 404);
-  allowedPath = background.assetPath;
+  allowedPaths = background.assetPath;
+  assert.equal((await handler({ method: 'GET', url: validUrl })).status, 404);
+  allowedPaths = [background.assetPath];
   assert.equal((await handler({ method: 'POST', url: validUrl })).status, 405);
   const filePath = path.join(
     background.managedStandbyBackgroundDirectory,

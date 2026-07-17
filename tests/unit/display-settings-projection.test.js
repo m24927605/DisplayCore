@@ -17,12 +17,16 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV6Config() {
+function createV7Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 6,
+    configVersion: 7,
     logo: { enabled: false, path: null, sizePercent: 100 },
-    standby: { backgroundImagePath: null },
+    standby: {
+      backgroundMode: 'fixed',
+      backgroundImagePaths: [],
+      slideDurationSeconds: 10,
+    },
     dateTime: { enabled: false, offsetSeconds: 0 },
     display: {
       ...defaultConfig.display,
@@ -32,15 +36,19 @@ function createV6Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV6Config();
+  const config = createV7Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
     sizePercent: 150,
   };
   config.standby = {
-    backgroundImagePath:
+    backgroundMode: 'slideshow',
+    backgroundImagePaths: [
       'standby-backgrounds/fedcba987654321001234567.webp',
+      'standby-backgrounds/0123456789abcdef01234567.png',
+    ],
+    slideDurationSeconds: 15,
   };
   config.appearance = {
     backgroundColor: '#102030',
@@ -73,15 +81,19 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
       sizePercent: 150,
     },
     standby: {
-      backgroundImageUrl:
+      backgroundMode: 'slideshow',
+      backgroundImageUrls: [
         'displaycore://app/managed/standby-background/fedcba987654321001234567.webp',
+        'displaycore://app/managed/standby-background/0123456789abcdef01234567.png',
+      ],
+      slideDurationSeconds: 15,
     },
     appearance: {
       backgroundColor: '#102030',
@@ -103,6 +115,10 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.isFrozen(projected), true);
   assert.equal(Object.isFrozen(projected.logo), true);
   assert.equal(Object.isFrozen(projected.standby), true);
+  assert.equal(
+    Object.isFrozen(projected.standby.backgroundImageUrls),
+    true,
+  );
   assert.equal(Object.isFrozen(projected.appearance), true);
   assert.equal(Object.isFrozen(projected.dateTime), true);
   assert.equal(Object.isFrozen(projected.emergency), true);
@@ -116,16 +132,15 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.hasOwn(projected.display, 'defaultDisplayId'), false);
   assert.equal(Object.hasOwn(projected.display, 'fullscreen'), false);
   assert.equal(Object.hasOwn(projected.logo, 'path'), false);
-  assert.equal(Object.hasOwn(projected.standby, 'backgroundImagePath'), false);
+  assert.equal(Object.hasOwn(projected.standby, 'backgroundImagePaths'), false);
   assert.equal(JSON.stringify(projected).includes(config.logo.path), false);
-  assert.equal(
-    JSON.stringify(projected).includes(config.standby.backgroundImagePath),
-    false,
-  );
+  for (const backgroundImagePath of config.standby.backgroundImagePaths) {
+    assert.equal(JSON.stringify(projected).includes(backgroundImagePath), false);
+  }
 });
 
-test('停用 Logo 與未選待機背景時只發布 null URL', () => {
-  const config = createV6Config();
+test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
+  const config = createV7Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
@@ -137,17 +152,21 @@ test('停用 Logo 與未選待機背景時只發布 null URL', () => {
     url: null,
     sizePercent: 100,
   });
-  assert.deepEqual(projected.standby, { backgroundImageUrl: null });
+  assert.deepEqual(projected.standby, {
+    backgroundMode: 'fixed',
+    backgroundImageUrls: [],
+    slideDurationSeconds: 10,
+  });
 });
 
 test('投影拒絕不合法 revision、設定內容與非受管理圖片識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV6Config(), -1),
-    createManagerSnapshot(createV6Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV6Config(), unknown: true }, 0),
+    createManagerSnapshot(createV7Config(), -1),
+    createManagerSnapshot(createV7Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV7Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV6Config(),
+        ...createV7Config(),
         logo: {
           enabled: true,
           path: 'logos/operator-logo.png',
@@ -158,26 +177,31 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV6Config(),
-        standby: { backgroundImagePath: 'C:\\private\\background.png' },
-      },
-      0,
-    ),
-    createManagerSnapshot(
-      {
-        ...createV6Config(),
+        ...createV7Config(),
         standby: {
-          backgroundImagePath:
-            'standby-backgrounds/operator-background.png',
+          ...createV7Config().standby,
+          backgroundImagePaths: ['C:\\private\\background.png'],
         },
       },
       0,
     ),
     createManagerSnapshot(
       {
-        ...createV6Config(),
+        ...createV7Config(),
+        standby: {
+          ...createV7Config().standby,
+          backgroundImagePaths: [
+            'standby-backgrounds/operator-background.png',
+          ],
+        },
+      },
+      0,
+    ),
+    createManagerSnapshot(
+      {
+        ...createV7Config(),
         display: {
-          ...createV6Config().display,
+          ...createV7Config().display,
           renderResolution: '1280x720',
         },
       },
@@ -185,9 +209,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV6Config(),
+        ...createV7Config(),
         playback: {
-          ...createV6Config().playback,
+          ...createV7Config().playback,
           pageDurationSeconds: 0,
         },
       },
@@ -202,8 +226,8 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
 });
 
 test('投影拒絕超界、非 5% 步進與非整數 Logo 大小', () => {
-  for (const sizePercent of [49, 201, 101, 100.5, '100']) {
-    const config = createV6Config();
+  for (const sizePercent of [49, 1_001, 101, 100.5, '100']) {
+    const config = createV7Config();
     config.logo.sizePercent = sizePercent;
 
     assert.throws(

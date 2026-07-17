@@ -12,7 +12,7 @@ const fixtureRoot = path.resolve(
   'ipc-bridge-smoke',
 );
 
-test('真實 Electron 完成內容與 v6 Logo 尺寸最小設定投影的 IPC round-trip', () => {
+test('真實 Electron 完成內容、v7 設定與待機背景多選的 IPC round-trip', () => {
   const electronBinary = require('electron');
   const result = spawnSync(electronBinary, [fixtureRoot], {
     encoding: 'utf8',

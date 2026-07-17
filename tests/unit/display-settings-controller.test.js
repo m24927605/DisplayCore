@@ -10,13 +10,17 @@ async function loadModule() {
 function createSnapshot(
   revision = 0,
   backgroundColor = '#000000',
-  backgroundImageUrl = null,
+  backgroundImageUrls = [],
   logoSizePercent = 100,
 ) {
   return {
-    configVersion: 6,
+    configVersion: 7,
     logo: { enabled: false, url: null, sizePercent: logoSizePercent },
-    standby: { backgroundImageUrl },
+    standby: {
+      backgroundMode: backgroundImageUrls.length > 1 ? 'slideshow' : 'fixed',
+      backgroundImageUrls,
+      slideDurationSeconds: 10,
+    },
     appearance: {
       backgroundColor,
       fontFamily: 'Microsoft JhengHei UI, sans-serif',
@@ -99,7 +103,7 @@ test('設定啟動先訂閱再 GET，較舊 GET 不覆蓋較新 event', async ()
     [2],
   );
   assert.equal(harness.applied[0].appearance.backgroundColor, '#223344');
-  assert.equal(harness.applied[0].standby.backgroundImageUrl, null);
+  assert.deepEqual(harness.applied[0].standby.backgroundImageUrls, []);
 });
 
 test('快速設定事件只套用最高 revision，畸形資料保留最後有效值', async () => {
@@ -110,7 +114,7 @@ test('快速設定事件只套用最高 revision，畸形資料保留最後有�
 
   const managedBackgroundUrl =
     'displaycore://app/managed/standby-background/fedcba987654321001234567.webp';
-  harness.emit(createSnapshot(3, '#333333', managedBackgroundUrl, 200));
+  harness.emit(createSnapshot(3, '#333333', [managedBackgroundUrl], 1_000));
   harness.emit(createSnapshot(2, '#222222'));
   harness.emit({ ...createSnapshot(4), unknown: true });
   harness.emit({
@@ -129,11 +133,11 @@ test('快速設定事件只套用最高 revision，畸形資料保留最後有�
     [0, 3, 5],
   );
   assert.equal(harness.applied.at(-1).appearance.backgroundColor, '#555555');
-  assert.equal(
-    harness.applied[1].standby.backgroundImageUrl,
-    managedBackgroundUrl,
+  assert.deepEqual(
+    harness.applied[1].standby.backgroundImageUrls,
+    [managedBackgroundUrl],
   );
-  assert.equal(harness.applied[1].logo.sizePercent, 200);
+  assert.equal(harness.applied[1].logo.sizePercent, 1_000);
 });
 
 test('畸形待機背景 URL 不覆蓋最後有效設定', async () => {
@@ -144,17 +148,25 @@ test('畸形待機背景 URL 不覆蓋最後有效設定', async () => {
 
   const managedBackgroundUrl =
     'displaycore://app/managed/standby-background/0123456789abcdef01234567.png';
-  harness.emit(createSnapshot(1, '#112233', managedBackgroundUrl));
-  harness.emit(createSnapshot(2, '#445566', 'file:///C:/private/background.png'));
-  harness.emit({ ...createSnapshot(3), standby: { backgroundImageUrl: null, extra: true } });
+  harness.emit(createSnapshot(1, '#112233', [managedBackgroundUrl]));
+  harness.emit(createSnapshot(2, '#445566', ['file:///C:/private/background.png']));
+  harness.emit({
+    ...createSnapshot(3),
+    standby: {
+      backgroundMode: 'fixed',
+      backgroundImageUrls: [],
+      slideDurationSeconds: 10,
+      extra: true,
+    },
+  });
 
   assert.deepEqual(
     harness.applied.map(({ revision }) => revision),
     [0, 1],
   );
-  assert.equal(
-    harness.applied.at(-1).standby.backgroundImageUrl,
-    managedBackgroundUrl,
+  assert.deepEqual(
+    harness.applied.at(-1).standby.backgroundImageUrls,
+    [managedBackgroundUrl],
   );
 });
 

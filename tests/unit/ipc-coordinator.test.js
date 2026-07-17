@@ -267,11 +267,16 @@ function createHarness({
   };
   const resolvedStandbyBackgroundImporter = standbyBackgroundImporter || {
     calls: 0,
-    async chooseAndImport() {
+    options: [],
+    async chooseAndImport(options) {
       this.calls += 1;
+      this.options.push(options);
       return {
         canceled: false,
-        assetPath: 'standby-backgrounds/0123456789abcdef01234567.png',
+        assetPaths: [
+          'standby-backgrounds/0123456789abcdef01234567.png',
+          'standby-backgrounds/abcdef0123456789abcdef01.webp',
+        ],
       };
     },
   };
@@ -439,6 +444,7 @@ test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼�
   const standbyBackground = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
     controlEvent,
+    { backgroundMode: 'slideshow' },
   );
 
   assert.equal(loaded.ok, true);
@@ -459,15 +465,19 @@ test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼�
     ok: true,
     data: {
       canceled: false,
-      assetPath: 'standby-backgrounds/0123456789abcdef01234567.png',
+      assetPaths: [
+        'standby-backgrounds/0123456789abcdef01234567.png',
+        'standby-backgrounds/abcdef0123456789abcdef01.webp',
+      ],
     },
   });
   assert.deepEqual(Object.keys(standbyBackground).sort(), ['data', 'ok']);
   assert.deepEqual(Object.keys(standbyBackground.data).sort(), [
-    'assetPath',
+    'assetPaths',
     'canceled',
   ]);
   assert.equal(standbyBackgroundImporter.calls, 1);
+  assert.deepEqual(standbyBackgroundImporter.options, [{ multiple: true }]);
 
   for (const channel of [
     IPC_CHANNELS.CONTROL_GET_SETTINGS,
@@ -485,6 +495,36 @@ test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼�
   }
 });
 
+test('待機背景模式由 Main 驗證，固定單選且無效 payload 不開啟選檔', async () => {
+  const { ipcMain, standbyBackgroundImporter, windows } = createHarness();
+  const controlEvent = createEvent(windows.control);
+
+  const fixed = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
+    controlEvent,
+    { backgroundMode: 'fixed' },
+  );
+  assert.equal(fixed.ok, true);
+  assert.deepEqual(standbyBackgroundImporter.options, [{ multiple: false }]);
+
+  for (const payload of [
+    undefined,
+    {},
+    { backgroundMode: 'carousel' },
+    { backgroundMode: 'slideshow', extra: true },
+  ]) {
+    const result = await ipcMain.invoke(
+      IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
+      controlEvent,
+      payload,
+    );
+    assert.equal(result.ok, false, JSON.stringify(payload));
+    assert.equal(result.error.code, 'VALIDATION_FAILED');
+  }
+
+  assert.equal(standbyBackgroundImporter.calls, 1);
+});
+
 test('Display 只能讀取最小設定投影，Control 不能冒充 Display', async () => {
   const { ipcMain, windows } = createHarness();
 
@@ -496,9 +536,13 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 6,
+      configVersion: 7,
       logo: { enabled: false, sizePercent: 100, url: null },
-      standby: { backgroundImageUrl: null },
+      standby: {
+        backgroundMode: 'fixed',
+        backgroundImageUrls: [],
+        slideDurationSeconds: 10,
+      },
       appearance: defaultConfig.appearance,
       dateTime: defaultConfig.dateTime,
       emergency: defaultConfig.emergency,
@@ -548,9 +592,13 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 6,
+    configVersion: 7,
     logo: { enabled: false, sizePercent: 150, url: null },
-    standby: { backgroundImageUrl: null },
+    standby: {
+      backgroundMode: 'fixed',
+      backgroundImageUrls: [],
+      slideDurationSeconds: 10,
+    },
     appearance: config.appearance,
     dateTime: config.dateTime,
     emergency: config.emergency,
@@ -682,6 +730,7 @@ test('待機背景格式錯誤回傳固定可操作訊息，不洩漏原始例�
   const result = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
     createEvent(windows.control),
+    { backgroundMode: 'slideshow' },
   );
 
   assert.deepEqual(result, {

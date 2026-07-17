@@ -5,7 +5,10 @@ const {
   PAGE_PROGRESS_PHASES,
   PLAYBACK_MODES,
 } = require('./channels');
-const { validateConfig } = require('../config/config-schema');
+const {
+  STANDBY_BACKGROUND_MODES,
+  validateConfig,
+} = require('../config/config-schema');
 
 // 所有限制都由 Main 再驗證，Renderer 的欄位狀態不能視為安全邊界。
 const MESSAGES_PER_PAGE = 3;
@@ -25,6 +28,7 @@ const CLEAR_PRESENTATION_KEYS = Object.freeze(['expectedContentRevision']);
 const MESSAGE_KEYS = Object.freeze(['alignment', 'message']);
 const EMERGENCY_KEYS = Object.freeze(['code']);
 const SAVE_SETTINGS_KEYS = Object.freeze(['config', 'expectedRevision']);
+const CHOOSE_STANDBY_BACKGROUND_KEYS = Object.freeze(['backgroundMode']);
 const PAGE_PROGRESS_KEYS = Object.freeze([
   'displayEpoch',
   'layoutGeneration',
@@ -260,6 +264,25 @@ function validateEmergencyPayload(payload) {
   return { ok: true, value: { code: payload.code } };
 }
 
+/** 選檔方式由 Main 白名單決定，Renderer 不能直接指定原生 dialog options。 */
+function validateChooseStandbyBackgroundPayload(payload) {
+  if (
+    !hasExactKeys(payload, CHOOSE_STANDBY_BACKGROUND_KEYS) ||
+    typeof payload.backgroundMode !== 'string' ||
+    !Object.values(STANDBY_BACKGROUND_MODES).includes(payload.backgroundMode)
+  ) {
+    return validationFailure(
+      '待機背景模式必須是 fixed 或 slideshow。',
+      'backgroundMode',
+    );
+  }
+
+  return {
+    ok: true,
+    value: { backgroundMode: payload.backgroundMode },
+  };
+}
+
 /** 設定儲存必須攜帶完整 config 與操作者所見的 revision。 */
 function validateSaveSettingsPayload(payload) {
   if (!hasExactKeys(payload, SAVE_SETTINGS_KEYS)) {
@@ -378,6 +401,7 @@ module.exports = {
   MAX_PAGE_DURATION_SECONDS,
   MESSAGES_PER_PAGE,
   MIN_PAGE_DURATION_SECONDS,
+  validateChooseStandbyBackgroundPayload,
   validateClearPresentationPayload,
   validateEmergencyPayload,
   validatePageProgressPayload,

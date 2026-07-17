@@ -32,7 +32,8 @@ const { PresentationStore } = require(
   path.join(projectRoot, 'ipc', 'presentation-store'),
 );
 const {
-  installLocalProtocol,
+  APP_SCHEME,
+  createLocalProtocolHandler,
   registerAppScheme,
 } = require(path.join(projectRoot, 'main', 'local-protocol'));
 const {
@@ -124,6 +125,42 @@ async function waitFor(predicate, description, timeoutMs = 6_000) {
 
 function execute(source) {
   return displayWindow.webContents.executeJavaScript(source, true);
+}
+
+function createDelayedReadFileSystem(delayedFileName) {
+  let started = false;
+  let released = false;
+  let releaseRead;
+  const releasedPromise = new Promise((resolve) => {
+    releaseRead = resolve;
+  });
+
+  return Object.freeze({
+    fileSystem: Object.freeze({
+      lstat: (...args) => fileSystem.lstat(...args),
+      async readFile(filePath, ...args) {
+        if (
+          path.basename(path.dirname(filePath)) === 'standby-backgrounds' &&
+          path.basename(filePath) === delayedFileName &&
+          !released
+        ) {
+          started = true;
+          await releasedPromise;
+        }
+
+        return fileSystem.readFile(filePath, ...args);
+      },
+    }),
+    hasStarted: () => started,
+    release() {
+      if (released) {
+        return;
+      }
+
+      released = true;
+      releaseRead();
+    },
+  });
 }
 
 async function waitForRevision(revision, fitted = true) {
@@ -298,7 +335,8 @@ async function verifyStandbyPresentation(
 ) {
   await waitFor(
     () => execute(`(() => {
-      const background = document.getElementById('standby-background-image');
+      const background = [...document.querySelectorAll('.standby-background-image')]
+        .find((image) => !image.hidden);
       const logo = document.getElementById('display-logo');
       return document.getElementById('display-stage').dataset.mode === 'blank' &&
         background && !background.hidden && background.complete &&
@@ -312,7 +350,9 @@ async function verifyStandbyPresentation(
     const stage = document.getElementById('display-stage').getBoundingClientRect();
     const layerElement = document.getElementById('standby-background-layer');
     const layer = layerElement.getBoundingClientRect();
-    const backgroundElement = document.getElementById('standby-background-image');
+    const backgroundElement = [...document.querySelectorAll(
+      '.standby-background-image'
+    )].find((image) => !image.hidden);
     const background = backgroundElement.getBoundingClientRect();
     const logoElement = document.getElementById('display-logo');
     const logo = logoElement.getBoundingClientRect();
@@ -405,9 +445,9 @@ async function verifyLogoSizeScaling(mode) {
         sizePercent: ${sizePercent},
         scale: rootStyle.getPropertyValue('--logo-size-scale').trim(),
         frameHeight: frame.getBoundingClientRect().height,
+        frameWidth: frame.getBoundingClientRect().width,
         imageHeight: logo.getBoundingClientRect().height,
-        frameMaxWidth: Number.parseFloat(getComputedStyle(frame).maxInlineSize),
-        imageMaxWidth: Number.parseFloat(getComputedStyle(logo).maxInlineSize),
+        imageWidth: logo.getBoundingClientRect().width,
         filter: getComputedStyle(logo).filter,
         treatment: frame.dataset.logoTreatment,
         standbyBackgroundHidden:
@@ -418,8 +458,8 @@ async function verifyLogoSizeScaling(mode) {
     assert.equal(measurement.scale, String(sizePercent / 100));
     assert.ok(measurement.frameHeight > 0);
     assert.ok(Math.abs(measurement.frameHeight - measurement.imageHeight) <= 0.5);
-    assert.ok(Number.isFinite(measurement.frameMaxWidth));
-    assert.ok(Number.isFinite(measurement.imageMaxWidth));
+    assert.ok(measurement.frameWidth > 0);
+    assert.ok(measurement.imageWidth > 0);
     assert.equal(measurement.standbyBackgroundHidden, mode === 'page');
     assertLogoHighlight(measurement.filter, `${mode} ${sizePercent}%`);
     assert.equal(measurement.treatment, 'bright-white');
@@ -430,8 +470,8 @@ async function verifyLogoSizeScaling(mode) {
   for (const [field, label] of [
     ['frameHeight', 'frame 高度'],
     ['imageHeight', 'image 高度'],
-    ['frameMaxWidth', 'frame 最大寬度'],
-    ['imageMaxWidth', 'image 最大寬度'],
+    ['frameWidth', 'frame 寬度'],
+    ['imageWidth', 'image 寬度'],
   ]) {
     assert.ok(
       Math.abs((half[field] / normal[field]) - 0.5) <= 0.05,
@@ -441,6 +481,111 @@ async function verifyLogoSizeScaling(mode) {
       Math.abs((double[field] / normal[field]) - 2) <= 0.05,
       `${mode} ${label} 200% 比例`,
     );
+  }
+
+  const maximumResolutions = [
+    [1366, 768],
+    [1600, 900],
+    [1920, 1080],
+    [2560, 1440],
+    [3840, 2160],
+  ];
+
+  for (const [width, height] of maximumResolutions) {
+    displayWindow.setContentSize(width, height, false);
+    await waitFor(
+      () => execute(
+        `window.innerWidth === ${width} && window.innerHeight === ${height}`,
+      ),
+      `${mode} ${width}×${height} viewport`,
+    );
+    const growthMeasurements = [];
+
+    for (const sizePercent of [500, 1_000]) {
+      const config = structuredClone(settingsManager.getSnapshot().config);
+      config.logo.sizePercent = sizePercent;
+      config.display.renderResolution = 'auto';
+      const revision = settingsManager.publish(config).revision;
+      await waitFor(
+        () => execute(`(() => {
+          const stage = document.getElementById('display-stage');
+          const logo = document.getElementById('display-logo');
+          return stage.dataset.mode === '${mode}' &&
+            stage.dataset.settingsRevision === '${revision}' &&
+            ${mode === 'page'
+              ? `stage.dataset.fittedSettingsRevision === '${revision}' &&`
+              : ''}
+            logo && !logo.hidden && logo.complete && logo.naturalWidth > 0;
+        })()`),
+        `${mode} ${width}×${height} Logo ${sizePercent}% 安全排版`,
+      );
+      await execute(
+        `new Promise((resolve) => requestAnimationFrame(() => resolve(true)))`,
+      );
+
+      growthMeasurements.push(await execute(`(() => {
+        const stage = document.getElementById('display-stage').getBoundingClientRect();
+        const frame = document.getElementById('logo-frame').getBoundingClientRect();
+        const logo = document.getElementById('display-logo').getBoundingClientRect();
+        const rows = [...document.querySelectorAll('.message-row')];
+        return {
+          scale: getComputedStyle(document.documentElement)
+            .getPropertyValue('--logo-size-scale').trim(),
+          stageWidth: stage.width,
+          stageHeight: stage.height,
+          frameWidth: frame.width,
+          frameHeight: frame.height,
+          imageWidth: logo.width,
+          imageHeight: logo.height,
+          insideStage:
+            frame.left >= stage.left - 0.5 && frame.top >= stage.top - 0.5 &&
+            frame.right <= stage.right + 0.5 && frame.bottom <= stage.bottom + 0.5 &&
+            logo.left >= stage.left - 0.5 && logo.top >= stage.top - 0.5 &&
+            logo.right <= stage.right + 0.5 && logo.bottom <= stage.bottom + 0.5,
+          rowsRemainUsable: rows.every((row) => {
+            const text = row.querySelector('.message-text, .marquee-copy');
+            return row.clientHeight > 0 && text &&
+              text.getBoundingClientRect().height <= row.clientHeight + 0.5;
+          }),
+          viewportHasOverflow:
+            document.documentElement.scrollWidth > document.documentElement.clientWidth ||
+            document.documentElement.scrollHeight > document.documentElement.clientHeight,
+        };
+      })()`));
+    }
+
+    const label = `${mode} ${width}×${height}`;
+    const [fiveHundred, maximum] = growthMeasurements;
+    assert.ok(
+      maximum.frameHeight > fiveHundred.frameHeight + 0.5,
+      `${label} 500% 至 1000% frame 必須繼續成長`,
+    );
+    assert.ok(
+      maximum.imageHeight > fiveHundred.imageHeight + 0.5,
+      `${label} 500% 至 1000% image 必須繼續成長`,
+    );
+    assert.equal(maximum.scale, '10', label);
+    assert.ok(
+      maximum.frameWidth <= maximum.stageWidth * 0.92 + 0.75,
+      `${label} frame 寬度`,
+    );
+    assert.ok(
+      maximum.imageWidth <= maximum.stageWidth * 0.92 + 0.75,
+      `${label} image 寬度`,
+    );
+    const maximumBlockRatio = mode === 'blank' ? 0.42 : 0.30;
+    assert.ok(
+      maximum.frameHeight <=
+        maximum.stageHeight * maximumBlockRatio + 0.75,
+      `${label} frame 高度`,
+    );
+    assert.ok(
+      maximum.imageHeight <= maximum.frameHeight + 0.5,
+      `${label} image 高度`,
+    );
+    assert.equal(maximum.insideStage, true, `${label} 舞台邊界`);
+    assert.equal(maximum.rowsRemainUsable, true, `${label} 訊息列`);
+    assert.equal(maximum.viewportHasOverflow, false, `${label} viewport overflow`);
   }
 }
 
@@ -663,8 +808,11 @@ async function verifyConfiguredRenderResolutions() {
 async function runWorkflow(
   timers,
   expectedLogoUrl,
-  expectedStandbyBackgroundUrl,
+  expectedStandbyBackgroundUrls,
+  delayedSecondBackgroundRead,
 ) {
+  const [expectedStandbyBackgroundUrl, secondStandbyBackgroundUrl] =
+    expectedStandbyBackgroundUrls;
   await waitFor(
     () => execute(`(() =>
       document.documentElement.dataset.displayReady === 'true' &&
@@ -706,6 +854,46 @@ async function runWorkflow(
     expectedStandbyBackgroundUrl,
   );
 
+  await waitFor(
+    () => Promise.resolve(delayedSecondBackgroundRead.hasStarted()),
+    '第二張待機背景開始載入',
+  );
+
+  const whileSecondBackgroundLoads = await execute(`(() => {
+    const layer = document.getElementById('standby-background-layer');
+    const images = [...document.querySelectorAll('.standby-background-image')];
+    const visibleImages = images.filter((image) => !image.hidden);
+    const pendingImage = images.find(
+      (image) => image.getAttribute('src') === '${secondStandbyBackgroundUrl}'
+    );
+    return {
+      imageCount: images.length,
+      layerHidden: layer.hidden,
+      visibleSources: visibleImages.map((image) => image.getAttribute('src')),
+      pendingSource: pendingImage?.getAttribute('src') ?? null,
+      pendingHidden: pendingImage?.hidden ?? null,
+    };
+  })()`);
+  assert.deepEqual(whileSecondBackgroundLoads, {
+    imageCount: 2,
+    layerHidden: false,
+    visibleSources: [expectedStandbyBackgroundUrl],
+    pendingSource: secondStandbyBackgroundUrl,
+    pendingHidden: true,
+  });
+
+  delayedSecondBackgroundRead.release();
+  await waitFor(
+    () => execute(`(() => {
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return document.getElementById('display-stage').dataset.mode === 'blank' &&
+        image?.complete && image.naturalWidth > 0 &&
+        image.getAttribute('src') === '${secondStandbyBackgroundUrl}';
+    })()`),
+    '待機背景成功載入後原子切換至第二張',
+  );
+
   const literalHtml = '<img src=x onerror="globalThis.displayPwned=true">\n純文字';
   const messages = [
     { message: '001請至前廳', alignment: 'left' },
@@ -722,6 +910,19 @@ async function runWorkflow(
   });
   assert.equal(timers.handles.length, 0, 'Display ready 前不得啟動 page timer');
   await waitForRevision(1);
+  const pausedStandbySources = await execute(
+    `[...document.querySelectorAll('.standby-background-image')]
+      .map((image) => image.getAttribute('src'))`,
+  );
+  await new Promise((resolve) => setTimeout(resolve, 1_200));
+  assert.deepEqual(
+    await execute(
+      `[...document.querySelectorAll('.standby-background-image')]
+        .map((image) => image.getAttribute('src'))`,
+    ),
+    pausedStandbySources,
+    '一般訊息頁不得繼續輪播待機背景',
+  );
   await waitFor(
     () => Promise.resolve(timers.active().length === 1),
     '第一頁 ready 後啟動最短停留 timer',
@@ -746,8 +947,9 @@ async function runWorkflow(
       chromeHidden: document.getElementById('display-chrome').hidden,
       standbyBackgroundHidden:
         document.getElementById('standby-background-layer').hidden,
-      standbyBackgroundSource:
-        document.getElementById('standby-background-image').getAttribute('src'),
+      standbyBackgroundSources: [
+        ...document.querySelectorAll('.standby-background-image')
+      ].map((image) => image.getAttribute('src')),
       logoHidden: document.getElementById('display-logo').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
       clockHidden: document.getElementById('display-clock').hidden,
@@ -792,7 +994,7 @@ async function runWorkflow(
     normalHasClock: true,
     chromeHidden: false,
     standbyBackgroundHidden: true,
-    standbyBackgroundSource: expectedStandbyBackgroundUrl,
+    standbyBackgroundSources: pausedStandbySources,
     logoHidden: false,
     logoSource: expectedLogoUrl,
     clockHidden: false,
@@ -817,10 +1019,12 @@ async function runWorkflow(
   await verifyDisplayedClockOffset(3_661, 'Display 套用離線時間偏移');
   assert.match(firstPage.fontFamily, /^Arial/i);
   assert.doesNotMatch(firstPage.logoSource, /file:|Users|userData/i);
-  assert.doesNotMatch(
-    firstPage.standbyBackgroundSource,
-    /file:|Users|userData|standby-backgrounds/i,
-  );
+  for (const source of firstPage.standbyBackgroundSources.filter(Boolean)) {
+    assert.doesNotMatch(
+      source,
+      /file:|Users|userData|standby-backgrounds/i,
+    );
+  }
   assert.equal(
     firstPage.rowsFitVertically,
     true,
@@ -1047,6 +1251,8 @@ async function runWorkflow(
     const stage = document.getElementById('display-stage').getBoundingClientRect();
     const message = document.getElementById('standby-message').getBoundingClientRect();
     const clock = document.getElementById('display-clock').getBoundingClientRect();
+    const background = [...document.querySelectorAll('.standby-background-image')]
+      .find((image) => !image.hidden);
     return {
       mode: document.getElementById('display-stage').dataset.mode,
       announcement: document.getElementById('display-announcement').textContent,
@@ -1056,11 +1262,10 @@ async function runWorkflow(
       chromeHidden: document.getElementById('display-chrome').hidden,
       standbyBackgroundHidden:
         document.getElementById('standby-background-layer').hidden,
-      standbyBackgroundSource:
-        document.getElementById('standby-background-image').getAttribute('src'),
-      standbyBackgroundObjectFit: getComputedStyle(
-        document.getElementById('standby-background-image')
-      ).objectFit,
+      standbyBackgroundSource: background?.getAttribute('src') ?? null,
+      standbyBackgroundObjectFit: background
+        ? getComputedStyle(background).objectFit
+        : null,
       standbyHidden: document.getElementById('standby-layer').hidden,
       standbyText: document.getElementById('standby-message').textContent,
       clockText: document.getElementById('display-clock').textContent,
@@ -1148,6 +1353,23 @@ async function run() {
     ),
     STANDBY_BACKGROUND_BYTES,
   );
+  const secondStandbyBackgroundDigest = createHash('sha256')
+    .update(LOGO_BYTES)
+    .digest('hex')
+    .slice(0, 24);
+  const secondStandbyBackgroundFileName =
+    `${secondStandbyBackgroundDigest}.png`;
+  const secondStandbyBackgroundAssetPath =
+    `standby-backgrounds/${secondStandbyBackgroundFileName}`;
+  const secondExpectedStandbyBackgroundUrl =
+    `displaycore://app/managed/standby-background/${secondStandbyBackgroundFileName}`;
+  await fileSystem.writeFile(
+    path.join(
+      managedStandbyBackgroundDirectory,
+      secondStandbyBackgroundFileName,
+    ),
+    LOGO_BYTES,
+  );
 
   const initialConfig = structuredClone(defaultConfig);
   initialConfig.logo = {
@@ -1156,7 +1378,12 @@ async function run() {
     sizePercent: 100,
   };
   initialConfig.standby = {
-    backgroundImagePath: standbyBackgroundAssetPath,
+    backgroundMode: 'slideshow',
+    backgroundImagePaths: [
+      standbyBackgroundAssetPath,
+      secondStandbyBackgroundAssetPath,
+    ],
+    slideDurationSeconds: 1,
   };
   initialConfig.appearance = {
     ...initialConfig.appearance,
@@ -1182,8 +1409,10 @@ async function run() {
     { cache: false },
   );
   configureOfflineSession(appSession);
-  installLocalProtocol({
-    protocol: appSession.protocol,
+  const delayedSecondBackgroundRead = createDelayedReadFileSystem(
+    secondStandbyBackgroundFileName,
+  );
+  appSession.protocol.handle(APP_SCHEME, createLocalProtocolHandler({
     net,
     appRoot: projectRoot,
     managedLogoDirectory,
@@ -1192,9 +1421,10 @@ async function run() {
       const logo = settingsManager.getSnapshot().config.logo;
       return logo.enabled ? logo.path : null;
     },
-    getAllowedStandbyBackgroundPath: () =>
-      settingsManager.getSnapshot().config.standby.backgroundImagePath,
-  });
+    getAllowedStandbyBackgroundPaths: () =>
+      settingsManager.getSnapshot().config.standby.backgroundImagePaths,
+    fileSystem: delayedSecondBackgroundRead.fileSystem,
+  }));
 
   displayWindow = new BrowserWindow(
     createDisplayWindowOptions({
@@ -1261,7 +1491,11 @@ async function run() {
   await runWorkflow(
     timers,
     expectedLogoUrl,
-    expectedStandbyBackgroundUrl,
+    [
+      expectedStandbyBackgroundUrl,
+      secondExpectedStandbyBackgroundUrl,
+    ],
+    delayedSecondBackgroundRead,
   );
   finish(0, '[DisplayCore] Display window workflow succeeded.');
 }

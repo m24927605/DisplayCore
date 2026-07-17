@@ -382,8 +382,14 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('inspection-background-color-input').value,
     releaseBackground:
       document.getElementById('release-background-color-input').value,
-    standbyBackgroundPath:
-      document.getElementById('standby-background-path-input').value,
+    standbyBackgroundMode:
+      document.getElementById('standby-background-mode-select').value,
+    standbyBackgroundSummary:
+      document.getElementById('standby-background-summary').value,
+    standbySlideDuration:
+      document.getElementById('standby-slide-duration-input').value,
+    standbySlideDurationHidden:
+      document.getElementById('standby-slide-duration-field').hidden,
     hasHour12: document.getElementById('hour12-input') !== null,
     clockTimeUses24HourFormat: /^(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(
       document.getElementById('clock-time-input').value
@@ -404,13 +410,16 @@ async function openPlaybackSettings(settingsManager) {
     hasFullscreenToggle: false,
     logoSizePercent: '100',
     logoSizeMinimum: '50',
-    logoSizeMaximum: '200',
+    logoSizeMaximum: '1000',
     logoSizeStep: '5',
     fontSizePercent: '100',
     lineSpacingPercent: '100',
     inspectionBackground: '#000000',
     releaseBackground: '#000000',
-    standbyBackgroundPath: '',
+    standbyBackgroundMode: 'fixed',
+    standbyBackgroundSummary: '尚未選擇背景圖片',
+    standbySlideDuration: '10',
+    standbySlideDurationHidden: true,
     hasHour12: false,
     clockTimeUses24HourFormat: true,
     clockTimeInputType: 'text',
@@ -451,9 +460,9 @@ async function openPlaybackSettings(settingsManager) {
   await waitFor(
     () => execute(`(() =>
       document.getElementById('settings-status').textContent ===
-        '待機背景圖片已匯入；儲存設定後才會採用。' &&
-      document.getElementById('standby-background-path-input').value ===
-        'standby-backgrounds/abcdefabcdefabcdefabcdef.png' &&
+        '已匯入 1 張待機背景；儲存設定後才會採用。' &&
+      document.getElementById('standby-background-summary').value ===
+        '已選擇 1 張圖片' &&
       document.getElementById('settings-dirty-status').textContent ===
         '有未儲存變更' &&
       document.activeElement?.id === 'choose-standby-background-button'
@@ -463,7 +472,7 @@ async function openPlaybackSettings(settingsManager) {
 
   await setInput('page-duration-input', '4');
   await setInput('round-count-input', '2');
-  await setInput('logo-size-percent-input', '125');
+  await setInput('logo-size-percent-input', '1000');
 
   // Regression: ISSUE-001 — 播放設定變更未被納入系統設定 dirty state。
   // Found by /qa on 2026-07-17
@@ -524,7 +533,7 @@ async function openPlaybackSettings(settingsManager) {
   );
   assert.equal(
     settingsManager.getSnapshot().config.logo.sizePercent,
-    125,
+    1000,
   );
   assert.equal(
     settingsManager.getSnapshot().config.dateTime.offsetSeconds,
@@ -541,8 +550,11 @@ async function openPlaybackSettings(settingsManager) {
     roundCount: 2,
   });
   assert.deepEqual(settingsManager.getSnapshot().config.standby, {
-    backgroundImagePath:
+    backgroundMode: 'fixed',
+    backgroundImagePaths: [
       'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+    ],
+    slideDurationSeconds: 10,
   });
 
   // 第二次開啟測試離線時間校正與邏輯排版解析度，避免與外觀草稿混淆。
@@ -564,8 +576,12 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('save-settings-button').disabled,
     dirtyStatus:
       document.getElementById('settings-dirty-status').textContent,
-    standbyBackgroundPath:
-      document.getElementById('standby-background-path-input').value,
+    standbyBackgroundMode:
+      document.getElementById('standby-background-mode-select').value,
+    standbyBackgroundSummary:
+      document.getElementById('standby-background-summary').value,
+    standbySlideDuration:
+      document.getElementById('standby-slide-duration-input').value,
     logoSizePercent:
       document.getElementById('logo-size-percent-input').value,
   }))()`), {
@@ -574,9 +590,10 @@ async function openPlaybackSettings(settingsManager) {
     finiteChecked: true,
     saveDisabled: true,
     dirtyStatus: '所有變更皆已儲存',
-    standbyBackgroundPath:
-      'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
-    logoSizePercent: '125',
+    standbyBackgroundMode: 'fixed',
+    standbyBackgroundSummary: '已選擇 1 張圖片',
+    standbySlideDuration: '10',
+    logoSizePercent: '1000',
   });
 
   // Logo 大小與背景移除只改草稿；未儲存關閉必須一起恢復 baseline。
@@ -584,7 +601,8 @@ async function openPlaybackSettings(settingsManager) {
   await click('remove-standby-background-button');
   await waitFor(
     () => execute(`(() =>
-      document.getElementById('standby-background-path-input').value === '' &&
+      document.getElementById('standby-background-summary').value ===
+        '尚未選擇背景圖片' &&
       document.getElementById('settings-dirty-status').textContent ===
         '有未儲存變更'
     )()`),
@@ -600,14 +618,14 @@ async function openPlaybackSettings(settingsManager) {
     () => execute(`(() =>
       document.getElementById('settings-dialog').open &&
       document.getElementById('settings-status').textContent === '設定已載入。' &&
-      document.getElementById('standby-background-path-input').value ===
-        'standby-backgrounds/abcdefabcdefabcdefabcdef.png' &&
-      document.getElementById('logo-size-percent-input').value === '125'
+      document.getElementById('standby-background-summary').value ===
+        '已選擇 1 張圖片' &&
+      document.getElementById('logo-size-percent-input').value === '1000'
     )()`),
     '重新載入已儲存待機背景與 Logo 大小',
   );
 
-  // 載入預設值也只產生草稿；捨棄後仍應回到已儲存的 125%。
+  // 載入預設值也只產生草稿；捨棄後仍應回到已儲存的 1000%。
   await click('load-defaults-button');
   await waitFor(
     () => execute(`(() =>
@@ -628,7 +646,7 @@ async function openPlaybackSettings(settingsManager) {
     () => execute(`(() =>
       document.getElementById('settings-dialog').open &&
       document.getElementById('settings-status').textContent === '設定已載入。' &&
-      document.getElementById('logo-size-percent-input').value === '125'
+      document.getElementById('logo-size-percent-input').value === '1000'
     )()`),
     '捨棄後重新載入 Logo 大小 baseline',
   );
@@ -648,10 +666,10 @@ async function openPlaybackSettings(settingsManager) {
   );
   assert.equal(
     await execute(`document.getElementById('logo-size-percent-error').textContent`),
-    'Logo 大小必須介於 50% 至 200%，並以 5% 遞增。',
+    'Logo 大小必須介於 50% 至 1000%，並以 5% 遞增。',
   );
   assert.equal(settingsManager.getSnapshot().revision, 1);
-  await setInput('logo-size-percent-input', '125');
+  await setInput('logo-size-percent-input', '1000');
 
   await setInput('clock-time-input', '24:00:00');
   await click('save-settings-button');
@@ -728,21 +746,69 @@ async function openPlaybackSettings(settingsManager) {
     roundCount: 2,
   });
 
-  // 移除並儲存後才真正回到純色待機背景。
+  // 真實操作輪播模式、多選匯入與輪播秒數，確認 renderer → preload → Main 契約。
   await click('open-settings-button');
   await waitFor(
     () => execute(`document.getElementById('settings-dialog').open === true`),
-    '開啟待機背景移除驗證',
+    '開啟待機背景輪播驗證',
   );
-  await click('remove-standby-background-button');
+  await execute(`(() => {
+    const mode = document.getElementById('standby-background-mode-select');
+    mode.value = 'slideshow';
+    mode.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('standby-slide-duration-field').hidden === false &&
+      document.getElementById('standby-slide-duration-input').disabled === false &&
+      document.getElementById('choose-standby-background-button').textContent ===
+        '選擇多張背景圖片'
+    )()`),
+    '切換多張背景輪播模式',
+  );
+  await click('choose-standby-background-button');
+  await setInput('standby-slide-duration-input', '12');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('standby-background-summary').value ===
+        '已選擇 2 張圖片' &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '有未儲存變更'
+    )()`),
+    '匯入兩張輪播背景',
+  );
   await click('save-settings-button');
   await waitFor(
     () => settingsManager.getSnapshot().revision === 3 &&
       execute(`document.getElementById('settings-dialog').open === false`),
-    '儲存移除待機背景',
+    '儲存待機背景輪播',
   );
   assert.deepEqual(settingsManager.getSnapshot().config.standby, {
-    backgroundImagePath: null,
+    backgroundMode: 'slideshow',
+    backgroundImagePaths: [
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+      'standby-backgrounds/1234567890abcdef12345678.jpg',
+    ],
+    slideDurationSeconds: 12,
+  });
+
+  // 清除全部並儲存後才真正回到純色待機背景。
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`document.getElementById('settings-dialog').open === true`),
+    '開啟待機背景清除驗證',
+  );
+  await click('remove-standby-background-button');
+  await click('save-settings-button');
+  await waitFor(
+    () => settingsManager.getSnapshot().revision === 4 &&
+      execute(`document.getElementById('settings-dialog').open === false`),
+    '儲存清除全部待機背景',
+  );
+  assert.deepEqual(settingsManager.getSnapshot().config.standby, {
+    backgroundMode: 'slideshow',
+    backgroundImagePaths: [],
+    slideDurationSeconds: 12,
   });
 }
 
@@ -988,7 +1054,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     )()`),
     '捨棄播放草稿並回復 baseline',
   );
-  assert.equal(settingsManager.getSnapshot().revision, 3);
+  assert.equal(settingsManager.getSnapshot().revision, 4);
   assert.deepEqual(settingsManager.getSnapshot().config.playback, {
     pageDurationSeconds: 4,
     repeatMode: 'finite',
@@ -1019,7 +1085,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     '無效播放秒數顯示欄位錯誤並聚焦',
   );
   await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(settingsManager.getSnapshot().revision, 3);
+  assert.equal(settingsManager.getSnapshot().revision, 4);
   assert.deepEqual(store.getControlSnapshot(), beforeInvalidRemoval);
   assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval);
   assert.deepEqual(await execute(`(() => ({
@@ -1245,11 +1311,15 @@ async function run() {
     },
   };
   const standbyBackgroundImporter = {
-    async chooseAndImport() {
+    async chooseAndImport({ multiple }) {
       return {
         canceled: false,
-        assetPath:
+        assetPaths: multiple ? [
           'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+          'standby-backgrounds/1234567890abcdef12345678.jpg',
+        ] : [
+          'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+        ],
       };
     },
   };

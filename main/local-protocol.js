@@ -170,21 +170,29 @@ async function serveManagedImage({
   method,
   assetPathPrefix,
   managedDirectory,
-  getAllowedPath,
+  getAllowedPath = null,
+  getAllowedPaths = null,
   fileSystem,
 }) {
   if (
     typeof managedDirectory !== 'string' ||
     managedDirectory.length === 0 ||
-    typeof getAllowedPath !== 'function'
+    (typeof getAllowedPath !== 'function' &&
+      typeof getAllowedPaths !== 'function')
   ) {
     return createErrorResponse(404, 'Not Found');
   }
 
   try {
     const expectedAssetPath = `${assetPathPrefix}/${fileName}`;
+    const allowed = typeof getAllowedPaths === 'function'
+      ? getAllowedPaths()
+      : null;
+    const isAllowed = typeof getAllowedPaths === 'function'
+      ? Array.isArray(allowed) && allowed.includes(expectedAssetPath)
+      : getAllowedPath() === expectedAssetPath;
 
-    if (getAllowedPath() !== expectedAssetPath) {
+    if (!isAllowed) {
       return createErrorResponse(404, 'Not Found');
     }
 
@@ -257,7 +265,7 @@ async function serveManagedImage({
  * @param {string|null} [dependencies.managedLogoDirectory]
  * @param {(() => string|null)|null} [dependencies.getAllowedLogoPath]
  * @param {string|null} [dependencies.managedStandbyBackgroundDirectory]
- * @param {(() => string|null)|null} [dependencies.getAllowedStandbyBackgroundPath]
+ * @param {(() => string[])|null} [dependencies.getAllowedStandbyBackgroundPaths]
  * @param {typeof defaultFileSystem} [dependencies.fileSystem]
  * @returns {(request: GlobalRequest) => Promise<Response>}
  */
@@ -267,7 +275,7 @@ function createLocalProtocolHandler({
   managedLogoDirectory = null,
   getAllowedLogoPath = null,
   managedStandbyBackgroundDirectory = null,
-  getAllowedStandbyBackgroundPath = null,
+  getAllowedStandbyBackgroundPaths = null,
   fileSystem = defaultFileSystem,
 }) {
   return async function handleLocalResource(request) {
@@ -299,7 +307,7 @@ function createLocalProtocolHandler({
         method,
         assetPathPrefix: 'standby-backgrounds',
         managedDirectory: managedStandbyBackgroundDirectory,
-        getAllowedPath: getAllowedStandbyBackgroundPath,
+        getAllowedPaths: getAllowedStandbyBackgroundPaths,
         fileSystem,
       });
     }
@@ -328,7 +336,7 @@ function createLocalProtocolHandler({
  * @param {string} dependencies.managedLogoDirectory
  * @param {() => string|null} dependencies.getAllowedLogoPath
  * @param {string} dependencies.managedStandbyBackgroundDirectory
- * @param {() => string|null} dependencies.getAllowedStandbyBackgroundPath
+ * @param {() => string[]} dependencies.getAllowedStandbyBackgroundPaths
  */
 function installLocalProtocol({
   protocol,
@@ -337,7 +345,7 @@ function installLocalProtocol({
   managedLogoDirectory,
   getAllowedLogoPath,
   managedStandbyBackgroundDirectory,
-  getAllowedStandbyBackgroundPath,
+  getAllowedStandbyBackgroundPaths,
 }) {
   protocol.handle(
     APP_SCHEME,
@@ -347,7 +355,7 @@ function installLocalProtocol({
       managedLogoDirectory,
       getAllowedLogoPath,
       managedStandbyBackgroundDirectory,
-      getAllowedStandbyBackgroundPath,
+      getAllowedStandbyBackgroundPaths,
     }),
   );
 }

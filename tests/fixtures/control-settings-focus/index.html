@@ -62,15 +62,29 @@
               id="logo-size-percent-input"
               type="number"
               min="50"
-              max="200"
+              max="1000"
               step="5"
               value="100"
             >
             <p id="logo-size-percent-error" hidden></p>
             <button id="choose-logo-button" type="button">選擇 Logo</button>
             <button id="remove-logo-button" type="button">移除 Logo</button>
-            <input id="standby-background-path-input" type="text">
-            <p id="standby-background-path-error" hidden></p>
+            <select id="standby-background-mode-select">
+              <option value="fixed">固定圖片</option>
+              <option value="slideshow">多張輪播</option>
+            </select>
+            <input id="standby-background-summary" type="text" readonly>
+            <p id="standby-background-error" hidden></p>
+            <div id="standby-slide-duration-field" hidden>
+              <input
+                id="standby-slide-duration-input"
+                type="number"
+                min="1"
+                max="3600"
+                value="10"
+              >
+              <p id="standby-slide-duration-error" hidden></p>
+            </div>
             <button id="choose-standby-background-button" type="button">
               選擇待機背景圖片
             </button>
@@ -155,13 +169,17 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 6,
+        configVersion: 7,
         logo: Object.freeze({
           enabled: false,
           path: null,
           sizePercent: 100,
         }),
-        standby: Object.freeze({ backgroundImagePath: null }),
+        standby: Object.freeze({
+          backgroundMode: 'fixed',
+          backgroundImagePaths: Object.freeze([]),
+          slideDurationSeconds: 10,
+        }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
           fontFamily: 'Arial, sans-serif',

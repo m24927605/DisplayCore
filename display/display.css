@@ -12,6 +12,13 @@
     sans-serif;
   --logo-outline: rgb(255 255 255 / 10%);
   --logo-size-scale: 1;
+  --logo-page-size-scale: 1;
+  --logo-standby-size-scale: 1;
+  --logo-mode-size-scale: var(--logo-page-size-scale);
+  --logo-max-inline: 92cqw;
+  --logo-page-max-block: 30cqh;
+  --logo-standby-max-block: 42cqh;
+  --logo-mode-max-block: var(--logo-page-max-block);
   --standby-scrim: rgb(0 0 0 / 48%);
   --display-safe-block: clamp(1rem, 3.5cqh, 12rem);
   --display-safe-inline: clamp(1.5rem, 4cqw, 16rem);
@@ -139,6 +146,8 @@ body {
 
 .standby-background-image {
   display: block;
+  position: absolute;
+  inset: 0;
   inline-size: 100%;
   block-size: 100%;
   object-fit: cover;
@@ -175,6 +184,8 @@ body {
 }
 
 .display-stage[data-mode="blank"] .logo-frame {
+  --logo-mode-max-block: var(--logo-standby-max-block);
+  --logo-mode-size-scale: var(--logo-standby-size-scale);
   justify-self: center;
   place-items: center;
 }
@@ -211,34 +222,25 @@ body {
 .logo-frame {
   display: grid;
   justify-self: start;
-  block-size: clamp(
-    calc(3rem * var(--logo-size-scale)),
-    calc(9cqh * var(--logo-size-scale)),
-    calc(16rem * var(--logo-size-scale))
+  block-size: min(
+    clamp(
+      calc(3rem * var(--logo-mode-size-scale)),
+      calc(9cqh * var(--logo-mode-size-scale)),
+      calc(16rem * var(--logo-mode-size-scale))
+    ),
+    var(--logo-mode-max-block)
   );
-  max-inline-size: calc(30cqw * var(--logo-size-scale));
-  max-block-size: clamp(
-    calc(3rem * var(--logo-size-scale)),
-    calc(9cqh * var(--logo-size-scale)),
-    calc(16rem * var(--logo-size-scale))
-  );
+  max-inline-size: var(--logo-max-inline);
+  max-block-size: var(--logo-mode-max-block);
   place-items: center start;
 }
 
 .display-logo {
   display: block;
   inline-size: auto;
-  block-size: clamp(
-    calc(3rem * var(--logo-size-scale)),
-    calc(9cqh * var(--logo-size-scale)),
-    calc(16rem * var(--logo-size-scale))
-  );
-  max-inline-size: calc(30cqw * var(--logo-size-scale));
-  max-block-size: clamp(
-    calc(3rem * var(--logo-size-scale)),
-    calc(9cqh * var(--logo-size-scale)),
-    calc(16rem * var(--logo-size-scale))
-  );
+  block-size: 100%;
+  max-inline-size: 100%;
+  max-block-size: 100%;
   object-fit: contain;
   border-radius: 0.2rem;
   box-shadow: 0 0 0 max(0.0625rem, 0.08cqmin) var(--logo-outline);

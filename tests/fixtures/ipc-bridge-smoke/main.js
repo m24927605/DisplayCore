@@ -138,6 +138,21 @@ async function run() {
     ipcMain,
     presentationService,
     settingsManager,
+    standbyBackgroundImporter: {
+      async chooseAndImport({ multiple }) {
+        return Object.freeze({
+          canceled: false,
+          assetPaths: multiple
+            ? Object.freeze([
+              'standby-backgrounds/0123456789abcdef01234567.png',
+              'standby-backgrounds/abcdef0123456789abcdef01.webp',
+            ])
+            : Object.freeze([
+              'standby-backgrounds/0123456789abcdef01234567.png',
+            ]),
+        });
+      },
+    },
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return controlWindow;

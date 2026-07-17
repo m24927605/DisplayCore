@@ -5,6 +5,7 @@ const defaultFileSystem = require('node:fs/promises');
 const path = require('node:path');
 
 const MAXIMUM_MANAGED_IMAGE_BYTES = 10 * 1_024 * 1_024;
+const MAXIMUM_MANAGED_IMAGE_SELECTIONS = 20;
 const ALLOWED_EXTENSIONS = new Set(['.jpeg', '.jpg', '.png', '.webp']);
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const SAFE_ASSET_PREFIX = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
@@ -214,25 +215,26 @@ class ManagedImageImporter {
     return this.errorFactory(message);
   }
 
-  async chooseAndImport() {
-    const result = await this.dialog.showOpenDialog(
-      this.getParentWindow(),
-      this.dialogOptions,
-    );
-
-    if (result?.canceled === true) {
-      return Object.freeze({ canceled: true, assetPath: null });
+  createDialogOptions(multiple) {
+    if (!multiple) {
+      return this.dialogOptions;
     }
 
-    if (
-      result?.canceled !== false ||
-      !Array.isArray(result.filePaths) ||
-      result.filePaths.length !== 1
-    ) {
-      throw this.createError(`${this.imageLabel}選檔結果格式不正確。`);
-    }
+    return Object.freeze({
+      ...this.dialogOptions,
+      properties: Object.freeze([
+        'openFile',
+        'multiSelections',
+        'dontAddToRecent',
+      ]),
+    });
+  }
 
-    const sourcePath = result.filePaths[0];
+  /**
+   * 取得並完整驗證一個圖片來源，此階段不寫入受管理目錄。
+   * 多檔批次因此可先驗證所有來源，避免無效檔案造成部分匯入。
+   */
+  async prepareManagedAsset(sourcePath) {
     const pathValidation = validateLocalImageSourcePath(
       sourcePath,
       this.platform,
@@ -242,7 +244,13 @@ class ManagedImageImporter {
       throw this.createError(pathValidation.error.message);
     }
 
-    const stats = await this.fileSystem.lstat(sourcePath);
+    let stats;
+
+    try {
+      stats = await this.fileSystem.lstat(sourcePath);
+    } catch {
+      throw this.createError(`${this.imageLabel}無法讀取。`);
+    }
 
     if (
       !stats.isFile() ||
@@ -255,7 +263,13 @@ class ManagedImageImporter {
       );
     }
 
-    const contents = await this.fileSystem.readFile(sourcePath);
+    let contents;
+
+    try {
+      contents = await this.fileSystem.readFile(sourcePath);
+    } catch {
+      throw this.createError(`${this.imageLabel}無法讀取。`);
+    }
 
     if (
       contents.length === 0 ||
@@ -270,25 +284,99 @@ class ManagedImageImporter {
       .digest('hex')
       .slice(0, 24);
     const fileName = `${digest}${pathValidation.extension}`;
-    const destinationPath = path.join(this.assetDirectory, fileName);
 
-    await writeManagedAsset({
-      fileSystem: this.fileSystem,
-      destinationPath,
+    return Object.freeze({
+      assetPath: `${this.assetPathPrefix}/${fileName}`,
       contents,
-      idFactory: this.idFactory,
-      createError: (message) => this.createError(message),
+      destinationPath: path.join(this.assetDirectory, fileName),
     });
+  }
+
+  /** 匯入 1 至 20 張圖片，輸入與內容去重都保留原選取順序。 */
+  async chooseAndImportMany({
+    multiple,
+    maximumSelectionCount = MAXIMUM_MANAGED_IMAGE_SELECTIONS,
+  }) {
+    if (
+      typeof multiple !== 'boolean' ||
+      !Number.isSafeInteger(maximumSelectionCount) ||
+      maximumSelectionCount < 1 ||
+      maximumSelectionCount > MAXIMUM_MANAGED_IMAGE_SELECTIONS
+    ) {
+      throw new TypeError('受管理圖片多選設定不正確。');
+    }
+
+    const result = await this.dialog.showOpenDialog(
+      this.getParentWindow(),
+      this.createDialogOptions(multiple),
+    );
+
+    if (result?.canceled === true) {
+      return Object.freeze({
+        canceled: true,
+        assetPaths: Object.freeze([]),
+      });
+    }
+
+    if (
+      result?.canceled !== false ||
+      !Array.isArray(result.filePaths) ||
+      result.filePaths.length < 1 ||
+      result.filePaths.length > maximumSelectionCount ||
+      (!multiple && result.filePaths.length !== 1)
+    ) {
+      throw this.createError(`${this.imageLabel}選檔結果格式不正確。`);
+    }
+
+    const sourcePaths = [...new Set(result.filePaths)];
+    const preparedAssets = [];
+
+    for (const sourcePath of sourcePaths) {
+      preparedAssets.push(await this.prepareManagedAsset(sourcePath));
+    }
+
+    const uniqueAssets = [];
+    const seenAssetPaths = new Set();
+
+    for (const asset of preparedAssets) {
+      if (!seenAssetPaths.has(asset.assetPath)) {
+        seenAssetPaths.add(asset.assetPath);
+        uniqueAssets.push(asset);
+      }
+    }
+
+    for (const asset of uniqueAssets) {
+      await writeManagedAsset({
+        fileSystem: this.fileSystem,
+        destinationPath: asset.destinationPath,
+        contents: asset.contents,
+        idFactory: this.idFactory,
+        createError: (message) => this.createError(message),
+      });
+    }
 
     return Object.freeze({
       canceled: false,
-      assetPath: `${this.assetPathPrefix}/${fileName}`,
+      assetPaths: Object.freeze(uniqueAssets.map((asset) => asset.assetPath)),
     });
+  }
+
+  /** 保留 Logo 等單檔 importer 既有 exact envelope 契約。 */
+  async chooseAndImport() {
+    const result = await this.chooseAndImportMany({
+      multiple: false,
+      maximumSelectionCount: 1,
+    });
+
+    return result.canceled
+      ? Object.freeze({ canceled: true, assetPath: null })
+      : Object.freeze({ canceled: false, assetPath: result.assetPaths[0] });
   }
 }
 
 module.exports = {
   MAXIMUM_MANAGED_IMAGE_BYTES,
+  MAXIMUM_MANAGED_IMAGE_SELECTIONS,
   ManagedImageImporter,
   ManagedImageImportError,
   matchesImageSignature,

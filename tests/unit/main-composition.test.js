@@ -86,6 +86,6 @@ test('Main 組合待機背景匯入器、Control IPC 與獨立受管理協定目
   );
   assert.match(
     source,
-    /getAllowedStandbyBackgroundPath:\s*\(\)\s*=>[\s\S]*config\.standby\.backgroundImagePath/,
+    /getAllowedStandbyBackgroundPaths:\s*\(\)\s*=>[\s\S]*config\.standby\.backgroundImagePaths/,
   );
 });

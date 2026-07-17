@@ -28,6 +28,10 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
     html,
     /<img[^>]+id="standby-background-image"[^>]+alt=""[^>]+aria-hidden="true"[^>]+hidden/,
   );
+  assert.match(
+    html,
+    /<img[^>]+id="standby-background-image-buffer"[^>]+alt=""[^>]+aria-hidden="true"[^>]+hidden/,
+  );
   assert.match(html, /id="standby-layer"[^>]+aria-hidden="true"/);
   assert.match(html, /id="standby-message"[^>]*>\s*歡迎光臨\s*</);
   assert.match(html, /id="display-chrome"[^>]+aria-hidden="true"/);
@@ -73,17 +77,30 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   );
   assert.match(
     css,
-    /\.standby-background-image\s*{[^}]*inline-size:\s*100%[^}]*block-size:\s*100%[^}]*object-fit:\s*cover/s,
+    /\.standby-background-image\s*{[^}]*position:\s*absolute[^}]*inset:\s*0[^}]*inline-size:\s*100%[^}]*block-size:\s*100%[^}]*object-fit:\s*cover/s,
   );
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /--logo-size-scale:\s*1/);
+  assert.match(css, /--logo-page-size-scale:\s*1/);
+  assert.match(css, /--logo-standby-size-scale:\s*1/);
   assert.match(
     css,
-    /\.logo-frame\s*{[^}]*block-size:[^;]*var\(--logo-size-scale\)[^}]*max-inline-size:[^;]*var\(--logo-size-scale\)/s,
+    /--logo-mode-size-scale:\s*var\(--logo-page-size-scale\)/,
+  );
+  assert.match(css, /--logo-max-inline:\s*92cqw/);
+  assert.match(css, /--logo-page-max-block:\s*30cqh/);
+  assert.match(css, /--logo-standby-max-block:\s*42cqh/);
+  assert.match(
+    css,
+    /\.logo-frame\s*{[^}]*block-size:\s*min\([^;]*var\(--logo-mode-size-scale\)[^;]*var\(--logo-mode-max-block\)[^}]*max-inline-size:\s*var\(--logo-max-inline\)/s,
   );
   assert.match(
     css,
-    /\.display-logo\s*{[^}]*block-size:[^;]*var\(--logo-size-scale\)[^}]*max-inline-size:[^;]*var\(--logo-size-scale\)/s,
+    /\.display-logo\s*{[^}]*block-size:\s*100%[^}]*max-inline-size:\s*100%[^}]*max-block-size:\s*100%/s,
+  );
+  assert.match(
+    css,
+    /\.display-stage\[data-mode="blank"\]\s+\.logo-frame\s*{[^}]*--logo-mode-max-block:\s*var\(--logo-standby-max-block\)/s,
   );
   assert.match(
     css,
@@ -147,6 +164,7 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /createDisplayClock/);
   assert.match(source, /resolveRenderResolution/);
   assert.match(source, /createPageProgressReporter/);
+  assert.match(source, /createStandbyBackgroundPlayer/);
   assert.match(source, /SAFE_DISPLAY_SETTINGS/);
   assert.match(source, /findLargestFittingFontSize/);
   assert.match(source, /classifyLogoAlpha/);
@@ -168,18 +186,25 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /snapshot\.emergencyTone/);
   assert.match(source, /'--message-line-spacing-scale'/);
   assert.match(source, /'--message-font-scale'/);
-  assert.match(
-    source,
-    /\.setProperty\(\s*'--logo-size-scale',\s*String\(snapshot\.logo\.sizePercent\s*\/\s*100\)/s,
-  );
+  assert.match(source, /calculateLogoLayoutScales\(snapshot\.logo\.sizePercent\)/);
+  assert.match(source, /'--logo-size-scale'/);
+  assert.match(source, /'--logo-page-size-scale'/);
+  assert.match(source, /'--logo-standby-size-scale'/);
   assert.match(source, /'--emergency-background'/);
   assert.match(source, /'--viewport-background'/);
-  assert.match(source, /standby\.backgroundImageUrl/);
-  assert.match(source, /standbyBackgroundImage/);
+  assert.match(source, /standby\.backgroundImageUrls/);
+  assert.match(source, /standby\.backgroundMode/);
+  assert.match(source, /standby\.slideDurationSeconds/);
+  assert.match(source, /standbyBackgroundImages/);
+  assert.match(source, /activeStandbyBackgroundImage/);
+  assert.match(source, /pendingStandbyBackgroundImage/);
+  assert.match(source, /standbyBackgroundPlayer\.handleLoad/);
+  assert.match(source, /standbyBackgroundPlayer\.handleError/);
+  assert.match(source, /standbyBackgroundPlayer\.dispose/);
   assert.match(source, /getImageData/);
   assert.match(source, /dataset\.logoTreatment/);
-  assert.match(source, /addEventListener\('load',\s*handleStandbyBackgroundLoad\)/);
-  assert.match(source, /addEventListener\('error',\s*handleStandbyBackgroundError\)/);
+  assert.match(source, /image\.addEventListener\('load',\s*handleStandbyBackgroundLoad\)/);
+  assert.match(source, /image\.addEventListener\('error',\s*handleStandbyBackgroundError\)/);
   assert.match(
     source,
     /function updateAnnouncement\([^)]*\)\s*{[\s\S]*?setAttribute\('aria-live', priority\);[\s\S]*?\.textContent\s*=\s*message;/,

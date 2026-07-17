@@ -73,8 +73,10 @@ contextBridge.exposeInMainWorld(
         expectedRevision,
       }),
     chooseLogo: () => ipcRenderer.invoke(CHANNELS.CHOOSE_LOGO),
-    chooseStandbyBackground: () =>
-      ipcRenderer.invoke(CHANNELS.CHOOSE_STANDBY_BACKGROUND),
+    chooseStandbyBackground: (backgroundMode) =>
+      ipcRenderer.invoke(CHANNELS.CHOOSE_STANDBY_BACKGROUND, {
+        backgroundMode,
+      }),
     getOutputStatus: () => ipcRenderer.invoke(CHANNELS.GET_OUTPUT_STATUS),
     onPresentationChanged,
     onOutputStatusChanged,

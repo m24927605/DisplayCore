@@ -99,7 +99,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   await api.getSettings();
   await api.saveSettings({ configVersion: 1 }, 7);
   await api.chooseLogo();
-  await api.chooseStandbyBackground();
+  await api.chooseStandbyBackground('slideshow');
   await api.getOutputStatus();
 
   assert.deepEqual(
@@ -137,7 +137,10 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
     JSON.parse(JSON.stringify(harness.invocations[5].args[0])),
     { config: { configVersion: 1 }, expectedRevision: 7 },
   );
-  assert.deepEqual(harness.invocations[7].args, []);
+  assert.deepEqual(
+    JSON.parse(JSON.stringify(harness.invocations[7].args)),
+    [{ backgroundMode: 'slideshow' }],
+  );
 });
 
 test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報能力', async () => {

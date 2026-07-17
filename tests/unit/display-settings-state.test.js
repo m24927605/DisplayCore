@@ -9,15 +9,19 @@ async function loadModule() {
 
 function createSnapshot(revision = 0) {
   return {
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
-      sizePercent: 150,
+      sizePercent: 1_000,
     },
     standby: {
-      backgroundImageUrl:
+      backgroundMode: 'slideshow',
+      backgroundImageUrls: [
         'displaycore://app/managed/standby-background/fedcba987654321001234567.webp',
+        'displaycore://app/managed/standby-background/0123456789abcdef01234567.png',
+      ],
+      slideDurationSeconds: 15,
     },
     appearance: {
       backgroundColor: '#102030',
@@ -51,6 +55,10 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
   assert.equal(Object.isFrozen(result.snapshot), true);
   assert.equal(Object.isFrozen(result.snapshot.logo), true);
   assert.equal(Object.isFrozen(result.snapshot.standby), true);
+  assert.equal(
+    Object.isFrozen(result.snapshot.standby.backgroundImageUrls),
+    true,
+  );
   assert.equal(Object.isFrozen(result.snapshot.appearance), true);
   assert.equal(Object.isFrozen(result.snapshot.dateTime), true);
   assert.equal(Object.isFrozen(result.snapshot.emergency), true);
@@ -59,7 +67,11 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
   assert.equal(Object.hasOwn(result.snapshot, 'playback'), false);
 
   source.appearance.backgroundColor = '#000000';
+  source.standby.backgroundImageUrls.push(
+    'displaycore://app/managed/standby-background/ffffffffffffffffffffffff.jpg',
+  );
   assert.equal(result.snapshot.appearance.backgroundColor, '#102030');
+  assert.equal(result.snapshot.standby.backgroundImageUrls.length, 2);
 });
 
 test('Display 設定 revision 單調遞增且 exact schema 拒絕未知欄位', async () => {
@@ -106,7 +118,8 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
   const { acceptDisplaySettingsSnapshot } = await loadModule();
   const valid = createSnapshot(1);
   const invalidCandidates = [
-    { ...valid, configVersion: 5 },
+    { ...valid, configVersion: 6 },
+    { ...valid, configVersion: 8 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { ...valid.logo, url: null } },
@@ -121,29 +134,78 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
       },
     },
     { ...valid, logo: { ...valid.logo, sizePercent: 49 } },
-    { ...valid, logo: { ...valid.logo, sizePercent: 201 } },
+    { ...valid, logo: { ...valid.logo, sizePercent: 1_001 } },
     { ...valid, logo: { ...valid.logo, sizePercent: 101 } },
     { ...valid, logo: { ...valid.logo, sizePercent: 100.5 } },
     { ...valid, logo: { ...valid.logo, sizePercent: '100' } },
     {
       ...valid,
-      standby: { backgroundImageUrl: 'file:///C:/private/background.png' },
+      standby: {
+        ...valid.standby,
+        backgroundImageUrls: ['file:///C:/private/background.png'],
+      },
     },
     {
       ...valid,
       standby: {
-        backgroundImageUrl:
+        ...valid.standby,
+        backgroundImageUrls: [
           'displaycore://app/managed/standby-background/operator.png',
+        ],
       },
     },
     {
       ...valid,
       standby: {
-        backgroundImageUrl:
+        ...valid.standby,
+        backgroundImageUrls: [
           'displaycore://app/managed/standby-background/fedcba987654321001234567.webp?cache=1',
+        ],
       },
     },
-    { ...valid, standby: { backgroundImageUrl: 42 } },
+    {
+      ...valid,
+      standby: { ...valid.standby, backgroundImageUrls: 42 },
+    },
+    {
+      ...valid,
+      standby: { ...valid.standby, backgroundMode: 'random' },
+    },
+    {
+      ...valid,
+      standby: { ...valid.standby, slideDurationSeconds: 0 },
+    },
+    {
+      ...valid,
+      standby: { ...valid.standby, slideDurationSeconds: 3_601 },
+    },
+    {
+      ...valid,
+      standby: { ...valid.standby, slideDurationSeconds: 1.5 },
+    },
+    {
+      ...valid,
+      standby: {
+        ...valid.standby,
+        backgroundImageUrls: [
+          valid.standby.backgroundImageUrls[0],
+          valid.standby.backgroundImageUrls[0],
+        ],
+      },
+    },
+    {
+      ...valid,
+      standby: {
+        ...valid.standby,
+        backgroundImageUrls: Array.from(
+          { length: 21 },
+          (_, index) =>
+            `displaycore://app/managed/standby-background/${index
+              .toString(16)
+              .padStart(24, '0')}.png`,
+        ),
+      },
+    },
     {
       ...valid,
       appearance: { ...valid.appearance, backgroundColor: 'black' },
@@ -203,9 +265,13 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 6,
+    configVersion: 7,
     logo: { enabled: false, url: null, sizePercent: 100 },
-    standby: { backgroundImageUrl: null },
+    standby: {
+      backgroundMode: 'fixed',
+      backgroundImageUrls: [],
+      slideDurationSeconds: 10,
+    },
     appearance: {
       backgroundColor: '#000000',
       fontFamily:
@@ -226,6 +292,10 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
   });
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS), true);
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS.standby), true);
+  assert.equal(
+    Object.isFrozen(SAFE_DISPLAY_SETTINGS.standby.backgroundImageUrls),
+    true,
+  );
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS.appearance), true);
   assert.equal(Object.hasOwn(SAFE_DISPLAY_SETTINGS, 'playback'), false);
 });

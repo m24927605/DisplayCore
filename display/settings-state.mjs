@@ -23,7 +23,11 @@ const EMERGENCY_KEYS = Object.freeze([
   'releaseBackgroundColor',
 ]);
 const LOGO_KEYS = Object.freeze(['enabled', 'sizePercent', 'url']);
-const STANDBY_KEYS = Object.freeze(['backgroundImageUrl']);
+const STANDBY_KEYS = Object.freeze([
+  'backgroundImageUrls',
+  'backgroundMode',
+  'slideDurationSeconds',
+]);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
 const DISPLAY_KEYS = Object.freeze(['renderResolution']);
 const RENDER_RESOLUTIONS = Object.freeze([
@@ -52,8 +56,11 @@ const PERCENTAGE_STEP = 5;
 const MINIMUM_CLOCK_OFFSET_SECONDS = -43_199;
 const MAXIMUM_CLOCK_OFFSET_SECONDS = 43_200;
 const MINIMUM_LOGO_SIZE_PERCENT = 50;
-const MAXIMUM_LOGO_SIZE_PERCENT = 200;
+const MAXIMUM_LOGO_SIZE_PERCENT = 1_000;
 const LOGO_SIZE_PERCENT_STEP = 5;
+const MAXIMUM_STANDBY_BACKGROUND_COUNT = 20;
+const MINIMUM_STANDBY_SLIDE_DURATION_SECONDS = 1;
+const MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS = 3_600;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -96,11 +103,27 @@ function isValidLogo(logo) {
 }
 
 function isValidStandby(standby) {
+  if (
+    !hasExactKeys(standby, STANDBY_KEYS) ||
+    !['fixed', 'slideshow'].includes(standby.backgroundMode) ||
+    !Array.isArray(standby.backgroundImageUrls) ||
+    standby.backgroundImageUrls.length > MAXIMUM_STANDBY_BACKGROUND_COUNT ||
+    !Number.isSafeInteger(standby.slideDurationSeconds) ||
+    standby.slideDurationSeconds <
+      MINIMUM_STANDBY_SLIDE_DURATION_SECONDS ||
+    standby.slideDurationSeconds >
+      MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS
+  ) {
+    return false;
+  }
+
   return (
-    hasExactKeys(standby, STANDBY_KEYS) &&
-    (standby.backgroundImageUrl === null ||
-      (typeof standby.backgroundImageUrl === 'string' &&
-        DISPLAY_STANDBY_BACKGROUND_URL.test(standby.backgroundImageUrl)))
+    new Set(standby.backgroundImageUrls).size ===
+      standby.backgroundImageUrls.length &&
+    standby.backgroundImageUrls.every(
+      (url) =>
+        typeof url === 'string' && DISPLAY_STANDBY_BACKGROUND_URL.test(url),
+    )
   );
 }
 
@@ -166,7 +189,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 6 &&
+    candidate.configVersion === 7 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -183,6 +206,7 @@ function isValidSnapshot(candidate) {
 
 function freezeSettings(settings) {
   Object.freeze(settings.logo);
+  Object.freeze(settings.standby.backgroundImageUrls);
   Object.freeze(settings.standby);
   Object.freeze(settings.appearance);
   Object.freeze(settings.dateTime);
@@ -201,7 +225,9 @@ function cloneSettings(candidate) {
       sizePercent: candidate.logo.sizePercent,
     },
     standby: {
-      backgroundImageUrl: candidate.standby.backgroundImageUrl,
+      backgroundMode: candidate.standby.backgroundMode,
+      backgroundImageUrls: [...candidate.standby.backgroundImageUrls],
+      slideDurationSeconds: candidate.standby.slideDurationSeconds,
     },
     appearance: {
       backgroundColor: candidate.appearance.backgroundColor,
@@ -228,9 +254,13 @@ function cloneSettings(candidate) {
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 6,
+  configVersion: 7,
   logo: { enabled: false, url: null, sizePercent: 100 },
-  standby: { backgroundImageUrl: null },
+  standby: {
+    backgroundMode: 'fixed',
+    backgroundImageUrls: [],
+    slideDurationSeconds: 10,
+  },
   appearance: {
     backgroundColor: '#000000',
     fontFamily: 'Microsoft JhengHei UI, Microsoft JhengHei, sans-serif',
