@@ -1029,6 +1029,24 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   await click('clear-display-button');
   await waitForRevision(store, 10);
   assert.equal(store.getControlSnapshot().mode, 'blank');
+
+  // 新增固定動作必須從真實表單預覽、IPC 到 Main 完整送出。
+  await submitNormalMessage('Nancy', 'contact-counter', 'Nancy聯絡櫃台');
+  await waitForRevision(store, 11);
+  await waitForLiveMessages(
+    ['Nancy聯絡櫃台'],
+    '播放第 1 / 1 頁 · 第 1 / 2 輪',
+  );
+  assert.deepEqual(store.getControlSnapshot().messages, [
+    { message: 'Nancy聯絡櫃台', alignment: 'left' },
+  ]);
+  assert.deepEqual((await readCurrentDom()).displayMessages, [
+    'Nancy聯絡櫃台',
+  ]);
+
+  await click('clear-display-button');
+  await waitForRevision(store, 12);
+  assert.equal(store.getControlSnapshot().mode, 'blank');
 }
 
 async function run() {

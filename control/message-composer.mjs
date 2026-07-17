@@ -6,6 +6,7 @@
 export const ACTIONS = Object.freeze({
   GO_TO_LOBBY: 'go-to-lobby',
   LOBBY_CODE: 'lobby-code',
+  CONTACT_COUNTER: 'contact-counter',
   CUSTOM: 'custom',
 });
 
@@ -23,6 +24,7 @@ export const OPERATION_MESSAGES = Object.freeze({
 const FIXED_ACTION_TEXT = Object.freeze({
   [ACTIONS.GO_TO_LOBBY]: '請至前廳',
   [ACTIONS.LOBBY_CODE]: '前廳000',
+  [ACTIONS.CONTACT_COUNTER]: '聯絡櫃台',
 });
 
 function failure(field, message) {

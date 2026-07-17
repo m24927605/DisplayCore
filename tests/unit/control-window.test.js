@@ -29,12 +29,18 @@ test('Control 採一鍵立即顯示流程，不再建立待播清單', async () 
   assert.match(html, /<input[^>]+id="recipient-input"/);
   assert.match(html, /<fieldset[^>]+id="action-fieldset"/);
 
-  for (const action of ['go-to-lobby', 'lobby-code', 'custom']) {
+  for (const action of [
+    'go-to-lobby',
+    'lobby-code',
+    'contact-counter',
+    'custom',
+  ]) {
     assert.match(
       html,
       new RegExp(`<input[^>]+name="action"[^>]+value="${action}"`),
     );
   }
+  assert.match(html, /value="contact-counter"[^>]*>\s*<span>聯絡櫃台<\/span>/);
 
   assert.match(html, /<textarea[^>]+id="custom-message-input"/);
   assert.match(html, /<output[^>]+id="message-preview"/);

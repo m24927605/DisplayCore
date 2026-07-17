@@ -55,6 +55,21 @@ test('固定動作把編號或花名放在完整 message 最前方', async () =>
       },
     },
   );
+  assert.deepEqual(
+    composeMessage({
+      recipient: 'Nancy',
+      action: ACTIONS.CONTACT_COUNTER,
+      customText: '',
+    }),
+    {
+      ok: true,
+      presentation: {
+        message: 'Nancy聯絡櫃台',
+        alignment: 'left',
+        layout: 'single-line',
+      },
+    },
+  );
 });
 
 test('自定義動作可加編號／花名，也可直接顯示公告', async () => {
@@ -120,6 +135,20 @@ test('固定動作需要編號／花名，自定義需要非空字串', async ()
     composeMessage({
       recipient: '',
       action: ACTIONS.GO_TO_LOBBY,
+      customText: '',
+    }),
+    {
+      ok: false,
+      error: {
+        field: 'recipient',
+        message: '請輸入編號或花名。',
+      },
+    },
+  );
+  assert.deepEqual(
+    composeMessage({
+      recipient: '',
+      action: ACTIONS.CONTACT_COUNTER,
       customText: '',
     }),
     {
