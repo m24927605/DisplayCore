@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 6;
+const CONFIG_VERSION = 7;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -12,12 +12,20 @@ const DISPLAY_SELECTION_MODES = Object.freeze({
   MANUAL: 'manual',
 });
 
+const STANDBY_BACKGROUND_MODES = Object.freeze({
+  FIXED: 'fixed',
+  SLIDESHOW: 'slideshow',
+});
+
 const CONFIG_LIMITS = Object.freeze({
   MAX_FILE_BYTES: 65_536,
   MAX_LOGO_PATH_LENGTH: 128,
   MINIMUM_LOGO_SIZE_PERCENT: 50,
-  MAXIMUM_LOGO_SIZE_PERCENT: 200,
+  MAXIMUM_LOGO_SIZE_PERCENT: 1_000,
   MAX_STANDBY_BACKGROUND_PATH_LENGTH: 128,
+  MAXIMUM_STANDBY_BACKGROUND_COUNT: 20,
+  MINIMUM_STANDBY_SLIDE_DURATION_SECONDS: 1,
+  MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS: 3_600,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
@@ -56,7 +64,11 @@ const CONFIG_KEYS = Object.freeze([
   'standby',
 ]);
 const LOGO_KEYS = Object.freeze(['enabled', 'path', 'sizePercent']);
-const STANDBY_KEYS = Object.freeze(['backgroundImagePath']);
+const STANDBY_KEYS = Object.freeze([
+  'backgroundImagePaths',
+  'backgroundMode',
+  'slideDurationSeconds',
+]);
 const APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -179,27 +191,76 @@ function validateStandby(standby) {
     return validationFailure('待機背景設定格式不正確。', 'standby');
   }
 
-  if (standby.backgroundImagePath === null) {
-    return { ok: true, value: { backgroundImagePath: null } };
+  if (
+    !Object.values(STANDBY_BACKGROUND_MODES).includes(standby.backgroundMode)
+  ) {
+    return validationFailure(
+      '待機背景模式必須是固定圖片或輪播圖片。',
+      'standby.backgroundMode',
+    );
+  }
+
+  if (!Array.isArray(standby.backgroundImagePaths)) {
+    return validationFailure(
+      '待機背景圖片必須使用清單格式。',
+      'standby.backgroundImagePaths',
+    );
   }
 
   if (
-    typeof standby.backgroundImagePath !== 'string' ||
-    standby.backgroundImagePath.length === 0 ||
-    standby.backgroundImagePath.length >
-      CONFIG_LIMITS.MAX_STANDBY_BACKGROUND_PATH_LENGTH ||
-    CONTROL_CHARACTERS.test(standby.backgroundImagePath) ||
-    !MANAGED_STANDBY_BACKGROUND_PATH.test(standby.backgroundImagePath)
+    standby.backgroundImagePaths.length >
+    CONFIG_LIMITS.MAXIMUM_STANDBY_BACKGROUND_COUNT
   ) {
     return validationFailure(
-      '待機背景必須是已匯入 DisplayCore 的 PNG、JPEG 或 WebP 圖片。',
-      'standby.backgroundImagePath',
+      `待機背景圖片最多只能選擇 ${CONFIG_LIMITS.MAXIMUM_STANDBY_BACKGROUND_COUNT} 張。`,
+      'standby.backgroundImagePaths',
     );
+  }
+
+  if (
+    !Number.isSafeInteger(standby.slideDurationSeconds) ||
+    standby.slideDurationSeconds <
+      CONFIG_LIMITS.MINIMUM_STANDBY_SLIDE_DURATION_SECONDS ||
+    standby.slideDurationSeconds >
+      CONFIG_LIMITS.MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS
+  ) {
+    return validationFailure(
+      `輪播秒數必須是 ${CONFIG_LIMITS.MINIMUM_STANDBY_SLIDE_DURATION_SECONDS} 至 ${CONFIG_LIMITS.MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS} 秒的整數。`,
+      'standby.slideDurationSeconds',
+    );
+  }
+
+  const uniquePaths = new Set(standby.backgroundImagePaths);
+  if (uniquePaths.size !== standby.backgroundImagePaths.length) {
+    return validationFailure(
+      '待機背景圖片不得重複。',
+      'standby.backgroundImagePaths',
+    );
+  }
+
+  for (const backgroundImagePath of standby.backgroundImagePaths) {
+    if (
+      typeof backgroundImagePath !== 'string' ||
+      backgroundImagePath.length === 0 ||
+      backgroundImagePath.length >
+        CONFIG_LIMITS.MAX_STANDBY_BACKGROUND_PATH_LENGTH ||
+      CONTROL_CHARACTERS.test(backgroundImagePath) ||
+      !MANAGED_STANDBY_BACKGROUND_PATH.test(backgroundImagePath)
+    ) {
+      return validationFailure(
+        '待機背景必須是已匯入 DisplayCore 的 PNG、JPEG 或 WebP 圖片。',
+        'standby.backgroundImagePaths',
+      );
+    }
   }
 
   return {
     ok: true,
-    value: { backgroundImagePath: standby.backgroundImagePath },
+    value: {
+      backgroundMode: standby.backgroundMode,
+      backgroundImagePaths: [...standby.backgroundImagePaths],
+      slideDurationSeconds: standby.slideDurationSeconds,
+    },
   };
 }
 
@@ -409,6 +470,9 @@ function validateDisplay(display) {
 }
 
 function freezeConfig(config) {
+  // 待機背景路徑是唯一的巢狀集合，必須一併凍結才能提供真正唯讀快照。
+  Object.freeze(config.standby.backgroundImagePaths);
+
   for (const section of [
     'logo',
     'appearance',
@@ -425,7 +489,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v6。 */
+/** 驗證、正規化並深層複製完整的 canonical config v7。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -484,5 +548,6 @@ module.exports = {
   DISPLAY_SELECTION_MODES,
   PLAYBACK_MODES,
   RENDER_RESOLUTIONS,
+  STANDBY_BACKGROUND_MODES,
   validateConfig,
 };

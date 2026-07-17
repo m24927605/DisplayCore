@@ -15,6 +15,11 @@ const { CONFIG_LIMITS } = require('../../config/config-schema');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 const bundledDefaultPath = path.join(projectRoot, 'config.json');
+const DEFAULT_STANDBY = Object.freeze({
+  backgroundMode: 'fixed',
+  backgroundImagePaths: Object.freeze([]),
+  slideDurationSeconds: 10,
+});
 
 async function readBundledDefault() {
   return JSON.parse(await fileSystem.readFile(bundledDefaultPath, 'utf8'));
@@ -47,18 +52,22 @@ test('首次啟動以原廠預設值原子建立 userData/config.json', async (t
 
   assert.deepEqual(snapshot.config, defaults);
   assert.deepEqual(snapshot.defaults, defaults);
-  assert.equal(snapshot.config.configVersion, 6);
+  assert.equal(snapshot.config.configVersion, 7);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
     sizePercent: 100,
   });
-  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
+  assert.deepEqual(snapshot.config.standby, DEFAULT_STANDBY);
   assert.equal(snapshot.revision, 0);
   assert.equal(snapshot.notice, null);
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.config), true);
   assert.equal(Object.isFrozen(snapshot.config.standby), true);
+  assert.equal(
+    Object.isFrozen(snapshot.config.standby.backgroundImagePaths),
+    true,
+  );
   assert.equal(persistedText.endsWith('\n'), true);
   assert.deepEqual(JSON.parse(persistedText), defaults);
   assert.deepEqual(await fileSystem.readdir(directory), ['config.json']);
@@ -78,7 +87,7 @@ test('有效使用者設定支援 UTF-8 BOM，載入時不擅自重寫檔案', a
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 v1 使用者設定在記憶體升級為 v6且不擅自覆寫原檔', async (t) => {
+test('既有 v1 使用者設定在記憶體升級為 v7且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 1,
@@ -102,7 +111,7 @@ test('既有 v1 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 6);
+  assert.equal(snapshot.config.configVersion, 7);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -118,7 +127,7 @@ test('既有 v1 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
   });
   assert.deepEqual(snapshot.config.emergency, snapshot.defaults.emergency);
   assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
-  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
+  assert.deepEqual(snapshot.config.standby, DEFAULT_STANDBY);
   assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -129,7 +138,7 @@ test('既有 v1 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    6,
+    7,
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).logo.sizePercent,
@@ -138,7 +147,7 @@ test('既有 v1 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v2 使用者設定在記憶體升級為 v6且不擅自覆寫原檔', async (t) => {
+test('既有 v2 使用者設定在記憶體升級為 v7且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 2,
@@ -168,7 +177,7 @@ test('既有 v2 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 6);
+  assert.equal(snapshot.config.configVersion, 7);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -181,7 +190,7 @@ test('既有 v2 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
     offsetSeconds: 0,
   });
   assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
-  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
+  assert.deepEqual(snapshot.config.standby, DEFAULT_STANDBY);
   assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -192,7 +201,7 @@ test('既有 v2 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    6,
+    7,
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).logo.sizePercent,
@@ -201,7 +210,7 @@ test('既有 v2 使用者設定在記憶體升級為 v6且不擅自覆寫原檔'
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v3 使用者設定在記憶體升級為 v6且只補播放、待機與 Logo 尺寸', async (t) => {
+test('既有 v3 使用者設定在記憶體升級為 v7且只補播放、待機與 Logo 尺寸', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 3,
@@ -232,7 +241,7 @@ test('既有 v3 使用者設定在記憶體升級為 v6且只補播放、待機�
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 6);
+  assert.equal(snapshot.config.configVersion, 7);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -241,7 +250,7 @@ test('既有 v3 使用者設定在記憶體升級為 v6且只補播放、待機�
   assert.equal(snapshot.config.appearance.backgroundColor, '#345CDE');
   assert.equal(snapshot.config.appearance.fontColor, '#DCBA87');
   assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
-  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
+  assert.deepEqual(snapshot.config.standby, DEFAULT_STANDBY);
   assert.deepEqual(snapshot.config.display, legacy.display);
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -251,14 +260,14 @@ test('既有 v3 使用者設定在記憶體升級為 v6且只補播放、待機�
     snapshot.revision,
   );
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
-  assert.equal(persisted.configVersion, 6);
+  assert.equal(persisted.configVersion, 7);
   assert.equal(persisted.logo.sizePercent, 100);
   assert.deepEqual(persisted.playback, snapshot.defaults.playback);
-  assert.deepEqual(persisted.standby, { backgroundImagePath: null });
+  assert.deepEqual(persisted.standby, DEFAULT_STANDBY);
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v4 使用者設定在記憶體升級為 v6，不覆寫原檔且下次儲存持久化新設定', async (t) => {
+test('既有 v4 使用者設定在記憶體升級為 v7，不覆寫原檔且下次儲存持久化新設定', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 4,
@@ -297,8 +306,8 @@ test('既有 v4 使用者設定在記憶體升級為 v6，不覆寫原檔且下�
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 6);
-  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
+  assert.equal(snapshot.config.configVersion, 7);
+  assert.deepEqual(snapshot.config.standby, DEFAULT_STANDBY);
   assert.deepEqual(snapshot.config.playback, legacy.playback);
   assert.deepEqual(snapshot.config.display, legacy.display);
   assert.equal(snapshot.config.logo.path, legacy.logo.path);
@@ -307,22 +316,23 @@ test('既有 v4 使用者設定在記憶體升級為 v6，不覆寫原檔且下�
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 
   const next = structuredClone(snapshot.config);
-  next.standby.backgroundImagePath =
-    'standby-backgrounds/abcdefabcdefabcdefabcdef.webp';
+  next.standby.backgroundImagePaths = [
+    'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+  ];
   const saved = await manager.saveConfig(next, snapshot.revision);
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(persisted.configVersion, 6);
+  assert.equal(persisted.configVersion, 7);
   assert.equal(persisted.logo.sizePercent, 100);
   assert.deepEqual(persisted.playback, legacy.playback);
-  assert.equal(
-    persisted.standby.backgroundImagePath,
-    'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+  assert.deepEqual(
+    persisted.standby.backgroundImagePaths,
+    ['standby-backgrounds/abcdefabcdefabcdefabcdef.webp'],
   );
 });
 
-test('既有 v5 使用者設定在記憶體升級為 v6，只補 Logo 尺寸且儲存前不覆寫原檔', async (t) => {
+test('既有 v5 使用者設定在記憶體升級為 v7，保留背景並補 Logo 尺寸', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 5,
@@ -365,12 +375,16 @@ test('既有 v5 使用者設定在記憶體升級為 v6，只補 Logo 尺寸且�
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 6);
+  assert.equal(snapshot.config.configVersion, 7);
   assert.deepEqual(snapshot.config.logo, {
     ...legacy.logo,
     sizePercent: 100,
   });
-  assert.deepEqual(snapshot.config.standby, legacy.standby);
+  assert.deepEqual(snapshot.config.standby, {
+    backgroundMode: 'fixed',
+    backgroundImagePaths: [legacy.standby.backgroundImagePath],
+    slideDurationSeconds: 10,
+  });
   assert.deepEqual(snapshot.config.playback, legacy.playback);
   assert.deepEqual(snapshot.config.display, legacy.display);
   assert.equal(snapshot.notice, null);
@@ -383,11 +397,36 @@ test('既有 v5 使用者設定在記憶體升級為 v6，只補 Logo 尺寸且�
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(persisted.configVersion, 6);
+  assert.equal(persisted.configVersion, 7);
   assert.deepEqual(persisted.logo, {
     ...legacy.logo,
     sizePercent: 100,
   });
+});
+
+test('既有 v6 使用者設定嚴格升級為 v7 且儲存前不覆寫原檔', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const legacy = await readBundledDefault();
+  legacy.configVersion = 6;
+  legacy.logo.sizePercent = 375;
+  legacy.standby = {
+    backgroundImagePath:
+      'standby-backgrounds/0123456789abcdef01234567.png',
+  };
+  const originalText = JSON.stringify(legacy);
+  await fileSystem.writeFile(configPath, originalText, 'utf8');
+
+  const snapshot = await manager.initialize();
+
+  assert.equal(snapshot.config.configVersion, 7);
+  assert.equal(snapshot.config.logo.sizePercent, 375);
+  assert.deepEqual(snapshot.config.standby, {
+    backgroundMode: 'fixed',
+    backgroundImagePaths: [legacy.standby.backgroundImagePath],
+    slideDurationSeconds: 10,
+  });
+  assert.equal(snapshot.notice, null);
+  assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
 test('損壞或過大的使用者設定保留原檔，記憶體安全降級為預設值', async (t) => {
@@ -468,24 +507,35 @@ test('儲存成功後才更新 revision、記憶體、磁碟與訂閱者', async
   assert.equal(received.length, 1);
 });
 
-test('待機背景圖片路徑只在驗證與原子寫入成功後持久化', async (t) => {
+test('多張待機背景設定只在驗證與原子寫入成功後持久化', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const initial = await manager.initialize();
   const next = structuredClone(initial.config);
   next.standby = {
-    backgroundImagePath:
+    backgroundMode: 'slideshow',
+    backgroundImagePaths: [
       'standby-backgrounds/0123456789abcdef01234567.png',
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+    ],
+    slideDurationSeconds: 8,
   };
 
   const saved = await manager.saveConfig(next, initial.revision);
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(
-    saved.config.standby.backgroundImagePath,
-    'standby-backgrounds/0123456789abcdef01234567.png',
+  assert.deepEqual(
+    saved.config.standby.backgroundImagePaths,
+    [
+      'standby-backgrounds/0123456789abcdef01234567.png',
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+    ],
   );
   assert.equal(Object.isFrozen(saved.config.standby), true);
+  assert.equal(
+    Object.isFrozen(saved.config.standby.backgroundImagePaths),
+    true,
+  );
   assert.deepEqual(persisted.standby, saved.config.standby);
 });
 

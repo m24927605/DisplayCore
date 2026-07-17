@@ -29,11 +29,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v6 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v7 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 6);
+  assert.equal(CONFIG_VERSION, 7);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
@@ -41,6 +41,10 @@ test('根目錄 config.json 通過 v6 schema，回傳深層凍結副本', async 
   assert.equal(Object.isFrozen(result.value), true);
   assert.equal(Object.isFrozen(result.value.logo), true);
   assert.equal(Object.isFrozen(result.value.standby), true);
+  assert.equal(
+    Object.isFrozen(result.value.standby.backgroundImagePaths),
+    true,
+  );
   assert.equal(Object.isFrozen(result.value.appearance), true);
   assert.equal(Object.isFrozen(result.value.emergency), true);
   assert.equal(Object.isFrozen(result.value.dateTime), true);
@@ -57,8 +61,12 @@ test('顏色正規化，但受管理圖片路徑與字型名稱不改寫', async
     sizePercent: 125,
   };
   source.standby = {
-    backgroundImagePath:
+    backgroundMode: 'slideshow',
+    backgroundImagePaths: [
       'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+      'standby-backgrounds/0123456789abcdef01234567.png',
+    ],
+    slideDurationSeconds: 15,
   };
   source.appearance.backgroundColor = '#a1b2c3';
   source.appearance.fontColor = '#d4e5f6';
@@ -68,9 +76,9 @@ test('顏色正規化，但受管理圖片路徑與字型名稱不改寫', async
 
   assert.equal(result.ok, true);
   assert.equal(result.value.logo.path, source.logo.path);
-  assert.equal(
-    result.value.standby.backgroundImagePath,
-    source.standby.backgroundImagePath,
+  assert.deepEqual(
+    result.value.standby.backgroundImagePaths,
+    source.standby.backgroundImagePaths,
   );
   assert.equal(result.value.appearance.fontFamily, source.appearance.fontFamily);
   assert.equal(result.value.appearance.backgroundColor, '#A1B2C3');
@@ -89,7 +97,8 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 3 },
     { ...source, configVersion: 4 },
     { ...source, configVersion: 5 },
-    { ...source, configVersion: 7 },
+    { ...source, configVersion: 6 },
+    { ...source, configVersion: 8 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -98,38 +107,90 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
   }
 });
 
-test('待機背景接受 null 或受管理的 exact 點陣圖路徑', async () => {
+test('待機背景接受固定／輪播模式、零至二十張唯一圖片與秒數邊界', async () => {
   const source = await readDefaultConfig();
+  const twentyPaths = Array.from(
+    { length: CONFIG_LIMITS.MAXIMUM_STANDBY_BACKGROUND_COUNT },
+    (_, index) =>
+      `standby-backgrounds/${index.toString(16).padStart(24, '0')}.png`,
+  );
 
-  for (const backgroundImagePath of [
-    null,
-    'standby-backgrounds/0123456789abcdef01234567.jpg',
-    'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
-    'standby-backgrounds/ffffffffffffffffffffffff.webp',
+  for (const standby of [
+    {
+      backgroundMode: 'fixed',
+      backgroundImagePaths: [],
+      slideDurationSeconds:
+        CONFIG_LIMITS.MINIMUM_STANDBY_SLIDE_DURATION_SECONDS,
+    },
+    {
+      backgroundMode: 'slideshow',
+      backgroundImagePaths: [
+        'standby-backgrounds/0123456789abcdef01234567.jpg',
+        'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+        'standby-backgrounds/ffffffffffffffffffffffff.webp',
+      ],
+      slideDurationSeconds:
+        CONFIG_LIMITS.MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS,
+    },
+    {
+      backgroundMode: 'fixed',
+      backgroundImagePaths: twentyPaths,
+      slideDurationSeconds: 10,
+    },
   ]) {
-    const result = validateConfig({
-      ...source,
-      standby: { backgroundImagePath },
-    });
+    const result = validateConfig({ ...source, standby });
 
-    assert.equal(result.ok, true, String(backgroundImagePath));
-    assert.deepEqual(result.value.standby, { backgroundImagePath });
+    assert.equal(result.ok, true, JSON.stringify(standby));
+    assert.deepEqual(result.value.standby, standby);
+    assert.notEqual(
+      result.value.standby.backgroundImagePaths,
+      standby.backgroundImagePaths,
+    );
     assert.equal(Object.isFrozen(result.value.standby), true);
+    assert.equal(
+      Object.isFrozen(result.value.standby.backgroundImagePaths),
+      true,
+    );
   }
 });
 
-test('待機背景拒絕非 exact shape、本機路徑、網路路徑與非受管理圖片', async () => {
+test('待機背景拒絕非 exact shape、重複或過多圖片、錯誤模式與秒數', async () => {
   const source = await readDefaultConfig();
   const validPath = 'standby-backgrounds/0123456789abcdef01234567.png';
+  const valid = {
+    backgroundMode: 'fixed',
+    backgroundImagePaths: [validPath],
+    slideDurationSeconds: 10,
+  };
 
   for (const standby of [
     {},
-    { backgroundImagePath: null, unexpected: true },
+    { ...valid, unexpected: true },
+    { ...valid, backgroundMode: 'random' },
+    { ...valid, backgroundImagePaths: 'not-an-array' },
+    { ...valid, backgroundImagePaths: [validPath, validPath] },
+    {
+      ...valid,
+      backgroundImagePaths: Array.from(
+        { length: CONFIG_LIMITS.MAXIMUM_STANDBY_BACKGROUND_COUNT + 1 },
+        (_, index) =>
+          `standby-backgrounds/${index.toString(16).padStart(24, '0')}.png`,
+      ),
+    },
+    { ...valid, slideDurationSeconds: 0 },
+    { ...valid, slideDurationSeconds: 3_601 },
+    { ...valid, slideDurationSeconds: 1.5 },
+    { ...valid, slideDurationSeconds: '10' },
   ]) {
     const result = validateConfig({ ...source, standby });
     assert.equal(result.ok, false, JSON.stringify(standby));
-    assert.equal(result.error.field, 'standby');
+    assert.match(result.error.field, /^standby(?:\.|$)/);
   }
+});
+
+test('待機背景拒絕本機路徑、網路路徑與非受管理圖片', async () => {
+  const source = await readDefaultConfig();
+  const validPath = 'standby-backgrounds/0123456789abcdef01234567.png';
 
   for (const backgroundImagePath of [
     '',
@@ -156,10 +217,14 @@ test('待機背景拒絕非 exact shape、本機路徑、網路路徑與非受�
   ]) {
     const result = validateConfig({
       ...source,
-      standby: { backgroundImagePath },
+      standby: {
+        backgroundMode: 'fixed',
+        backgroundImagePaths: [backgroundImagePath],
+        slideDurationSeconds: 10,
+      },
     });
     assert.equal(result.ok, false, String(backgroundImagePath));
-    assert.equal(result.error.field, 'standby.backgroundImagePath');
+    assert.equal(result.error.field, 'standby.backgroundImagePaths');
   }
 });
 
@@ -251,10 +316,10 @@ test('Logo 僅接受受管理的相對點陣圖識別，啟用時不得缺少路
   }
 });
 
-test('Logo 尺寸接受 50% 至 200% 且只能以 5% 遞增', async () => {
+test('Logo 尺寸接受 50% 至 1000% 且只能以 5% 遞增', async () => {
   const source = await readDefaultConfig();
 
-  for (const sizePercent of [50, 100, 200]) {
+  for (const sizePercent of [50, 100, 200, 995, 1_000]) {
     const result = validateConfig({
       ...source,
       logo: { ...source.logo, sizePercent },
@@ -264,7 +329,7 @@ test('Logo 尺寸接受 50% 至 200% 且只能以 5% 遞增', async () => {
     assert.deepEqual(result.value.logo, { ...source.logo, sizePercent });
   }
 
-  for (const sizePercent of [49, 201, 51, 99, 100.5, '100', null]) {
+  for (const sizePercent of [49, 1_001, 51, 99, 100.5, '100', null]) {
     const result = validateConfig({
       ...source,
       logo: { ...source.logo, sizePercent },

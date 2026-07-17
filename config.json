@@ -1,12 +1,14 @@
 {
-  "configVersion": 6,
+  "configVersion": 7,
   "logo": {
     "enabled": false,
     "path": null,
     "sizePercent": 100
   },
   "standby": {
-    "backgroundImagePath": null
+    "backgroundMode": "fixed",
+    "backgroundImagePaths": [],
+    "slideDurationSeconds": 10
   },
   "appearance": {
     "backgroundColor": "#000000",

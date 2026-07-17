@@ -4,7 +4,11 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const defaultConfig = require('../../config.json');
-const DEFAULT_STANDBY = Object.freeze({ backgroundImagePath: null });
+const DEFAULT_STANDBY = Object.freeze({
+  backgroundMode: 'fixed',
+  backgroundImagePaths: Object.freeze([]),
+  slideDurationSeconds: 10,
+});
 const DEFAULT_LOGO_SIZE_PERCENT = 100;
 
 function createV1Config() {
@@ -126,13 +130,26 @@ function createV5Config() {
   };
 }
 
-test('合法 v1 設定保留舊值並由 v6 預設補上新欄位', () => {
+function createV6Config() {
+  const legacy = createV5Config();
+
+  return {
+    ...legacy,
+    configVersion: 6,
+    logo: {
+      ...legacy.logo,
+      sizePercent: 175,
+    },
+  };
+}
+
+test('合法 v1 設定保留舊值並由 v7 預設補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV1Config(), defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 6);
+  assert.equal(result.value.configVersion, 7);
   assert.deepEqual(result.value, {
     ...defaultConfig,
     logo: {
@@ -159,7 +176,7 @@ test('合法 v1 設定保留舊值並由 v6 預設補上新欄位', () => {
   });
 });
 
-test('合法 v2 設定嚴格遷移為 v6，保留舊值並只補上新欄位', () => {
+test('合法 v2 設定嚴格遷移為 v7，保留舊值並只補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV2Config(), defaultConfig);
 
@@ -196,7 +213,7 @@ test('合法 v2 設定嚴格遷移為 v6，保留舊值並只補上新欄位', (
   });
 });
 
-test('合法 v3 設定嚴格遷移為 v6，只補上預設播放、待機與 Logo 尺寸', () => {
+test('合法 v3 設定嚴格遷移為 v7，只補上預設播放、待機與 Logo 尺寸', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV3Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -205,7 +222,7 @@ test('合法 v3 設定嚴格遷移為 v6，只補上預設播放、待機與 Log
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -224,7 +241,7 @@ test('合法 v3 設定嚴格遷移為 v6，只補上預設播放、待機與 Log
   });
 });
 
-test('合法 v4 設定嚴格遷移為 v6，保留所有舊值並補待機與 Logo 尺寸', () => {
+test('合法 v4 設定嚴格遷移為 v7，保留所有舊值並補待機與 Logo 尺寸', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV4Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -233,7 +250,7 @@ test('合法 v4 設定嚴格遷移為 v6，保留所有舊值並補待機與 Log
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -247,13 +264,13 @@ test('合法 v4 設定嚴格遷移為 v6，保留所有舊值並補待機與 Log
       inspectionBackgroundColor: '#5F1B1B',
       releaseBackgroundColor: '#12512B',
     },
-    standby: { backgroundImagePath: null },
+    standby: DEFAULT_STANDBY,
   });
   assert.deepEqual(result.value.playback, legacy.playback);
   assert.equal(Object.isFrozen(result.value.standby), true);
 });
 
-test('合法 v5 設定嚴格遷移為 v6，只補上預設 Logo 尺寸', () => {
+test('合法 v5 設定嚴格遷移為 v7，保留單張背景並補上預設 Logo 尺寸', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV5Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -262,7 +279,7 @@ test('合法 v5 設定嚴格遷移為 v6，只補上預設 Logo 尺寸', () => {
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -276,27 +293,53 @@ test('合法 v5 設定嚴格遷移為 v6，只補上預設 Logo 尺寸', () => {
       inspectionBackgroundColor: '#5F1B1B',
       releaseBackgroundColor: '#12512B',
     },
+    standby: {
+      backgroundMode: 'fixed',
+      backgroundImagePaths: [legacy.standby.backgroundImagePath],
+      slideDurationSeconds: 10,
+    },
   });
   assert.equal(Object.isFrozen(result.value.logo), true);
+  assert.equal(
+    Object.isFrozen(result.value.standby.backgroundImagePaths),
+    true,
+  );
 });
 
-test('canonical v6 設定不會被誤判為遷移資料', () => {
+test('合法 v6 設定嚴格遷移為 v7，保留 Logo 尺寸與單張背景', () => {
+  const { migrateStoredConfig } = require('../../config/config-migrations');
+  const legacy = createV6Config();
+  const result = migrateStoredConfig(legacy, defaultConfig);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.equal(result.value.configVersion, 7);
+  assert.equal(result.value.logo.sizePercent, 175);
+  assert.deepEqual(result.value.standby, {
+    backgroundMode: 'fixed',
+    backgroundImagePaths: [legacy.standby.backgroundImagePath],
+    slideDurationSeconds: 10,
+  });
+});
+
+test('canonical v7 設定不會被誤判為遷移資料', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(defaultConfig, defaultConfig);
 
-  assert.equal(defaultConfig.configVersion, 6);
+  assert.equal(defaultConfig.configVersion, 7);
   assert.equal(result.ok, true);
   assert.equal(result.migrated, false);
   assert.deepEqual(result.value, defaultConfig);
 });
 
-test('遷移拒絕畸形 v1／v2／v3／v4／v5、未知欄位與未知版本', () => {
+test('遷移拒絕畸形 v1 至 v6、未知欄位與未知版本', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const v1 = createV1Config();
   const v2 = createV2Config();
   const v3 = createV3Config();
   const v4 = createV4Config();
   const v5 = createV5Config();
+  const v6 = createV6Config();
 
   for (const candidate of [
     { ...v1, unexpected: true },
@@ -318,6 +361,11 @@ test('遷移拒絕畸形 v1／v2／v3／v4／v5、未知欄位與未知版本', 
     { ...v5, logo: { ...v5.logo, sizePercent: 100 } },
     { ...v5, standby: { ...v5.standby, unexpected: true } },
     { ...v5, configVersion: 6 },
+    { ...v6, unexpected: true },
+    { ...v6, logo: { ...v6.logo, unexpected: true } },
+    { ...v6, standby: { ...v6.standby, unexpected: true } },
+    { ...v6, standby: { backgroundImagePath: '/tmp/background.png' } },
+    { ...v6, configVersion: 7 },
     { ...defaultConfig, configVersion: 99 },
   ]) {
     assert.equal(migrateStoredConfig(candidate, defaultConfig).ok, false);

@@ -49,6 +49,7 @@ const LEGACY_V5_CONFIG_KEYS = Object.freeze([
   'playback',
   'standby',
 ]);
+const LEGACY_V6_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -134,10 +135,25 @@ function isCanonicalV2Shape(candidate) {
 }
 
 /**
- * 將磁碟上的合法 v1／v2／v3／v4／v5 設定轉成 canonical v6。
+ * 將 v5／v6 的單張待機背景轉成 v7 有序清單。
+ * null 代表沒有背景，因此轉成空陣列；既有圖片則固定放在第一張。
+ */
+function migrateSingleStandbyBackground(legacyStandby, defaultStandby) {
+  return {
+    backgroundMode: 'fixed',
+    backgroundImagePaths:
+      legacyStandby.backgroundImagePath === null
+        ? []
+        : [legacyStandby.backgroundImagePath],
+    slideDurationSeconds: defaultStandby.slideDurationSeconds,
+  };
+}
+
+/**
+ * 將磁碟上的合法 v1 至 v6 設定轉成 canonical v7。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v6。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v6 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v7。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v7 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -153,9 +169,30 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V6_CONFIG_KEYS) &&
+    candidate.configVersion === 6 &&
+    hasExactKeys(candidate.logo, ['enabled', 'path', 'sizePercent']) &&
+    hasExactKeys(candidate.standby, ['backgroundImagePath'])
+  ) {
+    const migratedV6 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      standby: migrateSingleStandbyBackground(
+        candidate.standby,
+        defaults.value.standby,
+      ),
+    });
+
+    return migratedV6.ok
+      ? { ok: true, value: migratedV6.value, migrated: true }
+      : migratedV6;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V5_CONFIG_KEYS) &&
     candidate.configVersion === 5 &&
-    hasExactKeys(candidate.logo, ['enabled', 'path'])
+    hasExactKeys(candidate.logo, ['enabled', 'path']) &&
+    hasExactKeys(candidate.standby, ['backgroundImagePath'])
   ) {
     const migratedV5 = validateConfig({
       ...candidate,
@@ -164,6 +201,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         ...candidate.logo,
         sizePercent: defaults.value.logo.sizePercent,
       },
+      standby: migrateSingleStandbyBackground(
+        candidate.standby,
+        defaults.value.standby,
+      ),
     });
 
     return migratedV5.ok
