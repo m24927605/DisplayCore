@@ -42,8 +42,29 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     fontColorError: document.getElementById('font-color-error'),
     minimumFontSize: document.getElementById('minimum-font-size-input'),
     minimumFontSizeError: document.getElementById('minimum-font-size-error'),
+    fontSizePercent: document.getElementById('font-size-percent-input'),
+    fontSizePercentError: document.getElementById('font-size-percent-error'),
+    lineSpacingPercent: document.getElementById('line-spacing-percent-input'),
+    lineSpacingPercentError: document.getElementById('line-spacing-percent-error'),
+    inspectionBackgroundColorPicker: document.getElementById(
+      'inspection-background-color-picker',
+    ),
+    inspectionBackgroundColor: document.getElementById(
+      'inspection-background-color-input',
+    ),
+    inspectionBackgroundColorError: document.getElementById(
+      'inspection-background-color-error',
+    ),
+    releaseBackgroundColorPicker: document.getElementById(
+      'release-background-color-picker',
+    ),
+    releaseBackgroundColor: document.getElementById(
+      'release-background-color-input',
+    ),
+    releaseBackgroundColorError: document.getElementById(
+      'release-background-color-error',
+    ),
     dateTimeEnabled: document.getElementById('date-time-enabled-input'),
-    hour12: document.getElementById('hour12-input'),
     marqueeEnabled: document.getElementById('marquee-enabled-input'),
     loadDefaultsButton: document.getElementById('load-defaults-button'),
     closeButton: document.getElementById('settings-close-button'),
@@ -86,6 +107,26 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       elements.minimumFontSize,
       elements.minimumFontSizeError,
     ],
+    'appearance.fontSizePercent': [
+      elements.fontSizePercent,
+      elements.fontSizePercentError,
+    ],
+    'appearance.lineSpacingPercent': [
+      elements.lineSpacingPercent,
+      elements.lineSpacingPercentError,
+    ],
+    emergency: [
+      elements.inspectionBackgroundColor,
+      elements.inspectionBackgroundColorError,
+    ],
+    'emergency.inspectionBackgroundColor': [
+      elements.inspectionBackgroundColor,
+      elements.inspectionBackgroundColorError,
+    ],
+    'emergency.releaseBackgroundColor': [
+      elements.releaseBackgroundColor,
+      elements.releaseBackgroundColorError,
+    ],
   });
 
   function focusWhenUnlocked(target) {
@@ -123,8 +164,11 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       fontFamily: elements.fontFamily.value,
       fontColor: elements.fontColor.value,
       minimumFontSizeRem: elements.minimumFontSize.value,
+      fontSizePercent: elements.fontSizePercent.value,
+      lineSpacingPercent: elements.lineSpacingPercent.value,
+      inspectionBackgroundColor: elements.inspectionBackgroundColor.value,
+      releaseBackgroundColor: elements.releaseBackgroundColor.value,
       dateTimeEnabled: elements.dateTimeEnabled.checked,
-      hour12: elements.hour12.checked,
       marqueeEnabled: elements.marqueeEnabled.checked,
     });
   }
@@ -191,8 +235,21 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     elements.minimumFontSize.value = String(
       config.appearance.minimumFontSizeRem,
     );
+    elements.fontSizePercent.value = String(
+      config.appearance.fontSizePercent,
+    );
+    elements.lineSpacingPercent.value = String(
+      config.appearance.lineSpacingPercent,
+    );
+    elements.inspectionBackgroundColor.value =
+      config.emergency.inspectionBackgroundColor;
+    elements.inspectionBackgroundColorPicker.value =
+      config.emergency.inspectionBackgroundColor.toLowerCase();
+    elements.releaseBackgroundColor.value =
+      config.emergency.releaseBackgroundColor;
+    elements.releaseBackgroundColorPicker.value =
+      config.emergency.releaseBackgroundColor.toLowerCase();
     elements.dateTimeEnabled.checked = config.dateTime.enabled;
-    elements.hour12.checked = config.dateTime.hour12;
     elements.marqueeEnabled.checked = config.marquee.enabled;
   }
 
@@ -310,6 +367,14 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     for (const [picker, textInput] of [
       [elements.backgroundColorPicker, elements.backgroundColor],
       [elements.fontColorPicker, elements.fontColor],
+      [
+        elements.inspectionBackgroundColorPicker,
+        elements.inspectionBackgroundColor,
+      ],
+      [
+        elements.releaseBackgroundColorPicker,
+        elements.releaseBackgroundColor,
+      ],
     ]) {
       picker.addEventListener('input', () => {
         textInput.value = picker.value.toUpperCase();
@@ -327,8 +392,9 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       elements.logoEnabled,
       elements.fontFamily,
       elements.minimumFontSize,
+      elements.fontSizePercent,
+      elements.lineSpacingPercent,
       elements.dateTimeEnabled,
-      elements.hour12,
       elements.marqueeEnabled,
     ]) {
       control.addEventListener('input', handleDraftInput, { signal });

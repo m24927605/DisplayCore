@@ -17,6 +17,7 @@ import {
 } from './program-builder.mjs';
 import { createSettingsController } from './settings-controller.mjs';
 import { createSettingsView } from './settings-view.mjs';
+import { paginateMessageList } from './message-list-pagination.mjs';
 
 /**
  * Control Renderer 的 DOM 接線層。
@@ -39,9 +40,14 @@ const elements = Object.freeze({
     document.getElementById('operation-welcome-button'),
     document.getElementById('operation-quiet-button'),
   ]),
-  currentPageSummary: document.getElementById('current-page-summary'),
-  currentList: document.getElementById('current-message-list'),
-  currentEmpty: document.getElementById('current-empty-state'),
+  livePageSummary: document.getElementById('live-page-summary'),
+  liveList: document.getElementById('live-message-list'),
+  liveEmpty: document.getElementById('live-empty-state'),
+  displayListSummary: document.getElementById('display-list-summary'),
+  displayList: document.getElementById('display-message-list'),
+  displayListEmpty: document.getElementById('display-list-empty-state'),
+  displayListPrevious: document.getElementById('display-list-prev'),
+  displayListNext: document.getElementById('display-list-next'),
   clearDisplayButton: document.getElementById('clear-display-button'),
   pageDurationInput: document.getElementById('page-duration-input'),
   pageDurationError: document.getElementById('page-duration-error'),
@@ -74,6 +80,8 @@ const uiState = {
   draftValidationVisible: false,
   snapshot: null,
   activeMessages: Object.freeze([]),
+  listPageNumber: 1,
+  lastListContentRevision: -1,
   lastPlaybackContentRevision: -1,
   pendingEmergency: null,
   inspectionClosing: false,
@@ -289,6 +297,75 @@ function createCurrentMessageItem(message, globalIndex, removable) {
   return item;
 }
 
+function updateListControls(page = paginateMessageList(
+  uiState.activeMessages,
+  uiState.listPageNumber,
+)) {
+  const disabled = uiState.busy || !uiState.ready;
+  elements.displayListPrevious.disabled = disabled || !page.hasPreviousPage;
+  elements.displayListNext.disabled = disabled || !page.hasNextPage;
+  elements.clearDisplayButton.disabled =
+    disabled || uiState.snapshot?.mode === 'blank';
+  elements.displayList
+    .querySelectorAll('.current-remove-button')
+    .forEach((button) => {
+      button.disabled = disabled;
+    });
+}
+
+/** 顯示清單有自己的瀏覽頁碼，不會送出任何切換電視頁面的 IPC。 */
+function renderDisplayList() {
+  const page = paginateMessageList(
+    uiState.activeMessages,
+    uiState.listPageNumber,
+  );
+  uiState.listPageNumber = page.pageNumber || 1;
+
+  elements.displayListSummary.textContent = page.pageCount === 0
+    ? '瀏覽第 —'
+    : `瀏覽第 ${page.pageNumber} / ${page.pageCount} 頁 · 共 ${uiState.activeMessages.length} 則`;
+
+  const fragment = document.createDocumentFragment();
+  for (const { message, globalIndex } of page.visibleMessages) {
+    fragment.append(createCurrentMessageItem(message, globalIndex, true));
+  }
+  elements.displayList.replaceChildren(fragment);
+  elements.displayList.hidden = page.visibleMessages.length === 0;
+  elements.displayListEmpty.hidden = page.visibleMessages.length > 0;
+  updateListControls(page);
+}
+
+/** 即時狀態只呈現電視真正正在播放的頁面，沒有任何操作按鈕。 */
+function renderLiveStatus(snapshot) {
+  let visibleMessages = [];
+  if (snapshot.mode === 'page') {
+    const pageStart =
+      (snapshot.pageNumber - 1) * PROGRAM_LIMITS.MESSAGES_PER_PAGE;
+    visibleMessages = snapshot.messages.slice(
+      pageStart,
+      pageStart + PROGRAM_LIMITS.MESSAGES_PER_PAGE,
+    );
+    const round = snapshot.totalRounds === null
+      ? '持續播放'
+      : `第 ${snapshot.roundNumber} / ${snapshot.totalRounds} 輪`;
+    elements.livePageSummary.textContent =
+      `播放第 ${snapshot.pageNumber} / ${snapshot.pageCount} 頁 · ${round}`;
+  } else if (snapshot.mode === 'emergency') {
+    visibleMessages = snapshot.messages;
+    elements.livePageSummary.textContent = '滿屏顯示';
+  } else {
+    elements.livePageSummary.textContent = '播放第 —';
+  }
+
+  const fragment = document.createDocumentFragment();
+  visibleMessages.forEach(({ message }, index) => {
+    fragment.append(createCurrentMessageItem(message, index, false));
+  });
+  elements.liveList.replaceChildren(fragment);
+  elements.liveList.hidden = visibleMessages.length === 0;
+  elements.liveEmpty.hidden = visibleMessages.length > 0;
+}
+
 /**
  * 只在內容版本改變時同步 Main 正在使用的播放參數。
  * 單純翻頁不可覆蓋操作員尚未用於下一次顯示的新草稿。
@@ -318,78 +395,30 @@ function synchronizePlayback(snapshot) {
 
 /** 將 Control 專用的完整 active snapshot 投影為「電視當前頁」最多三則。 */
 function renderPresentation(snapshot) {
-  const activeElement = document.activeElement;
-  const activeItem = activeElement instanceof HTMLElement &&
-    elements.currentList.contains(activeElement)
-    ? activeElement.closest('.current-message-item')
-    : null;
-  const activeSelector = activeElement instanceof HTMLElement &&
-    activeElement.matches('.current-remove-button, .current-message-text')
-    ? (activeElement.matches('.current-remove-button')
-      ? '.current-remove-button'
-      : '.current-message-text')
-    : null;
-  const activeCurrentControl = activeItem && activeSelector
-    ? {
-      messageIndex: activeItem.dataset.messageIndex,
-      selector: activeSelector,
-    }
-    : null;
-
+  const previousMessageCount = uiState.activeMessages.length;
+  const contentChanged =
+    snapshot.contentRevision !== uiState.lastListContentRevision;
   uiState.snapshot = snapshot;
   uiState.activeMessages = snapshot.mode === 'page'
-    ? Object.freeze(snapshot.messages.map(({ message }) =>
-      Object.freeze({ message })))
+    ? Object.freeze(snapshot.messages.map(({ message, alignment }) =>
+      Object.freeze({ message, alignment })))
     : Object.freeze([]);
   synchronizePlayback(snapshot);
+  renderLiveStatus(snapshot);
 
-  let visibleMessages = [];
-  let pageStart = 0;
-  if (snapshot.mode === 'page') {
-    pageStart = (snapshot.pageNumber - 1) * PROGRAM_LIMITS.MESSAGES_PER_PAGE;
-    visibleMessages = snapshot.messages.slice(
-      pageStart,
-      pageStart + PROGRAM_LIMITS.MESSAGES_PER_PAGE,
-    );
-    elements.currentPageSummary.textContent =
-      `第 ${snapshot.pageNumber} / ${snapshot.pageCount} 頁 · ` +
-      `${visibleMessages.length} / ${PROGRAM_LIMITS.MESSAGES_PER_PAGE} 則`;
-  } else if (snapshot.mode === 'emergency') {
-    visibleMessages = snapshot.messages;
-    elements.currentPageSummary.textContent = '滿屏顯示';
+  if (contentChanged) {
+    uiState.lastListContentRevision = snapshot.contentRevision;
+    if (uiState.activeMessages.length > previousMessageCount) {
+      uiState.listPageNumber = Math.max(
+        1,
+        Math.ceil(
+          uiState.activeMessages.length / PROGRAM_LIMITS.MESSAGES_PER_PAGE,
+        ),
+      );
+    }
+    renderDisplayList();
   } else {
-    elements.currentPageSummary.textContent = '—';
-  }
-
-  const fragment = document.createDocumentFragment();
-  visibleMessages.forEach(({ message }, index) => {
-    fragment.append(createCurrentMessageItem(
-      message,
-      snapshot.mode === 'page' ? pageStart + index : index,
-      snapshot.mode === 'page',
-    ));
-  });
-  elements.currentList.replaceChildren(fragment);
-  elements.currentList.hidden = visibleMessages.length === 0;
-  elements.currentEmpty.hidden = visibleMessages.length > 0;
-  elements.clearDisplayButton.disabled =
-    uiState.busy || !uiState.ready || snapshot.mode === 'blank';
-
-  if (activeCurrentControl) {
-    const replacementItem = [...elements.currentList.children].find(
-      (item) => item.dataset.messageIndex === activeCurrentControl.messageIndex,
-    );
-    const replacementControl = replacementItem?.querySelector(
-      activeCurrentControl.selector,
-    );
-
-    queueMicrotask(() => {
-      if (replacementControl?.isConnected && !replacementControl.disabled) {
-        replacementControl.focus({ preventScroll: true });
-      } else {
-        elements.currentPageSummary.focus({ preventScroll: true });
-      }
-    });
+    updateListControls();
   }
 }
 
@@ -421,9 +450,7 @@ function setMutationControls() {
   }
   updateRepeatControls();
   updateMessageDraftView();
-  if (uiState.snapshot) {
-    renderPresentation(uiState.snapshot);
-  }
+  updateListControls();
 }
 
 function createView() {
@@ -460,7 +487,7 @@ function createView() {
 }
 
 /** 將新訊息加入 Main 目前內容並立即顯示，不建立 Renderer 待播清單。 */
-async function displayMessage(message, successMessage) {
+async function displayMessage(presentation, successMessage) {
   if (uiState.busy || !uiState.ready) {
     return false;
   }
@@ -468,7 +495,11 @@ async function displayMessage(message, successMessage) {
   const baseMessages = uiState.snapshot?.mode === 'page'
     ? uiState.activeMessages
     : [];
-  const appended = appendMessage(baseMessages, message);
+  const appended = appendMessage(
+    baseMessages,
+    presentation.message,
+    presentation.alignment,
+  );
   if (!appended.ok) {
     renderError(appended.error.message);
     return false;
@@ -489,7 +520,7 @@ async function submitMessage() {
     return;
   }
 
-  if (await displayMessage(result.presentation.message, '訊息已顯示。')) {
+  if (await displayMessage(result.presentation, '訊息已顯示。')) {
     elements.recipientInput.value = '';
     elements.customInput.value = '';
     uiState.draftValidationVisible = false;
@@ -528,8 +559,13 @@ async function removeCurrentMessage(index) {
 
   if (succeeded) {
     queueMicrotask(() => {
-      const buttons = [...document.querySelectorAll('.current-remove-button')];
-      buttons[Math.min(index, buttons.length - 1)]?.focus();
+      const buttons = [...elements.displayList.querySelectorAll(
+        '.current-remove-button',
+      )];
+      buttons[Math.min(
+        index % PROGRAM_LIMITS.MESSAGES_PER_PAGE,
+        buttons.length - 1,
+      )]?.focus();
     });
   }
 }
@@ -612,18 +648,37 @@ function bindUiEvents() {
     button.addEventListener('click', () => {
       const message = button.dataset.operationMessage;
       if (operationMessages.has(message)) {
-        void displayMessage(message, `「${message}」已顯示。`);
+        void displayMessage(
+          { message, alignment: 'center' },
+          `「${message}」已顯示。`,
+        );
       }
     });
   }
 
-  elements.currentList.addEventListener('click', (event) => {
+  elements.displayList.addEventListener('click', (event) => {
     const button = event.target instanceof Element
       ? event.target.closest('.current-remove-button')
       : null;
     if (button) {
       void removeCurrentMessage(Number(button.dataset.messageIndex));
     }
+  });
+  elements.displayListPrevious.addEventListener('click', () => {
+    const page = paginateMessageList(
+      uiState.activeMessages,
+      uiState.listPageNumber,
+    );
+    uiState.listPageNumber = page.previousPageNumber || 1;
+    renderDisplayList();
+  });
+  elements.displayListNext.addEventListener('click', () => {
+    const page = paginateMessageList(
+      uiState.activeMessages,
+      uiState.listPageNumber,
+    );
+    uiState.listPageNumber = page.nextPageNumber || 1;
+    renderDisplayList();
   });
   elements.clearDisplayButton.addEventListener('click', () =>
     void uiState.controller.clearPresentation());

@@ -13,7 +13,14 @@
   --display-safe-block: clamp(1rem, 3.5vh, 12rem);
   --display-safe-inline: clamp(1.5rem, 4vw, 16rem);
   --chrome-gap: clamp(0.5rem, 1.5vh, 3rem);
-  --row-gap: clamp(0.4rem, 1.25vh, 3rem);
+  --message-font-scale: 1;
+  --message-line-spacing-scale: 1;
+  --row-gap: clamp(
+    0rem,
+    calc(1.25vh * var(--message-line-spacing-scale)),
+    9rem
+  );
+  --emergency-background: #000000;
   --marquee-gap: clamp(4rem, 10vw, 24rem);
 }
 
@@ -74,10 +81,10 @@ body {
   isolation: isolate;
 }
 
-/* 緊急代碼固定黑底白字，避免一般配色誤設成無對比而看不見。 */
+/* 緊急代碼保持白字，背景則依 Main 傳來的 tone 使用各自設定。 */
 .display-stage[data-mode="emergency"] {
   color: #ffffff;
-  background: #000000;
+  background: var(--emergency-background);
 }
 
 .normal-layer,
@@ -89,6 +96,7 @@ body {
 
 .normal-layer {
   display: grid;
+  position: relative;
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--chrome-gap);
   inline-size: 100%;
@@ -99,14 +107,14 @@ body {
 }
 
 /* 沒有 Logo 與時間時移除空的 chrome 軌道與間距，讓訊息使用完整安全區。 */
-.normal-layer:not(.has-chrome) {
+.normal-layer:not(.has-logo) {
   grid-template-rows: minmax(0, 1fr);
   gap: 0;
 }
 
 .display-chrome {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr);
   align-items: center;
   gap: clamp(1rem, 3vw, 8rem);
   min-inline-size: 0;
@@ -133,7 +141,10 @@ body {
 }
 
 .display-clock {
-  justify-self: end;
+  position: absolute;
+  inset-inline-end: var(--display-safe-inline);
+  inset-block-end: var(--display-safe-block);
+  z-index: 2;
   color: inherit;
   font-size: clamp(1.125rem, 2.25vmin, 6rem);
   font-weight: 700;
@@ -142,6 +153,10 @@ body {
   line-height: 1;
   text-align: end;
   white-space: nowrap;
+}
+
+.normal-layer.has-clock .page-layer {
+  padding-block-end: clamp(2.25rem, 5.5vh, 12rem);
 }
 
 .page-layer {
@@ -153,13 +168,17 @@ body {
   min-inline-size: 0;
   min-block-size: 0;
   overflow: hidden;
-  font-size: clamp(2.5rem, 10vmin, 18rem);
+  font-size: clamp(
+    2.5rem,
+    calc(10vmin * var(--message-font-scale)),
+    18rem
+  );
 }
 
 .message-row {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   min-inline-size: 0;
   min-block-size: 0;
   overflow: hidden;
@@ -168,8 +187,13 @@ body {
   font-weight: 800;
   letter-spacing: 0.015em;
   line-height: 1.08;
-  text-align: center;
+  text-align: left;
   white-space: nowrap;
+}
+
+.message-row[data-alignment="center"] {
+  justify-content: center;
+  text-align: center;
 }
 
 .message-text {
@@ -181,6 +205,10 @@ body {
 
 .message-row.is-compressed .message-text {
   transform: scaleX(var(--compression-ratio, 1));
+  transform-origin: left center;
+}
+
+.message-row[data-alignment="center"].is-compressed .message-text {
   transform-origin: center;
 }
 
@@ -218,7 +246,7 @@ body {
   gap: clamp(0.25rem, 0.8vmin, 2rem);
   padding: clamp(0.25rem, 0.8vmin, 2rem);
   overflow: hidden;
-  background: #000000;
+  background: var(--emergency-background);
   place-items: center;
 }
 
@@ -231,7 +259,11 @@ body {
   place-items: center;
   overflow: hidden;
   color: #ffffff;
-  font-size: clamp(2.5rem, 6.5vmin, 18rem);
+  font-size: clamp(
+    2rem,
+    calc(6.5vmin * var(--message-font-scale)),
+    18rem
+  );
   font-weight: 900;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.04em;

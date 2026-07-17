@@ -99,7 +99,7 @@ const clock = createDisplayClock({
     }
 
     updateChromeVisibility();
-    // 每分鐘只更新文字；若 chrome 可見性不變，不重建正在播放的跑馬燈。
+    // 每秒只更新文字；若可見性不變，不重建正在播放的跑馬燈。
     if (clockHasValue !== previousClockHasValue) {
       scheduleFit();
     }
@@ -246,6 +246,7 @@ function fitCurrentPage(
       smallestRowHeight,
       rootFontSize,
       minimumFontSizeRem: currentSettings.appearance.minimumFontSizeRem,
+      fontSizePercent: currentSettings.appearance.fontSizePercent,
       lineHeight: MESSAGE_LINE_HEIGHT,
     });
   } catch {
@@ -342,18 +343,15 @@ function updateChromeVisibility() {
   elements.logoFrame.hidden = !showLogo;
   elements.logo.hidden = !showLogo;
   elements.clock.hidden = !showClock;
-  elements.normalLayer.classList.toggle('has-chrome', showLogo || showClock);
-  elements.chrome.hidden = !(showLogo || showClock);
+  elements.normalLayer.classList.toggle('has-logo', showLogo);
+  elements.normalLayer.classList.toggle('has-clock', showClock);
+  elements.chrome.hidden = !showLogo;
 }
 
 function syncClock() {
   const enabled =
     currentPresentation?.mode === 'page' && currentSettings.dateTime.enabled;
-  const signature = [
-    enabled,
-    currentSettings.dateTime.locale,
-    currentSettings.dateTime.hour12,
-  ].join('|');
+  const signature = String(enabled);
 
   if (signature === clockSignature) {
     updateChromeVisibility();
@@ -361,11 +359,7 @@ function syncClock() {
   }
 
   clockSignature = signature;
-  clock.update({
-    enabled,
-    locale: currentSettings.dateTime.locale,
-    hour12: currentSettings.dateTime.hour12,
-  });
+  clock.update({ enabled });
 }
 
 function handleLogoLoad() {
@@ -439,6 +433,20 @@ function calculateLogoOutline(backgroundColor) {
     : 'rgb(255 255 255 / 10%)';
 }
 
+function applyEmergencyBackground(tone) {
+  if (tone !== 'inspection' && tone !== 'release') {
+    return;
+  }
+
+  const background = tone === 'inspection'
+    ? currentSettings.emergency.inspectionBackgroundColor
+    : currentSettings.emergency.releaseBackgroundColor;
+  document.documentElement.style.setProperty(
+    '--emergency-background',
+    background,
+  );
+}
+
 function applyDisplaySettings(snapshot) {
   cancelPendingFit();
   currentSettings = snapshot;
@@ -453,10 +461,19 @@ function applyDisplaySettings(snapshot) {
     snapshot.appearance.fontFamily,
   );
   rootStyle.setProperty(
+    '--message-font-scale',
+    String(snapshot.appearance.fontSizePercent / 100),
+  );
+  rootStyle.setProperty(
+    '--message-line-spacing-scale',
+    String(snapshot.appearance.lineSpacingPercent / 100),
+  );
+  rootStyle.setProperty(
     '--logo-outline',
     calculateLogoOutline(snapshot.appearance.backgroundColor),
   );
   elements.stage.dataset.settingsRevision = String(snapshot.revision);
+  applyEmergencyBackground(currentPresentation?.emergencyTone);
   applyLogo();
   syncClock();
   updateChromeVisibility();
@@ -470,6 +487,7 @@ function renderBlank(snapshot) {
   elements.pageLayer.hidden = true;
   elements.fillLayer.hidden = true;
   elements.stage.dataset.mode = 'blank';
+  delete elements.stage.dataset.emergencyTone;
   elements.stage.dataset.revision = String(snapshot.revision);
   syncClock();
   updateChromeVisibility();
@@ -491,16 +509,18 @@ function renderPage(snapshot) {
 
   const fragment = document.createDocumentFragment();
 
-  for (const { message } of snapshot.messages) {
+  for (const { message, alignment } of snapshot.messages) {
     const row = document.createElement('div');
     row.className = 'message-row';
     row.dataset.message = message;
+    row.dataset.alignment = alignment;
     createStaticMessage(row, message);
     fragment.append(row);
   }
 
   elements.pageLayer.append(fragment);
   elements.stage.dataset.mode = 'page';
+  delete elements.stage.dataset.emergencyTone;
   elements.stage.dataset.revision = String(snapshot.revision);
   syncClock();
   updateChromeVisibility();
@@ -514,6 +534,8 @@ function renderEmergency(snapshot) {
   elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
   elements.fillLayer.hidden = false;
+  applyEmergencyBackground(snapshot.emergencyTone);
+  elements.stage.dataset.emergencyTone = snapshot.emergencyTone;
 
   const fragment = document.createDocumentFragment();
 

@@ -52,20 +52,19 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /clamp\(/);
   assert.match(css, /(?:vw|vh|vmin|rem|%)/);
   assert.match(css, /\.page-layer\s*{[^}]*display:\s*grid/s);
-  assert.match(
-    css,
-    /\.normal-layer\s*{[^}]*grid-template-rows:\s*auto minmax\(0,\s*1fr\)/s,
-  );
-  assert.match(
-    css,
-    /\.normal-layer:not\(\.has-chrome\)\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)[^}]*gap:\s*0/s,
-  );
+  assert.match(css, /\.normal-layer\s*{[^}]*position:\s*relative/s);
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
+  assert.match(css, /\.display-clock\s*{[^}]*position:\s*absolute[^}]*inset-inline-end:/s);
+  assert.match(css, /\.display-clock\s*{[^}]*inset-block-end:/s);
   assert.match(css, /\.message-row\s*{[^}]*white-space:\s*nowrap/s);
+  assert.match(css, /\.message-row\s*{[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/s);
+  assert.match(css, /\.message-row\[data-alignment="center"\]/);
   assert.match(css, /\.fill-layer\s*{[^}]*display:\s*grid/s);
   assert.match(css, /\.fill-layer\s*{[^}]*position:\s*fixed[^}]*inset:\s*0/s);
   assert.match(css, /--display-font-family/);
+  assert.match(css, /--message-line-spacing-scale/);
+  assert.match(css, /--emergency-background/);
   assert.match(css, /\.is-marquee\s+\.marquee-track\s*{[^}]*will-change:\s*transform/s);
   assert.match(css, /font-smoothing:\s*antialiased/);
   assert.doesNotMatch(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
@@ -97,10 +96,11 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.doesNotMatch(source, /prefers-reduced-motion/);
   assert.match(source, /\.setProperty\(\s*'--display-background'/);
   assert.match(source, /\.setProperty\(\s*'--display-font-family'/);
-  assert.match(
-    source,
-    /elements\.normalLayer\.classList\.toggle\(\s*'has-chrome',\s*showLogo \|\| showClock\s*\)/s,
-  );
+  assert.match(source, /row\.dataset\.alignment\s*=\s*alignment/);
+  assert.match(source, /snapshot\.emergencyTone/);
+  assert.match(source, /'--message-line-spacing-scale'/);
+  assert.match(source, /'--message-font-scale'/);
+  assert.match(source, /'--emergency-background'/);
   assert.match(
     source,
     /function updateAnnouncement\([^)]*\)\s*{[\s\S]*?setAttribute\('aria-live', priority\);[\s\S]*?\.textContent\s*=\s*message;/,

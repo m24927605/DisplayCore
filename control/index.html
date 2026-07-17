@@ -191,32 +191,54 @@
           class="panel current-panel"
           aria-labelledby="current-title"
         >
-          <div class="section-heading current-heading">
+          <div class="section-heading current-heading compact-heading">
             <div>
               <p class="section-kicker">即時狀態</p>
-              <h2 id="current-title">目前螢幕內容</h2>
+              <h2 id="current-title">電視與顯示清單</h2>
             </div>
-            <output
-              id="current-page-summary"
-              class="page-badge"
-              tabindex="-1"
-            >—</output>
           </div>
 
-          <p id="current-empty-state" class="current-empty" role="status">
-            目前沒有顯示內容
-          </p>
-          <ol id="current-message-list" class="current-message-list" hidden></ol>
+          <section class="status-section" aria-labelledby="live-status-title">
+            <div class="subsection-heading">
+              <h3 id="live-status-title">電視目前顯示</h3>
+              <output id="live-page-summary" class="page-badge">播放第 —</output>
+            </div>
+            <p id="live-empty-state" class="current-empty compact-empty" role="status">
+              目前沒有顯示內容
+            </p>
+            <ol id="live-message-list" class="current-message-list" hidden></ol>
+          </section>
+
+          <div class="section-separator" role="presentation"></div>
+
+          <section class="status-section" aria-labelledby="display-list-title">
+            <div class="subsection-heading">
+              <h3 id="display-list-title">顯示清單</h3>
+              <output
+                id="display-list-summary"
+                class="page-badge"
+                tabindex="-1"
+              >瀏覽第 —</output>
+            </div>
+            <p id="display-list-empty-state" class="current-empty compact-empty" role="status">
+              清單目前沒有一般訊息
+            </p>
+            <ol id="display-message-list" class="current-message-list" hidden></ol>
+            <nav class="list-pagination" aria-label="顯示清單分頁">
+              <button id="display-list-prev" class="button button-secondary" type="button" disabled>上一頁</button>
+              <button id="display-list-next" class="button button-secondary" type="button" disabled>下一頁</button>
+            </nav>
+          </section>
 
           <div class="current-footer">
-            <p>每頁最多顯示 3 則，超過時自動分頁。</p>
+            <p>每頁 3 則；清單瀏覽不會切換電視頁面。</p>
             <button
               id="clear-display-button"
               class="button button-secondary"
               type="button"
               disabled
             >
-              清除畫面
+              全部刪除
             </button>
           </div>
         </section>
@@ -316,9 +338,39 @@
                 <p id="font-family-error" class="field-error" hidden></p>
               </div>
               <div class="settings-field settings-field-wide">
-                <label for="minimum-font-size-input">最小字體大小</label>
+                <label for="font-size-percent-input">字體大小（%）</label>
+                <input id="font-size-percent-input" type="number" min="50" max="200" step="5" inputmode="numeric" aria-describedby="font-size-percent-error">
+                <p id="font-size-percent-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field">
+                <label for="line-spacing-percent-input">行距（%）</label>
+                <input id="line-spacing-percent-input" type="number" min="0" max="300" step="5" inputmode="numeric" aria-describedby="line-spacing-percent-error">
+                <p id="line-spacing-percent-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field">
+                <label for="minimum-font-size-input">自動縮字下限（rem）</label>
                 <input id="minimum-font-size-input" type="number" min="1" max="12" step="0.25" inputmode="decimal">
                 <p id="minimum-font-size-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-subheading settings-field-wide">
+                <strong>滿屏代碼背景</strong>
+                <small>字體大小使用上方同一設定；555 與 888 背景可分開調整。</small>
+              </div>
+              <div class="settings-field">
+                <label for="inspection-background-color-input">555 背景顏色</label>
+                <div class="color-control">
+                  <input id="inspection-background-color-picker" type="color" aria-label="選擇 555 背景顏色" value="#000000">
+                  <input id="inspection-background-color-input" type="text" value="#000000" autocomplete="off" spellcheck="false">
+                </div>
+                <p id="inspection-background-color-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field">
+                <label for="release-background-color-input">888 背景顏色</label>
+                <div class="color-control">
+                  <input id="release-background-color-picker" type="color" aria-label="選擇 888 背景顏色" value="#000000">
+                  <input id="release-background-color-input" type="text" value="#000000" autocomplete="off" spellcheck="false">
+                </div>
+                <p id="release-background-color-error" class="field-error" hidden></p>
               </div>
             </div>
           </fieldset>
@@ -327,12 +379,8 @@
             <legend>顯示行為</legend>
             <div class="settings-switch-list">
               <label class="settings-switch" for="date-time-enabled-input">
-                <span><strong>顯示日期時間</strong><small>使用這台電腦的本機時間。</small></span>
+                <span><strong>顯示時間</strong><small>時間固定顯示為 24 小時 HH:mm:ss，位置在右下角。</small></span>
                 <input id="date-time-enabled-input" type="checkbox">
-              </label>
-              <label class="settings-switch" for="hour12-input">
-                <span><strong>使用 12 小時制</strong><small>停用時使用 24 小時制。</small></span>
-                <input id="hour12-input" type="checkbox">
               </label>
               <label class="settings-switch" for="marquee-enabled-input">
                 <span><strong>必要時啟用跑馬燈</strong><small>最小字體仍放不下時使用。</small></span>

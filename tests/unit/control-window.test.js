@@ -45,7 +45,7 @@ test('Control 採一鍵立即顯示流程，不再建立待播清單', async () 
   assert.doesNotMatch(html, /加入清單|待播清單|顯示清單到電視/);
 });
 
-test('目前螢幕內容維持單一低密度頁面，每頁最多三則並可逐筆移除', async () => {
+test('右側分離唯讀即時狀態與可獨立分頁、逐筆刪除的顯示清單', async () => {
   const [html, appSource, css] = await Promise.all([
     readControlFile('index.html'),
     readControlFile('app.mjs'),
@@ -53,19 +53,24 @@ test('目前螢幕內容維持單一低密度頁面，每頁最多三則並可�
   ]);
 
   assert.match(html, /<section[^>]+id="current-presentation"/);
-  assert.match(html, /id="current-page-summary"/);
-  assert.match(html, /id="current-page-summary"[^>]+tabindex="-1"/);
-  assert.match(html, /id="current-message-list"/);
-  assert.match(html, /id="current-empty-state"/);
+  assert.match(html, /id="live-page-summary"/);
+  assert.match(html, /id="live-message-list"/);
+  assert.match(html, /id="display-list-summary"[^>]+tabindex="-1"/);
+  assert.match(html, /id="display-message-list"/);
+  assert.match(html, /id="display-list-prev"/);
+  assert.match(html, /id="display-list-next"/);
   assert.match(html, /<button[^>]+id="clear-display-button"[^>]+type="button"/);
-  assert.match(html, /每頁最多[^<]*3 則[^<]*自動分頁/);
+  assert.match(html, />\s*全部刪除\s*<\/button>/);
+  assert.match(html, /播放第/);
+  assert.match(html, /瀏覽第/);
   assert.match(html, /id="operation-status"[^>]+role="status"/);
   assert.match(html, /id="operation-error"[^>]+role="alert"/);
   assert.doesNotMatch(html, /current-revision|Main Process|第 6 步/);
   assert.match(html, /id="message-preview"[^>]+tabindex="0"/);
   assert.match(appSource, /text\.tabIndex\s*=\s*0/);
   assert.match(appSource, /item\.dataset\.messageIndex\s*=/);
-  assert.match(appSource, /activeCurrentControl/);
+  assert.match(appSource, /paginateMessageList/);
+  assert.match(appSource, /lastListContentRevision/);
   assert.doesNotMatch(
     appSource,
     /settingsDialog\.addEventListener\(\s*['"]close['"],\s*clearPlaybackErrors/,
@@ -146,12 +151,17 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'font-family-select',
     'font-color-input',
     'minimum-font-size-input',
+    'font-size-percent-input',
+    'line-spacing-percent-input',
+    'inspection-background-color-input',
+    'release-background-color-input',
     'date-time-enabled-input',
-    'hour12-input',
     'marquee-enabled-input',
   ]) {
     assert.match(html, new RegExp(`id="${inputId}"`));
   }
+  assert.doesNotMatch(html, /id="hour12-input"|12 小時制/);
+  assert.match(html, /時間固定顯示為 24 小時 HH:mm:ss/);
 });
 
 test('Control 只載入本機 module，Renderer 僅使用最小權限 bridge', async () => {
