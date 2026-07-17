@@ -64,7 +64,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿只修改顯示內容，原樣保留相容用輸出欄位與 locale', async () => {
+test('設定草稿包含字體、行距及獨立滿屏背景，並保留相容輸出欄位', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -81,14 +81,17 @@ test('設定草稿只修改顯示內容，原樣保留相容用輸出欄位與 l
     fontFamily: 'Arial, sans-serif',
     fontColor: '#f0e0d0',
     minimumFontSizeRem: '3.25',
+    fontSizePercent: '125',
+    lineSpacingPercent: '150',
+    inspectionBackgroundColor: '#7f1d1d',
+    releaseBackgroundColor: '#14532d',
     dateTimeEnabled: true,
-    hour12: true,
     marqueeEnabled: false,
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 1,
+    configVersion: 2,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
@@ -98,8 +101,14 @@ test('設定草稿只修改顯示內容，原樣保留相容用輸出欄位與 l
       fontFamily: 'Arial, sans-serif',
       fontColor: '#F0E0D0',
       minimumFontSizeRem: 3.25,
+      fontSizePercent: 125,
+      lineSpacingPercent: 150,
     },
-    dateTime: { enabled: true, locale: 'zh-TW', hour12: true },
+    dateTime: { enabled: true },
+    emergency: {
+      inspectionBackgroundColor: '#7F1D1D',
+      releaseBackgroundColor: '#14532D',
+    },
     marquee: { enabled: false },
     display: {
       selectionMode: 'manual',
@@ -120,8 +129,11 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     fontFamily: defaultConfig.appearance.fontFamily,
     fontColor: '#FFFFFF',
     minimumFontSizeRem: '2.5',
+    fontSizePercent: '100',
+    lineSpacingPercent: '100',
+    inspectionBackgroundColor: '#000000',
+    releaseBackgroundColor: '#000000',
     dateTimeEnabled: false,
-    hour12: false,
     marqueeEnabled: true,
   };
   const invalidPartials = [
@@ -135,8 +147,13 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { minimumFontSizeRem: '1e2' },
     { minimumFontSizeRem: '0.75' },
     { minimumFontSizeRem: '12.25' },
+    { fontSizePercent: '45' },
+    { fontSizePercent: '101' },
+    { lineSpacingPercent: '-5' },
+    { lineSpacingPercent: '305' },
+    { inspectionBackgroundColor: 'red' },
+    { releaseBackgroundColor: '#00000080' },
     { dateTimeEnabled: 'true' },
-    { hour12: 0 },
     { marqueeEnabled: 1 },
   ];
 
@@ -157,8 +174,11 @@ test('已移除的輸出草稿參數無法改變 baseline 相容欄位', async (
     fontFamily: defaultConfig.appearance.fontFamily,
     fontColor: '#FFFFFF',
     minimumFontSizeRem: '2.5',
+    fontSizePercent: '100',
+    lineSpacingPercent: '100',
+    inspectionBackgroundColor: '#000000',
+    releaseBackgroundColor: '#000000',
     dateTimeEnabled: false,
-    hour12: false,
     marqueeEnabled: true,
     displaySelectionMode: 'manual',
     defaultDisplayId: '42',

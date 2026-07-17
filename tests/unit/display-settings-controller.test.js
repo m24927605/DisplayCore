@@ -9,15 +9,21 @@ async function loadModule() {
 
 function createSnapshot(revision = 0, backgroundColor = '#000000') {
   return {
-    configVersion: 1,
+    configVersion: 2,
     logo: { enabled: false, url: null },
     appearance: {
       backgroundColor,
       fontFamily: 'Microsoft JhengHei UI, sans-serif',
       fontColor: '#FFFFFF',
       minimumFontSizeRem: 2.5,
+      fontSizePercent: 100,
+      lineSpacingPercent: 100,
     },
-    dateTime: { enabled: false, locale: 'zh-TW', hour12: false },
+    dateTime: { enabled: false },
+    emergency: {
+      inspectionBackgroundColor: '#000000',
+      releaseBackgroundColor: '#000000',
+    },
     marquee: { enabled: true },
     revision,
   };
@@ -154,4 +160,3 @@ test('畸形 envelope、缺少 unsubscribe 與 dispose 後事件皆安全失敗'
   assert.deepEqual(harness.applied.map(({ revision }) => revision), [0]);
   assert.equal(await controller.start(), false);
 });
-

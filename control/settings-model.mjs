@@ -3,6 +3,7 @@ const CONFIG_KEYS = Object.freeze([
   'configVersion',
   'dateTime',
   'display',
+  'emergency',
   'logo',
   'marquee',
 ]);
@@ -17,6 +18,7 @@ const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const DECIMAL_NUMBER = /^\d+(?:\.\d{1,2})?$/;
+const INTEGER_NUMBER = /^\d+$/;
 const INVALID_USER_CONFIG_NOTICE = Object.freeze({
   code: 'INVALID_USER_CONFIG',
   message: '使用者設定檔無法讀取，目前使用安全預設值；儲存後可修復。',
@@ -28,6 +30,11 @@ export const SETTINGS_LIMITS = Object.freeze({
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
   FONT_SIZE_STEP_REM: 0.25,
+  MINIMUM_FONT_SIZE_PERCENT: 50,
+  MAXIMUM_FONT_SIZE_PERCENT: 200,
+  MINIMUM_LINE_SPACING_PERCENT: 0,
+  MAXIMUM_LINE_SPACING_PERCENT: 300,
+  PERCENTAGE_STEP: 5,
 });
 
 function isPlainObject(value) {
@@ -56,7 +63,14 @@ function failure(field, message) {
 }
 
 function freezeConfig(config) {
-  for (const section of ['logo', 'appearance', 'dateTime', 'marquee', 'display']) {
+  for (const section of [
+    'logo',
+    'appearance',
+    'dateTime',
+    'emergency',
+    'marquee',
+    'display',
+  ]) {
     Object.freeze(config[section]);
   }
 
@@ -65,7 +79,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 1) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 2) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -100,6 +114,8 @@ function normalizeConfig(candidate) {
       'backgroundColor',
       'fontColor',
       'fontFamily',
+      'fontSizePercent',
+      'lineSpacingPercent',
       'minimumFontSizeRem',
     ])
   ) {
@@ -127,6 +143,57 @@ function normalizeConfig(candidate) {
     return failure('appearance.fontFamily', '請選擇有效字型。');
   }
 
+  for (const [field, minimum, maximum] of [
+    [
+      'fontSizePercent',
+      SETTINGS_LIMITS.MINIMUM_FONT_SIZE_PERCENT,
+      SETTINGS_LIMITS.MAXIMUM_FONT_SIZE_PERCENT,
+    ],
+    [
+      'lineSpacingPercent',
+      SETTINGS_LIMITS.MINIMUM_LINE_SPACING_PERCENT,
+      SETTINGS_LIMITS.MAXIMUM_LINE_SPACING_PERCENT,
+    ],
+  ]) {
+    const value = appearance[field];
+    if (
+      !Number.isSafeInteger(value) ||
+      value < minimum ||
+      value > maximum ||
+      value % SETTINGS_LIMITS.PERCENTAGE_STEP !== 0
+    ) {
+      return failure(
+        `appearance.${field}`,
+        `${field === 'fontSizePercent' ? '字體大小' : '行距'}必須介於 ${minimum}% 至 ${maximum}%，並以 5% 遞增。`,
+      );
+    }
+  }
+
+  const emergency = candidate.emergency;
+  if (
+    !hasExactKeys(emergency, [
+      'inspectionBackgroundColor',
+      'releaseBackgroundColor',
+    ])
+  ) {
+    return failure('emergency', '滿屏代碼設定格式不正確。');
+  }
+
+  for (const field of [
+    'inspectionBackgroundColor',
+    'releaseBackgroundColor',
+  ]) {
+    if (
+      typeof emergency[field] !== 'string' ||
+      !OPAQUE_HEX_COLOR.test(emergency[field])
+    ) {
+      return failure(
+        `emergency.${field}`,
+        '請輸入六位十六進位色碼，例如 #000000。',
+      );
+    }
+  }
+
   const minimumFontSizeRem = appearance.minimumFontSizeRem;
   const stepRatio = minimumFontSizeRem / SETTINGS_LIMITS.FONT_SIZE_STEP_REM;
 
@@ -145,26 +212,10 @@ function normalizeConfig(candidate) {
   const dateTime = candidate.dateTime;
 
   if (
-    !hasExactKeys(dateTime, ['enabled', 'hour12', 'locale']) ||
-    typeof dateTime.enabled !== 'boolean' ||
-    typeof dateTime.hour12 !== 'boolean' ||
-    typeof dateTime.locale !== 'string'
+    !hasExactKeys(dateTime, ['enabled']) ||
+    typeof dateTime.enabled !== 'boolean'
   ) {
     return failure('dateTime', '日期時間設定格式不正確。');
-  }
-
-  let locale;
-
-  try {
-    const locales = Intl.getCanonicalLocales(dateTime.locale);
-
-    if (locales.length !== 1) {
-      return failure('dateTime.locale', '日期時間語系格式不正確。');
-    }
-
-    [locale] = locales;
-  } catch {
-    return failure('dateTime.locale', '日期時間語系格式不正確。');
   }
 
   if (
@@ -193,7 +244,7 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 1,
+      configVersion: 2,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -202,12 +253,16 @@ function normalizeConfig(candidate) {
         backgroundColor: appearance.backgroundColor.toUpperCase(),
         fontFamily: appearance.fontFamily,
         fontColor: appearance.fontColor.toUpperCase(),
+        fontSizePercent: appearance.fontSizePercent,
+        lineSpacingPercent: appearance.lineSpacingPercent,
         minimumFontSizeRem,
       },
-      dateTime: {
-        enabled: dateTime.enabled,
-        locale,
-        hour12: dateTime.hour12,
+      dateTime: { enabled: dateTime.enabled },
+      emergency: {
+        inspectionBackgroundColor:
+          emergency.inspectionBackgroundColor.toUpperCase(),
+        releaseBackgroundColor:
+          emergency.releaseBackgroundColor.toUpperCase(),
       },
       marquee: { enabled: candidate.marquee.enabled },
       display: {
@@ -268,8 +323,11 @@ export function buildSettingsDraft({
   fontFamily,
   fontColor,
   minimumFontSizeRem,
+  fontSizePercent,
+  lineSpacingPercent,
+  inspectionBackgroundColor,
+  releaseBackgroundColor,
   dateTimeEnabled,
-  hour12,
   marqueeEnabled,
 }) {
   const baselineResult = normalizeConfig(baseline);
@@ -288,22 +346,33 @@ export function buildSettingsDraft({
     );
   }
 
+  for (const [value, field, label] of [
+    [fontSizePercent, 'appearance.fontSizePercent', '字體大小'],
+    [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
+  ]) {
+    if (typeof value !== 'string' || !INTEGER_NUMBER.test(value)) {
+      return failure(field, `${label}必須是一般十進位整數。`);
+    }
+  }
+
   const result = normalizeConfig({
-    configVersion: 1,
+    configVersion: 2,
     logo: { enabled: logoEnabled, path: logoPath },
     appearance: {
       backgroundColor,
       fontFamily,
       fontColor,
       minimumFontSizeRem: Number(minimumFontSizeRem),
+      fontSizePercent: Number(fontSizePercent),
+      lineSpacingPercent: Number(lineSpacingPercent),
     },
-    dateTime: {
-      enabled: dateTimeEnabled,
-      locale: baselineResult.value.dateTime.locale,
-      hour12,
+    dateTime: { enabled: dateTimeEnabled },
+    emergency: {
+      inspectionBackgroundColor,
+      releaseBackgroundColor,
     },
     marquee: { enabled: marqueeEnabled },
-    // config v1 仍保留舊欄位供既有檔案相容；Control 不再提供修改入口。
+    // v2 仍保留輸出欄位供既有架構相容；Control 不提供修改入口。
     display: { ...baselineResult.value.display },
   });
 

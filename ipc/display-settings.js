@@ -13,6 +13,7 @@ function freezeDisplaySettings(settings) {
   Object.freeze(settings.logo);
   Object.freeze(settings.appearance);
   Object.freeze(settings.dateTime);
+  Object.freeze(settings.emergency);
   Object.freeze(settings.marquee);
   return Object.freeze(settings);
 }
@@ -64,11 +65,14 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
       fontFamily: config.appearance.fontFamily,
       fontColor: config.appearance.fontColor,
       minimumFontSizeRem: config.appearance.minimumFontSizeRem,
+      fontSizePercent: config.appearance.fontSizePercent,
+      lineSpacingPercent: config.appearance.lineSpacingPercent,
     },
-    dateTime: {
-      enabled: config.dateTime.enabled,
-      locale: config.dateTime.locale,
-      hour12: config.dateTime.hour12,
+    dateTime: { enabled: config.dateTime.enabled },
+    emergency: {
+      inspectionBackgroundColor:
+        config.emergency.inspectionBackgroundColor,
+      releaseBackgroundColor: config.emergency.releaseBackgroundColor,
     },
     marquee: { enabled: config.marquee.enabled },
     revision: managerSnapshot.revision,
@@ -80,4 +84,3 @@ module.exports = {
   MANAGED_LOGO_PATH,
   createDisplaySettingsSnapshot,
 };
-

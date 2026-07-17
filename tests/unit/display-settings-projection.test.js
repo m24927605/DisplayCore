@@ -28,8 +28,14 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
     fontFamily: 'Noto Sans TC, sans-serif',
     fontColor: '#F4F5F6',
     minimumFontSizeRem: 3.25,
+    fontSizePercent: 125,
+    lineSpacingPercent: 150,
   };
-  config.dateTime = { enabled: true, locale: 'zh-TW', hour12: true };
+  config.dateTime = { enabled: true };
+  config.emergency = {
+    inspectionBackgroundColor: '#7F1D1D',
+    releaseBackgroundColor: '#14532D',
+  };
   config.marquee = { enabled: false };
   config.display = {
     selectionMode: 'manual',
@@ -42,7 +48,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 1,
+    configVersion: 2,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -52,8 +58,14 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
       fontFamily: 'Noto Sans TC, sans-serif',
       fontColor: '#F4F5F6',
       minimumFontSizeRem: 3.25,
+      fontSizePercent: 125,
+      lineSpacingPercent: 150,
     },
-    dateTime: { enabled: true, locale: 'zh-TW', hour12: true },
+    dateTime: { enabled: true },
+    emergency: {
+      inspectionBackgroundColor: '#7F1D1D',
+      releaseBackgroundColor: '#14532D',
+    },
     marquee: { enabled: false },
     revision: 7,
   });
@@ -61,6 +73,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.isFrozen(projected.logo), true);
   assert.equal(Object.isFrozen(projected.appearance), true);
   assert.equal(Object.isFrozen(projected.dateTime), true);
+  assert.equal(Object.isFrozen(projected.emergency), true);
   assert.equal(Object.isFrozen(projected.marquee), true);
   assert.equal(Object.hasOwn(projected, 'defaults'), false);
   assert.equal(Object.hasOwn(projected, 'notice'), false);
