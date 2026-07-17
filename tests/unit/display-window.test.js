@@ -71,6 +71,14 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
     css,
     /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*position:\s*static[^}]*text-align:\s*center/s,
   );
+  assert.match(
+    css,
+    /\.standby-message\s*{[^}]*calc\(14cqmin \* var\(--message-font-scale\)\)/s,
+  );
+  assert.match(
+    css,
+    /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*calc\(7cqmin \* var\(--message-font-scale\)\)/s,
+  );
   assert.match(css, /\.message-row\s*{[^}]*white-space:\s*nowrap/s);
   assert.match(css, /\.message-row\s*{[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/s);
   assert.match(css, /\.message-row\[data-alignment="center"\]/);

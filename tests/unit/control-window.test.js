@@ -182,6 +182,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.match(html, /訊息播放時顯示時間/);
   assert.match(html, /待機歡迎畫面固定顯示時間/);
   assert.match(html, /時間固定顯示為 24 小時 HH:mm:ss/);
+  assert.match(html, /套用於一般訊息、待機「歡迎光臨」與時間，以及 555／888/);
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
   for (const resolution of [
     'auto',

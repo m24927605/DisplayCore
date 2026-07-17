@@ -143,9 +143,9 @@ body {
   margin: 0;
   color: inherit;
   font-size: clamp(
-    3rem,
-    calc(10cqmin * var(--message-font-scale)),
-    18rem
+    4rem,
+    calc(14cqmin * var(--message-font-scale)),
+    24rem
   );
   font-weight: 800;
   letter-spacing: 0.04em;
@@ -199,7 +199,11 @@ body {
 
 .display-stage[data-mode="blank"] .display-clock {
   position: static;
-  font-size: clamp(2rem, 5cqmin, 10rem);
+  font-size: clamp(
+    2.5rem,
+    calc(7cqmin * var(--message-font-scale)),
+    14rem
+  );
   text-align: center;
 }
 
