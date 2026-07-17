@@ -17,6 +17,9 @@ const isSquirrelStartup = require('electron-squirrel-startup');
 
 const { ConfigManager } = require('./config/config-manager');
 const { LogoImporter } = require('./config/logo-importer');
+const {
+  StandbyBackgroundImporter,
+} = require('./config/standby-background-importer');
 const { ApplicationController } = require('./main/application-controller');
 const {
   DisplayPlacementController,
@@ -162,11 +165,17 @@ async function bootstrap() {
     getParentWindow: () => windowManager.getControlWindow(),
     assetDirectory: path.join(dataRoot, 'logos'),
   });
+  const standbyBackgroundImporter = new StandbyBackgroundImporter({
+    dialog,
+    getParentWindow: () => windowManager.getControlWindow(),
+    assetDirectory: path.join(dataRoot, 'standby-backgrounds'),
+  });
   const ipcCoordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
     settingsManager,
     logoImporter,
+    standbyBackgroundImporter,
     displayTopologyService,
     displayPlacementController,
     getWindow: (role) => {
@@ -202,10 +211,14 @@ async function bootstrap() {
         net,
         appRoot: PROJECT_ROOT,
         managedLogoDirectory: path.join(dataRoot, 'logos'),
+        managedStandbyBackgroundDirectory:
+          path.join(dataRoot, 'standby-backgrounds'),
         getAllowedLogoPath: () => {
           const logo = settingsManager.getSnapshot().config.logo;
           return logo.enabled ? logo.path : null;
         },
+        getAllowedStandbyBackgroundPath: () =>
+          settingsManager.getSnapshot().config.standby.backgroundImagePath,
       });
       await settingsManager.initialize();
       await displayTopologyService.initialize();

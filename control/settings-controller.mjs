@@ -3,7 +3,9 @@ import { acceptSettingsSnapshot } from './settings-model.mjs';
 const CONNECTION_ERROR = '無法連接主程序，請重新啟動 DisplayCore。';
 const INVALID_SETTINGS_ERROR =
   '主程序回傳無效設定資料，請重新啟動 DisplayCore。';
-const MANAGED_LOGO_PATH = /^logos\/[a-z0-9][a-z0-9._-]*\.(?:jpe?g|png|webp)$/i;
+const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
+const MANAGED_STANDBY_BACKGROUND_PATH =
+  /^standby-backgrounds\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -53,7 +55,7 @@ function readEnvelope(response) {
   return { kind: 'invalid' };
 }
 
-function acceptLogoSelection(candidate) {
+function acceptManagedImageSelection(candidate, managedPathPattern) {
   if (
     !hasExactKeys(candidate, ['assetPath', 'canceled']) ||
     typeof candidate.canceled !== 'boolean'
@@ -70,7 +72,7 @@ function acceptLogoSelection(candidate) {
   if (
     typeof candidate.assetPath !== 'string' ||
     candidate.assetPath.length > 128 ||
-    !MANAGED_LOGO_PATH.test(candidate.assetPath)
+    !managedPathPattern.test(candidate.assetPath)
   ) {
     return null;
   }
@@ -79,6 +81,17 @@ function acceptLogoSelection(candidate) {
     canceled: false,
     assetPath: candidate.assetPath,
   });
+}
+
+function acceptLogoSelection(candidate) {
+  return acceptManagedImageSelection(candidate, MANAGED_LOGO_PATH);
+}
+
+function acceptStandbyBackgroundSelection(candidate) {
+  return acceptManagedImageSelection(
+    candidate,
+    MANAGED_STANDBY_BACKGROUND_PATH,
+  );
 }
 
 /** 設定專用控制器；不接觸 presentation revision 或 DOM。 */
@@ -177,6 +190,32 @@ export function createSettingsController({ api, view }) {
 
           view.renderLogoSelection(result.assetPath);
           view.renderSettingsStatus('Logo 已匯入；儲存設定後才會採用。');
+          return true;
+        },
+      );
+    },
+
+    chooseStandbyBackground() {
+      return runOperation(
+        'standby-background',
+        () => api.chooseStandbyBackground(),
+        (candidate) => {
+          const result = acceptStandbyBackgroundSelection(candidate);
+
+          if (!result) {
+            view.renderSettingsError(INVALID_SETTINGS_ERROR);
+            return false;
+          }
+
+          if (result.canceled) {
+            view.renderSettingsStatus('已取消選擇待機背景圖片。');
+            return true;
+          }
+
+          view.renderStandbyBackgroundSelection(result.assetPath);
+          view.renderSettingsStatus(
+            '待機背景圖片已匯入；儲存設定後才會採用。',
+          );
           return true;
         },
       );

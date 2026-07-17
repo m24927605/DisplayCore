@@ -4,6 +4,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 
 const defaultConfig = require('../../config.json');
+const DEFAULT_STANDBY = Object.freeze({ backgroundImagePath: null });
 
 function createV1Config() {
   return {
@@ -78,13 +79,48 @@ function createV3Config() {
   };
 }
 
-test('合法 v1 設定保留舊值並由 v4 預設補上新欄位', () => {
+function createV4Config() {
+  return {
+    configVersion: 4,
+    logo: {
+      enabled: true,
+      path: 'logos/0123456789abcdef01234567.png',
+    },
+    appearance: {
+      backgroundColor: '#456def',
+      fontFamily: 'Arial, sans-serif',
+      fontColor: '#cba987',
+      minimumFontSizeRem: 4,
+      fontSizePercent: 135,
+      lineSpacingPercent: 160,
+    },
+    dateTime: { enabled: false, offsetSeconds: -3_661 },
+    emergency: {
+      inspectionBackgroundColor: '#5f1b1b',
+      releaseBackgroundColor: '#12512b',
+    },
+    marquee: { enabled: true },
+    playback: {
+      pageDurationSeconds: 9,
+      repeatMode: 'continuous',
+      roundCount: 23,
+    },
+    display: {
+      selectionMode: 'manual',
+      defaultDisplayId: 84,
+      fullscreen: false,
+      renderResolution: '3840x2160',
+    },
+  };
+}
+
+test('合法 v1 設定保留舊值並由 v5 預設補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV1Config(), defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 4);
+  assert.equal(result.value.configVersion, 5);
   assert.deepEqual(result.value, {
     ...defaultConfig,
     logo: { enabled: false, path: null },
@@ -97,6 +133,7 @@ test('合法 v1 設定保留舊值並由 v4 預設補上新欄位', () => {
     },
     dateTime: { enabled: true, offsetSeconds: 0 },
     marquee: { enabled: false },
+    standby: DEFAULT_STANDBY,
     display: {
       selectionMode: 'manual',
       defaultDisplayId: 42,
@@ -106,7 +143,7 @@ test('合法 v1 設定保留舊值並由 v4 預設補上新欄位', () => {
   });
 });
 
-test('合法 v2 設定嚴格遷移為 v4，保留舊值並只補上新欄位', () => {
+test('合法 v2 設定嚴格遷移為 v5，保留舊值並只補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV2Config(), defaultConfig);
 
@@ -129,6 +166,7 @@ test('合法 v2 設定嚴格遷移為 v4，保留舊值並只補上新欄位', (
       releaseBackgroundColor: '#14532D',
     },
     marquee: { enabled: true },
+    standby: DEFAULT_STANDBY,
     display: {
       selectionMode: 'auto',
       defaultDisplayId: null,
@@ -138,7 +176,7 @@ test('合法 v2 設定嚴格遷移為 v4，保留舊值並只補上新欄位', (
   });
 });
 
-test('合法 v3 設定嚴格遷移為 v4，只補上預設播放設定', () => {
+test('合法 v3 設定嚴格遷移為 v5，只補上預設播放與待機設定', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV3Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -147,7 +185,7 @@ test('合法 v3 設定嚴格遷移為 v4，只補上預設播放設定', () => {
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 4,
+    configVersion: 5,
     appearance: {
       ...legacy.appearance,
       backgroundColor: '#345CDE',
@@ -158,24 +196,51 @@ test('合法 v3 設定嚴格遷移為 v4，只補上預設播放設定', () => {
       releaseBackgroundColor: '#13522C',
     },
     playback: defaultConfig.playback,
+    standby: DEFAULT_STANDBY,
   });
 });
 
-test('canonical v4 設定不會被誤判為遷移資料', () => {
+test('合法 v4 設定嚴格遷移為 v5，保留所有舊值並只補待機設定', () => {
+  const { migrateStoredConfig } = require('../../config/config-migrations');
+  const legacy = createV4Config();
+  const result = migrateStoredConfig(legacy, defaultConfig);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.deepEqual(result.value, {
+    ...legacy,
+    configVersion: 5,
+    appearance: {
+      ...legacy.appearance,
+      backgroundColor: '#456DEF',
+      fontColor: '#CBA987',
+    },
+    emergency: {
+      inspectionBackgroundColor: '#5F1B1B',
+      releaseBackgroundColor: '#12512B',
+    },
+    standby: { backgroundImagePath: null },
+  });
+  assert.deepEqual(result.value.playback, legacy.playback);
+  assert.equal(Object.isFrozen(result.value.standby), true);
+});
+
+test('canonical v5 設定不會被誤判為遷移資料', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(defaultConfig, defaultConfig);
 
-  assert.equal(defaultConfig.configVersion, 4);
+  assert.equal(defaultConfig.configVersion, 5);
   assert.equal(result.ok, true);
   assert.equal(result.migrated, false);
   assert.deepEqual(result.value, defaultConfig);
 });
 
-test('遷移拒絕畸形 v1／v2／v3、未知欄位與未知版本', () => {
+test('遷移拒絕畸形 v1／v2／v3／v4、未知欄位與未知版本', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const v1 = createV1Config();
   const v2 = createV2Config();
   const v3 = createV3Config();
+  const v4 = createV4Config();
 
   for (const candidate of [
     { ...v1, unexpected: true },
@@ -188,6 +253,10 @@ test('遷移拒絕畸形 v1／v2／v3、未知欄位與未知版本', () => {
     { ...v3, unexpected: true },
     { ...v3, playback: defaultConfig.playback },
     { ...v3, display: { ...v3.display, unexpected: true } },
+    { ...v4, unexpected: true },
+    { ...v4, standby: { backgroundImagePath: null } },
+    { ...v4, playback: { ...v4.playback, unexpected: true } },
+    { ...v4, configVersion: 5 },
     { ...defaultConfig, configVersion: 99 },
   ]) {
     assert.equal(migrateStoredConfig(candidate, defaultConfig).ok, false);

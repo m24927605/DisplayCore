@@ -374,6 +374,8 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('inspection-background-color-input').value,
     releaseBackground:
       document.getElementById('release-background-color-input').value,
+    standbyBackgroundPath:
+      document.getElementById('standby-background-path-input').value,
     hasHour12: document.getElementById('hour12-input') !== null,
     clockTimeUses24HourFormat: /^(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(
       document.getElementById('clock-time-input').value
@@ -396,6 +398,7 @@ async function openPlaybackSettings(settingsManager) {
     lineSpacingPercent: '100',
     inspectionBackground: '#000000',
     releaseBackground: '#000000',
+    standbyBackgroundPath: '',
     hasHour12: false,
     clockTimeUses24HourFormat: true,
     clockTimeInputType: 'text',
@@ -425,6 +428,25 @@ async function openPlaybackSettings(settingsManager) {
       document.activeElement?.id === 'choose-logo-button'
     )()`),
     '取消選擇 Logo 後恢復原按鈕焦點',
+  );
+
+  // 待機背景以獨立原生選檔匯入，成功後只回傳受管理識別。
+  await execute(`(() => {
+    const button = document.getElementById('choose-standby-background-button');
+    button.focus();
+    button.click();
+  })()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-status').textContent ===
+        '待機背景圖片已匯入；儲存設定後才會採用。' &&
+      document.getElementById('standby-background-path-input').value ===
+        'standby-backgrounds/abcdefabcdefabcdefabcdef.png' &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '有未儲存變更' &&
+      document.activeElement?.id === 'choose-standby-background-button'
+    )()`),
+    '匯入待機背景並恢復按鈕焦點',
   );
 
   await setInput('page-duration-input', '4');
@@ -501,6 +523,10 @@ async function openPlaybackSettings(settingsManager) {
     repeatMode: 'finite',
     roundCount: 2,
   });
+  assert.deepEqual(settingsManager.getSnapshot().config.standby, {
+    backgroundImagePath:
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+  });
 
   // 第二次開啟測試離線時間校正與邏輯排版解析度，避免與外觀草稿混淆。
   await click('open-settings-button');
@@ -521,13 +547,43 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('save-settings-button').disabled,
     dirtyStatus:
       document.getElementById('settings-dirty-status').textContent,
+    standbyBackgroundPath:
+      document.getElementById('standby-background-path-input').value,
   }))()`), {
     pageDuration: '4',
     rounds: '2',
     finiteChecked: true,
     saveDisabled: true,
     dirtyStatus: '所有變更皆已儲存',
+    standbyBackgroundPath:
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
   });
+
+  // 移除只改草稿；未儲存就關閉時必須恢復已儲存背景。
+  await click('remove-standby-background-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('standby-background-path-input').value === '' &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '有未儲存變更'
+    )()`),
+    '待機背景移除草稿',
+  );
+  await click('settings-close-button');
+  await waitFor(
+    () => execute(`document.getElementById('settings-dialog').open === false`),
+    '捨棄待機背景移除草稿',
+  );
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('settings-status').textContent === '設定已載入。' &&
+      document.getElementById('standby-background-path-input').value ===
+        'standby-backgrounds/abcdefabcdefabcdefabcdef.png'
+    )()`),
+    '重新載入已儲存待機背景',
+  );
 
   await setInput('clock-time-input', '24:00:00');
   await click('save-settings-button');
@@ -602,6 +658,23 @@ async function openPlaybackSettings(settingsManager) {
     pageDurationSeconds: 4,
     repeatMode: 'finite',
     roundCount: 2,
+  });
+
+  // 移除並儲存後才真正回到純色待機背景。
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`document.getElementById('settings-dialog').open === true`),
+    '開啟待機背景移除驗證',
+  );
+  await click('remove-standby-background-button');
+  await click('save-settings-button');
+  await waitFor(
+    () => settingsManager.getSnapshot().revision === 3 &&
+      execute(`document.getElementById('settings-dialog').open === false`),
+    '儲存移除待機背景',
+  );
+  assert.deepEqual(settingsManager.getSnapshot().config.standby, {
+    backgroundImagePath: null,
   });
 }
 
@@ -847,7 +920,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     )()`),
     '捨棄播放草稿並回復 baseline',
   );
-  assert.equal(settingsManager.getSnapshot().revision, 2);
+  assert.equal(settingsManager.getSnapshot().revision, 3);
   assert.deepEqual(settingsManager.getSnapshot().config.playback, {
     pageDurationSeconds: 4,
     repeatMode: 'finite',
@@ -878,7 +951,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     '無效播放秒數顯示欄位錯誤並聚焦',
   );
   await new Promise((resolve) => setTimeout(resolve, 100));
-  assert.equal(settingsManager.getSnapshot().revision, 2);
+  assert.equal(settingsManager.getSnapshot().revision, 3);
   assert.deepEqual(store.getControlSnapshot(), beforeInvalidRemoval);
   assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval);
   assert.deepEqual(await execute(`(() => ({
@@ -1103,12 +1176,22 @@ async function run() {
       return { canceled: true, assetPath: null };
     },
   };
+  const standbyBackgroundImporter = {
+    async chooseAndImport() {
+      return {
+        canceled: false,
+        assetPath:
+          'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+      };
+    },
+  };
 
   coordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
     settingsManager,
     logoImporter,
+    standbyBackgroundImporter,
     displayTopologyService: topologyService,
     displayPlacementController: placementService,
     getWindow: (role) => role === IPC_ROLES.CONTROL ? controlWindow : null,

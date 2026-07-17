@@ -234,6 +234,7 @@ function createHarness({
   presentationService = null,
   settingsManager = null,
   logoImporter = null,
+  standbyBackgroundImporter = null,
   displayTopologyService = null,
   displayPlacementController = null,
 } = {}) {
@@ -264,6 +265,16 @@ function createHarness({
       return { canceled: false, assetPath: 'logos/abc123.png' };
     },
   };
+  const resolvedStandbyBackgroundImporter = standbyBackgroundImporter || {
+    calls: 0,
+    async chooseAndImport() {
+      this.calls += 1;
+      return {
+        canceled: false,
+        assetPath: 'standby-backgrounds/0123456789abcdef01234567.png',
+      };
+    },
+  };
   const resolvedTopologyService = displayTopologyService ||
     createOutputStateService(createTopologySnapshot());
   const resolvedPlacementController = displayPlacementController ||
@@ -273,6 +284,7 @@ function createHarness({
     presentationService: service,
     settingsManager: resolvedSettingsManager,
     logoImporter: resolvedLogoImporter,
+    standbyBackgroundImporter: resolvedStandbyBackgroundImporter,
     displayTopologyService: resolvedTopologyService,
     displayPlacementController: resolvedPlacementController,
     getWindow: (role) => windows[role] || null,
@@ -296,6 +308,7 @@ function createHarness({
     errors,
     ipcMain,
     logoImporter: resolvedLogoImporter,
+    standbyBackgroundImporter: resolvedStandbyBackgroundImporter,
     displayPlacementController: resolvedPlacementController,
     displayTopologyService: resolvedTopologyService,
     presentationService: service,
@@ -394,8 +407,14 @@ test('輸出來源連續發布相同組合時只向 Control 廣播一次', () =>
   assert.equal(windows.control.webContents.sent.length, 2);
 });
 
-test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作', async () => {
-  const { ipcMain, logoImporter, settingsManager, windows } = createHarness();
+test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼叫特權操作', async () => {
+  const {
+    ipcMain,
+    logoImporter,
+    settingsManager,
+    standbyBackgroundImporter,
+    windows,
+  } = createHarness();
   const controlEvent = createEvent(windows.control);
   const displayEvent = createEvent(windows.display);
   const config = structuredClone(defaultConfig);
@@ -417,6 +436,10 @@ test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作',
     IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
     controlEvent,
   );
+  const standbyBackground = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
+    controlEvent,
+  );
 
   assert.equal(loaded.ok, true);
   assert.equal(loaded.data.revision, 0);
@@ -432,11 +455,25 @@ test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作',
     data: { canceled: false, assetPath: 'logos/abc123.png' },
   });
   assert.equal(logoImporter.calls, 1);
+  assert.deepEqual(standbyBackground, {
+    ok: true,
+    data: {
+      canceled: false,
+      assetPath: 'standby-backgrounds/0123456789abcdef01234567.png',
+    },
+  });
+  assert.deepEqual(Object.keys(standbyBackground).sort(), ['data', 'ok']);
+  assert.deepEqual(Object.keys(standbyBackground.data).sort(), [
+    'assetPath',
+    'canceled',
+  ]);
+  assert.equal(standbyBackgroundImporter.calls, 1);
 
   for (const channel of [
     IPC_CHANNELS.CONTROL_GET_SETTINGS,
     IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
     IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+    IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
   ]) {
     const result = await ipcMain.invoke(
       channel,
@@ -459,8 +496,9 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 4,
+      configVersion: 5,
       logo: { enabled: false, url: null },
+      standby: { backgroundImageUrl: null },
       appearance: defaultConfig.appearance,
       dateTime: defaultConfig.dateTime,
       emergency: defaultConfig.emergency,
@@ -509,8 +547,9 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 4,
+    configVersion: 5,
     logo: { enabled: false, url: null },
+    standby: { backgroundImageUrl: null },
     appearance: config.appearance,
     dateTime: config.dateTime,
     emergency: config.emergency,
@@ -624,6 +663,34 @@ test('設定衝突與 Logo 格式錯誤回傳固定可操作訊息', async () =>
       },
     },
   );
+  assert.equal(errors.length, 0);
+});
+
+test('待機背景格式錯誤回傳固定可操作訊息，不洩漏原始例外', async () => {
+  const standbyBackgroundImporter = {
+    async chooseAndImport() {
+      const error = new Error('C:\\秘密\\bad-background.svg');
+      error.code = 'STANDBY_BACKGROUND_IMPORT_FAILED';
+      throw error;
+    },
+  };
+  const { errors, ipcMain, windows } = createHarness({
+    standbyBackgroundImporter,
+  });
+
+  const result = await ipcMain.invoke(
+    IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
+    createEvent(windows.control),
+  );
+
+  assert.deepEqual(result, {
+    ok: false,
+    error: {
+      code: 'STANDBY_BACKGROUND_IMPORT_FAILED',
+      message: '無法匯入待機背景圖片，請確認圖片格式與檔案大小。',
+    },
+  });
+  assert.doesNotMatch(JSON.stringify(result), /秘密|bad-background|svg/i);
   assert.equal(errors.length, 0);
 });
 
@@ -1090,6 +1157,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     IPC_CHANNELS.CONTROL_GET_SETTINGS,
     IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
     IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+    IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
     IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,

@@ -20,6 +20,14 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /aria-atomic="true"/);
   assert.match(html, /id="normal-layer"[^>]+aria-hidden="true"/);
+  assert.match(
+    html,
+    /id="standby-background-layer"[^>]+aria-hidden="true"[^>]+hidden/,
+  );
+  assert.match(
+    html,
+    /<img[^>]+id="standby-background-image"[^>]+alt=""[^>]+aria-hidden="true"[^>]+hidden/,
+  );
   assert.match(html, /id="standby-layer"[^>]+aria-hidden="true"/);
   assert.match(html, /id="standby-message"[^>]*>\s*歡迎光臨\s*</);
   assert.match(html, /id="display-chrome"[^>]+aria-hidden="true"/);
@@ -59,6 +67,14 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /\.display-render-surface\s*{[^}]*transform:/s);
   assert.match(css, /(?:cqw|cqh|cqmin)/);
   assert.match(css, /\.normal-layer\s*{[^}]*position:\s*relative/s);
+  assert.match(
+    css,
+    /\.standby-background-layer\s*{[^}]*position:\s*absolute[^}]*inset:\s*0/s,
+  );
+  assert.match(
+    css,
+    /\.standby-background-image\s*{[^}]*inline-size:\s*100%[^}]*block-size:\s*100%[^}]*object-fit:\s*cover/s,
+  );
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   assert.match(css, /\.display-clock\s*{[^}]*position:\s*absolute[^}]*inset-inline-end:/s);
@@ -70,6 +86,10 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(
     css,
     /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*position:\s*static[^}]*text-align:\s*center/s,
+  );
+  assert.match(
+    css,
+    /\.display-stage\[data-mode="blank"\]\s+\.logo-frame\s*{[^}]*justify-self:\s*center/s,
   );
   assert.match(
     css,
@@ -128,6 +148,10 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /'--message-font-scale'/);
   assert.match(source, /'--emergency-background'/);
   assert.match(source, /'--viewport-background'/);
+  assert.match(source, /standby\.backgroundImageUrl/);
+  assert.match(source, /standbyBackgroundImage/);
+  assert.match(source, /addEventListener\('load',\s*handleStandbyBackgroundLoad\)/);
+  assert.match(source, /addEventListener\('error',\s*handleStandbyBackgroundError\)/);
   assert.match(
     source,
     /function updateAnnouncement\([^)]*\)\s*{[\s\S]*?setAttribute\('aria-live', priority\);[\s\S]*?\.textContent\s*=\s*message;/,

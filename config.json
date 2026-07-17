@@ -1,8 +1,11 @@
 {
-  "configVersion": 4,
+  "configVersion": 5,
   "logo": {
     "enabled": false,
     "path": null
+  },
+  "standby": {
+    "backgroundImagePath": null
   },
   "appearance": {
     "backgroundColor": "#000000",

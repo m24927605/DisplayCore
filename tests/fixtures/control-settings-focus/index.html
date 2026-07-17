@@ -59,6 +59,14 @@
             <p id="logo-path-error" hidden></p>
             <button id="choose-logo-button" type="button">選擇 Logo</button>
             <button id="remove-logo-button" type="button">移除 Logo</button>
+            <input id="standby-background-path-input" type="text">
+            <p id="standby-background-path-error" hidden></p>
+            <button id="choose-standby-background-button" type="button">
+              選擇待機背景圖片
+            </button>
+            <button id="remove-standby-background-button" type="button">
+              移除待機背景圖片
+            </button>
           </fieldset>
 
           <fieldset id="appearance-settings-fieldset">
@@ -137,8 +145,9 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 4,
+        configVersion: 5,
         logo: Object.freeze({ enabled: false, path: null }),
+        standby: Object.freeze({ backgroundImagePath: null }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
           fontFamily: 'Arial, sans-serif',
@@ -189,6 +198,7 @@
           view.renderSettingsSnapshot(snapshot);
         },
         async chooseLogo() {},
+        async chooseStandbyBackground() {},
         async saveSettings() {
           return false;
         },

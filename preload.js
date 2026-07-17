@@ -11,6 +11,8 @@ const CHANNELS = Object.freeze({
   GET_SETTINGS: 'dc:v2:control:settings:get',
   SAVE_SETTINGS: 'dc:v2:control:settings:save',
   CHOOSE_LOGO: 'dc:v2:control:settings:logo:choose',
+  CHOOSE_STANDBY_BACKGROUND:
+    'dc:v2:control:settings:standby-background:choose',
   GET_OUTPUT_STATUS: 'dc:v2:control:output-status:get',
   PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
   OUTPUT_STATUS_CHANGED: 'dc:v2:control:output-status:changed',
@@ -71,6 +73,8 @@ contextBridge.exposeInMainWorld(
         expectedRevision,
       }),
     chooseLogo: () => ipcRenderer.invoke(CHANNELS.CHOOSE_LOGO),
+    chooseStandbyBackground: () =>
+      ipcRenderer.invoke(CHANNELS.CHOOSE_STANDBY_BACKGROUND),
     getOutputStatus: () => ipcRenderer.invoke(CHANNELS.GET_OUTPUT_STATUS),
     onPresentationChanged,
     onOutputStatusChanged,

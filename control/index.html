@@ -286,7 +286,7 @@
           </fieldset>
 
           <fieldset id="logo-settings-fieldset" class="settings-fieldset">
-            <legend>Logo</legend>
+            <legend>Logo 與待機背景</legend>
             <label class="settings-switch" for="logo-enabled-input">
               <span><strong>顯示 Logo</strong><small>使用已匯入的本機圖片。</small></span>
               <input id="logo-enabled-input" type="checkbox">
@@ -299,6 +299,28 @@
             <div class="settings-inline-actions">
               <button id="choose-logo-button" class="button button-secondary" type="button">選擇 Logo</button>
               <button id="remove-logo-button" class="button button-quiet" type="button">移除 Logo</button>
+            </div>
+            <div class="settings-field">
+              <label for="standby-background-path-input">待機背景圖片</label>
+              <input
+                id="standby-background-path-input"
+                type="text"
+                readonly
+                placeholder="尚未選擇待機背景圖片"
+              >
+              <p id="standby-background-path-error" class="field-error" hidden></p>
+            </div>
+            <div class="settings-inline-actions">
+              <button
+                id="choose-standby-background-button"
+                class="button button-secondary"
+                type="button"
+              >選擇背景圖片</button>
+              <button
+                id="remove-standby-background-button"
+                class="button button-quiet"
+                type="button"
+              >移除背景圖片</button>
             </div>
           </fieldset>
 

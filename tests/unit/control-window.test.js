@@ -170,6 +170,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   for (const inputId of [
     'logo-enabled-input',
     'logo-path-input',
+    'standby-background-path-input',
     'background-color-input',
     'font-family-select',
     'font-color-input',
@@ -187,6 +188,10 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   ]) {
     assert.match(html, new RegExp(`id="${inputId}"`));
   }
+  assert.match(html, /Logo 與待機背景/);
+  assert.match(html, /id="choose-standby-background-button"/);
+  assert.match(html, /id="remove-standby-background-button"/);
+  assert.doesNotMatch(html, /id="standby-background-enabled-input"/);
   assert.doesNotMatch(html, /id="hour12-input"|12 小時制/);
   assert.match(html, /訊息播放時顯示時間/);
   assert.match(html, /待機歡迎畫面固定顯示時間/);

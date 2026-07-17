@@ -43,7 +43,7 @@ npm run make
 - Renderer 異常消失時原子重建雙視窗，包含非預期 `clean-exit`。
 - `請至前廳`、`前廳000`、`聯絡櫃台` 與 `自定義` 四種單則編輯模式。
 - 編號或花名保留 `001` 等前導零；自定義可不填編號／花名而直接顯示公告。
-- 沒有一般訊息時自動進入待機畫面，以加大字級置中顯示「歡迎光臨」與校正後的 `HH:mm:ss`；不需由管理員加入罐頭訊息。
+- 沒有一般訊息時自動進入待機畫面，以加大字級置中顯示「歡迎光臨」與校正後的 `HH:mm:ss`；啟用 Logo 時會置中顯示在歡迎文字上方，且可選擇滿版待機背景圖片。
 - 固定營運訊息只保留置中的「請輕聲細語」；一般與自定訊息仍以單一「顯示」動作立即更新電視，沒有待播清單或二次確認流程。
 - 每頁最多 3 則；第 4 則起自動分頁，最後一頁不足 3 則仍至少完整停留指定秒數。
 - 可持久設定每頁 1～3,600 秒的最短停留時間、整輪顯示 1～999 次，或改用持續顯示；重新啟動後仍保留。
@@ -64,12 +64,12 @@ npm run make
 - 設定檔使用精確 schema、64 KiB 上限、正規化與完整物件驗證，拒絕未知欄位。
 - 設定以同目錄暫存檔、fsync 與 rename 原子寫入，並以 revision 防止過期表單覆寫新設定。
 - 使用者設定損壞時保留原檔，先採安全預設值啟動並在 Control 顯示可修復警告。
-- Logo 由 Main Process 原生選檔，只接受 PNG、JPEG、WebP 與真實檔案簽章。
-- Logo 會複製至受管理的 `userData/displaycore-data/logos`；Renderer 不會取得來源絕對路徑。
+- Logo 與待機背景由 Main Process 原生選檔，只接受 10 MiB 以內的 PNG、JPEG、WebP 與真實檔案簽章。
+- 圖片會依用途複製至受管理目錄；Renderer 只取得同源內容雜湊 URL，不會取得來源或 `userData` 絕對路徑。
 - Control 提供獨立設定對話框、未儲存狀態、載入預設值、欄位錯誤與安全儲存流程。
 - Main 只將 Display 所需的唯讀設定白名單投影至專用 IPC，不會傳送預設設定、警告內容、本機路徑或 Control 寫入能力。
-- Logo 透過同源的 `displaycore://app/managed/logo/...` 受限路由載入；每次請求都重新核對目前設定、檔案類型、大小、簽章與內容雜湊。
-- Logo、背景色、字型、字色、整體字體比例、行距、最小字級、555／888 背景、時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
+- Logo 與待機背景透過各自的 `displaycore://app/managed/...` 受限路由載入；每次請求都重新核對目前設定、檔案類型、大小、簽章與內容雜湊。
+- Logo、待機背景、背景色、字型、字色、整體字體比例、行距、最小字級、555／888 背景、時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
 - 待機時間置中顯示；一般訊息頁的時間固定於右下角。兩者都只顯示 24 小時制 `HH:mm:ss`，並對齊下一個整秒更新。
 - 管理員可用 `HH:mm:ss` 校正 DisplayCore 顯示時間；程式只保存日內偏移，不修改 Windows 系統時間，也不需要網路或系統管理員權限。
 - 一般畫面會為 Logo 與右下角時間保留比例式安全區；臨檢滿屏會隱藏所有裝飾資訊。
@@ -83,7 +83,7 @@ npm run make
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
-- Node.js 24.18.0 完整自動化測試 291/291 通過，覆蓋播放設定持久化、一鍵顯示、待機畫面、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
+- Node.js 24.18.0 完整自動化測試 307/307 通過，覆蓋播放設定持久化、一鍵顯示、待機 Logo／背景、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
 - 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
@@ -114,13 +114,14 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 
 所有輸入都以純文字預覽與呈現，不會解析 HTML。編號／花名、自定義內容及前後空白不會被 trim、正規化或轉換。Main 會再次套用最多 500 則與合計 10,000 Unicode code point 的資源保護上限。
 
-## 設定檔與 Logo
+## 設定檔與圖片
 
 專案根目錄的 `config.json` 隨應用程式封裝，只提供經版本控制的安全預設值。實際修改會寫入 Electron 解析出的 `userData/displaycore-data/config.json`；程式不硬編 Windows 使用者路徑，也不會修改 ASAR 或安裝目錄。
 
 可設定欄位包括：
 
-- Logo 是否顯示與受管理的相對資產名稱。
+- Logo 是否顯示與受管理的相對資產名稱；啟用後同時用於一般訊息頁及待機歡迎文字上方。
+- 待機畫面背景圖片；選擇後啟用，移除後回到純色背景。
 - 背景顏色、字型、字體顏色、整體字體大小比例、行距與最小字體大小；字體比例也套用於待機「歡迎光臨」、待機時間及 555／888。
 - 555 臨檢與 888 解除臨檢各自的背景顏色。
 - 是否在一般訊息頁顯示右下角的 24 小時制 `HH:mm:ss`；待機畫面永遠顯示時間。
@@ -129,9 +130,9 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 - 最小字體仍放不下時是否使用水平跑馬燈。
 - 每頁顯示秒數、指定整輪次數或持續顯示模式。
 
-目前設定格式為 `configVersion: 4`。既有的有效 v1／v2／v3 使用者設定會在載入時於記憶體安全遷移至 v4，播放設定採用原廠預設值，下一次儲存才原子寫回。程式仍不提供手動指定輸出螢幕、視窗模式或作業系統顯示模式。
+目前設定格式為 `configVersion: 5`。既有的有效 v1／v2／v3／v4 使用者設定會在載入時於記憶體安全遷移至 v5，新增欄位採用原廠預設值，下一次儲存才原子寫回。程式仍不提供手動指定輸出螢幕、視窗模式或作業系統顯示模式。
 
-Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到受管理目錄；設定只保存 `logos/...` 相對名稱。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
+Logo 與待機背景選擇都由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到各自的受管理目錄；設定只保存相對資產識別。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
 
 ## 模組位置
 
@@ -141,7 +142,7 @@ Logo 選擇由 Main Process 開啟系統原生對話框。來源圖片經檔案�
 - `main/window-manager.js`：雙視窗建立、聚焦、關閉與異常復原。
 - `main/window-options.js`：BrowserWindow 安全選項。
 - `main/security-policy.js`：Session 與 WebContents 安全政策。
-- `main/local-protocol.js`：受限的本機靜態資源與目前啟用 Logo 同源協定。
+- `main/local-protocol.js`：受限的本機靜態資源、目前啟用 Logo 與待機背景同源協定。
 - `main/hdmi-detector.js`：Windows 本機 WMI HDMI aggregate 查詢、逾時與安全降級。
 - `main/display-topology-service.js`：螢幕正規化、外接／主螢幕自動目標選擇、熱插拔與休眠恢復。
 - `main/display-placement-controller.js`：以 Electron DIP bounds 定位目標螢幕並套用全螢幕。
@@ -155,7 +156,7 @@ IPC：
 - `ipc/display-settings.js`：將完整設定投影為 Display 所需的唯讀安全白名單。
 - `ipc/output-status.js`：將拓樸與定位狀態投影為 Control 所需的最小唯讀白名單。
 - `ipc/ipc-coordinator.js`：sender 授權、request handler 與雙視窗廣播。
-- `preload.js`：Control 的顯示操作、設定讀寫與 Logo 選擇固定用途 API。
+- `preload.js`：Control 的顯示操作、設定讀寫與受管理圖片選擇固定用途 API。
 - `preload/display-preload.js`：Display 的唯讀 snapshot 與固定用途版面進度回報 API。
 
 設定：
@@ -164,7 +165,9 @@ IPC：
 - `config/config-schema.js`：完整設定 schema、正規化與資源上限。
 - `config/config-migrations.js`：舊版設定的嚴格、不可變遷移。
 - `config/config-manager.js`：初始化、snapshot、revision 與原子持久化。
-- `config/logo-importer.js`：原生選檔、圖片驗證及受管理資產匯入。
+- `config/managed-image-importer.js`：共用的原生選檔、圖片驗證及內容定址受管理資產匯入核心。
+- `config/logo-importer.js`：Logo 專用的受管理圖片匯入器。
+- `config/standby-background-importer.js`：待機背景專用的受管理圖片匯入器。
 
 Control：
 
@@ -187,7 +190,7 @@ Control：
 Display：
 
 - `display/index.html`：無互動元素的唯讀顯示舞台。
-- `display/display.css`：Logo／時鐘安全區、單行分頁、跑馬燈與 6×4 滿屏響應式排版。
+- `display/display.css`：Logo／時鐘安全區、待機滿版背景、單行分頁、跑馬燈與 6×4 滿屏響應式排版。
 - `display/presentation-state.mjs`：Display snapshot 白名單與 revision 驗證。
 - `display/display-controller.mjs`：先訂閱後查詢與亂序防護。
 - `display/settings-state.mjs`：Display 設定白名單、型別驗證、安全預設值與 revision 防亂序規則。
@@ -196,7 +199,7 @@ Display：
 - `display/render-resolution.mjs`：自動或固定邏輯解析度的等比例縮放與置中計算。
 - `display/text-fit.mjs`：依實際列高計算有效字級範圍並執行有界二分搜尋。
 - `display/page-progress.mjs`：layout generation、跑馬燈列完成追蹤、舊 DOM listener 取消及暫時性 IPC 失敗重試。
-- `display/app.mjs`：純文字呈現、即時視覺設定、Logo、時鐘、字體適配、跑馬燈與 ResizeObserver。
+- `display/app.mjs`：純文字呈現、即時視覺設定、待機背景、Logo、時鐘、字體適配、跑馬燈與 ResizeObserver。
 
 Presentation 中每個項目只有一個完整 `message`，不會拆成 title、編號、花名或動作欄位；額外的 `alignment` 只描述呈現方式。555／888 的模式由專用 IPC 狀態傳遞，Display 不依文字內容判斷緊急類型。
 

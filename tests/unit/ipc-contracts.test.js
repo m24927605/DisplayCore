@@ -76,6 +76,10 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
     'dc:v2:control:output-status:get',
   );
   assert.equal(
+    IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
+    'dc:v2:control:settings:standby-background:choose',
+  );
+  assert.equal(
     IPC_CHANNELS.CONTROL_OUTPUT_STATUS_CHANGED,
     'dc:v2:control:output-status:changed',
   );
@@ -339,7 +343,7 @@ test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推
   }
 });
 
-test('設定儲存接受完整 v4 config、有限／持續播放偏好與目前 revision', () => {
+test('設定儲存接受完整 v5 config、有限／持續播放偏好與目前 revision', () => {
   const finiteConfig = structuredClone(defaultConfig);
   finiteConfig.playback = {
     pageDurationSeconds: 8,

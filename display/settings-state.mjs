@@ -7,6 +7,7 @@ const SNAPSHOT_KEYS = Object.freeze([
   'logo',
   'marquee',
   'revision',
+  'standby',
 ]);
 const APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
@@ -22,6 +23,7 @@ const EMERGENCY_KEYS = Object.freeze([
   'releaseBackgroundColor',
 ]);
 const LOGO_KEYS = Object.freeze(['enabled', 'url']);
+const STANDBY_KEYS = Object.freeze(['backgroundImageUrl']);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
 const DISPLAY_KEYS = Object.freeze(['renderResolution']);
 const RENDER_RESOLUTIONS = Object.freeze([
@@ -34,6 +36,8 @@ const RENDER_RESOLUTIONS = Object.freeze([
 ]);
 const DISPLAY_LOGO_URL =
   /^displaycore:\/\/app\/managed\/logo\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
+const DISPLAY_STANDBY_BACKGROUND_URL =
+  /^displaycore:\/\/app\/managed\/standby-background\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const OPAQUE_HEX_COLOR = /^#[0-9A-F]{6}$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const MINIMUM_FONT_SIZE_REM = 1;
@@ -82,6 +86,15 @@ function isValidLogo(logo) {
   }
 
   return typeof logo.url === 'string' && DISPLAY_LOGO_URL.test(logo.url);
+}
+
+function isValidStandby(standby) {
+  return (
+    hasExactKeys(standby, STANDBY_KEYS) &&
+    (standby.backgroundImageUrl === null ||
+      (typeof standby.backgroundImageUrl === 'string' &&
+        DISPLAY_STANDBY_BACKGROUND_URL.test(standby.backgroundImageUrl)))
+  );
 }
 
 function isValidAppearance(appearance) {
@@ -146,10 +159,11 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 4 &&
+    candidate.configVersion === 5 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
+    isValidStandby(candidate.standby) &&
     isValidAppearance(candidate.appearance) &&
     isValidDateTime(candidate.dateTime) &&
     isValidEmergency(candidate.emergency) &&
@@ -162,6 +176,7 @@ function isValidSnapshot(candidate) {
 
 function freezeSettings(settings) {
   Object.freeze(settings.logo);
+  Object.freeze(settings.standby);
   Object.freeze(settings.appearance);
   Object.freeze(settings.dateTime);
   Object.freeze(settings.emergency);
@@ -174,6 +189,9 @@ function cloneSettings(candidate) {
   return freezeSettings({
     configVersion: candidate.configVersion,
     logo: { enabled: candidate.logo.enabled, url: candidate.logo.url },
+    standby: {
+      backgroundImageUrl: candidate.standby.backgroundImageUrl,
+    },
     appearance: {
       backgroundColor: candidate.appearance.backgroundColor,
       fontFamily: candidate.appearance.fontFamily,
@@ -199,8 +217,9 @@ function cloneSettings(candidate) {
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 4,
+  configVersion: 5,
   logo: { enabled: false, url: null },
+  standby: { backgroundImageUrl: null },
   appearance: {
     backgroundColor: '#000000',
     fontFamily: 'Microsoft JhengHei UI, Microsoft JhengHei, sans-serif',

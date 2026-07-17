@@ -19,6 +19,7 @@ const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.CONTROL_GET_SETTINGS,
   IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
   IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+  IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
   IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
   IPC_CHANNELS.DISPLAY_GET_SETTINGS,
@@ -87,6 +88,16 @@ function knownOperationError(error) {
     };
   }
 
+  if (error?.code === 'STANDBY_BACKGROUND_IMPORT_FAILED') {
+    return {
+      ok: false,
+      error: {
+        code: 'STANDBY_BACKGROUND_IMPORT_FAILED',
+        message: '無法匯入待機背景圖片，請確認圖片格式與檔案大小。',
+      },
+    };
+  }
+
   return null;
 }
 
@@ -103,6 +114,7 @@ class IpcCoordinator {
     presentationService,
     settingsManager = null,
     logoImporter = null,
+    standbyBackgroundImporter = null,
     displayTopologyService = null,
     displayPlacementController = null,
     getWindow,
@@ -113,6 +125,7 @@ class IpcCoordinator {
     this.presentationService = presentationService;
     this.settingsManager = settingsManager;
     this.logoImporter = logoImporter;
+    this.standbyBackgroundImporter = standbyBackgroundImporter;
     this.displayTopologyService = displayTopologyService;
     this.displayPlacementController = displayPlacementController;
     this.getWindow = getWindow;
@@ -222,6 +235,16 @@ class IpcCoordinator {
         IPC_ROLES.CONTROL,
         event,
         async () => success(await this.logoImporter.chooseAndImport()),
+      ),
+    );
+    this.ipcMain.handle(
+      IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
+      (event) => this.handleAsyncRequest(
+        IPC_ROLES.CONTROL,
+        event,
+        async () => success(
+          await this.standbyBackgroundImporter.chooseAndImport(),
+        ),
       ),
     );
     this.ipcMain.handle(

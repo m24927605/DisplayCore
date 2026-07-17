@@ -39,6 +39,33 @@ async function createManagedLogoHarness(t, contents = PNG_SIGNATURE) {
   };
 }
 
+async function createManagedStandbyBackgroundHarness(
+  t,
+  contents = PNG_SIGNATURE,
+) {
+  const root = await fileSystem.mkdtemp(
+    path.join(os.tmpdir(), 'displaycore-protocol-standby-background-'),
+  );
+  const managedStandbyBackgroundDirectory = path.join(
+    root,
+    'standby-backgrounds',
+  );
+  const digest = createHash('sha256').update(contents).digest('hex').slice(0, 24);
+  const fileName = `${digest}.png`;
+  await fileSystem.mkdir(managedStandbyBackgroundDirectory, { recursive: true });
+  await fileSystem.writeFile(
+    path.join(managedStandbyBackgroundDirectory, fileName),
+    contents,
+  );
+  t.after(() => fileSystem.rm(root, { recursive: true, force: true }));
+
+  return {
+    fileName,
+    managedStandbyBackgroundDirectory,
+    assetPath: `standby-backgrounds/${fileName}`,
+  };
+}
+
 test('自訂協定在 app ready 前註冊為 standard 與 secure', () => {
   const protocol = {
     registerSchemesAsPrivileged(schemes) {
@@ -248,5 +275,88 @@ test('受管理 Logo 每次重驗一般檔案、magic bytes 與內容雜湊', as
     method: 'GET',
     url: `displaycore://app/managed/logo/${'a'.repeat(24)}.png`,
   });
+  assert.equal(response.status, 404);
+});
+
+test('受管理待機背景只以目前設定的同源雜湊 URL 提供正確 MIME', async (t) => {
+  const background = await createManagedStandbyBackgroundHarness(t);
+  const fetchedUrls = [];
+  const handler = createLocalProtocolHandler({
+    appRoot,
+    net: {
+      async fetch(url) {
+        fetchedUrls.push(url);
+        return new Response('static');
+      },
+    },
+    managedStandbyBackgroundDirectory:
+      background.managedStandbyBackgroundDirectory,
+    getAllowedStandbyBackgroundPath: () => background.assetPath,
+  });
+  const url =
+    `displaycore://app/managed/standby-background/${background.fileName}`;
+
+  const response = await handler({ method: 'GET', url });
+
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get('content-type'), 'image/png');
+  assert.equal(response.headers.get('content-length'), String(PNG_SIGNATURE.length));
+  assert.equal(response.headers.get('cache-control'), 'no-store');
+  assert.equal(response.headers.get('x-content-type-options'), 'nosniff');
+  assert.equal(
+    response.headers.get('cross-origin-resource-policy'),
+    'same-origin',
+  );
+  assert.deepEqual(Buffer.from(await response.arrayBuffer()), PNG_SIGNATURE);
+  assert.deepEqual(fetchedUrls, []);
+
+  const headResponse = await handler({ method: 'HEAD', url });
+  assert.equal(headResponse.status, 200);
+  assert.equal(headResponse.headers.get('content-length'), String(PNG_SIGNATURE.length));
+  assert.equal((await headResponse.arrayBuffer()).byteLength, 0);
+});
+
+test('受管理待機背景拒絕變形路由、未選取檔案、非唯讀方法與內容篡改', async (t) => {
+  const background = await createManagedStandbyBackgroundHarness(t);
+  let allowedPath = background.assetPath;
+  const handler = createLocalProtocolHandler({
+    appRoot,
+    net: { fetch: async () => new Response('static') },
+    managedStandbyBackgroundDirectory:
+      background.managedStandbyBackgroundDirectory,
+    getAllowedStandbyBackgroundPath: () => allowedPath,
+  });
+  const validUrl =
+    `displaycore://app/managed/standby-background/${background.fileName}`;
+  const otherHash = 'f'.repeat(24);
+
+  for (const url of [
+    `displaycore://other/managed/standby-background/${background.fileName}`,
+    `displaycore://app/managed/standby-background/${otherHash}.png`,
+    `displaycore://app/managed/standby-background/${background.fileName}?cache=1`,
+    'displaycore://app/managed/standby-background/%2e%2e%2fconfig.json',
+    `displaycore://app/managed/logo/${background.fileName}`,
+  ]) {
+    const response = await handler({ method: 'GET', url });
+    assert.equal(response.status, 404, url);
+    assert.equal(await response.text(), 'Not Found');
+  }
+
+  allowedPath = null;
+  assert.equal((await handler({ method: 'GET', url: validUrl })).status, 404);
+  allowedPath = background.assetPath;
+  assert.equal((await handler({ method: 'POST', url: validUrl })).status, 405);
+  const filePath = path.join(
+    background.managedStandbyBackgroundDirectory,
+    background.fileName,
+  );
+
+  await fileSystem.writeFile(filePath, Buffer.from('not a png'));
+  let response = await handler({ method: 'GET', url: validUrl });
+  assert.equal(response.status, 404);
+
+  const replacement = Buffer.concat([PNG_SIGNATURE, Buffer.from('changed')]);
+  await fileSystem.writeFile(filePath, replacement);
+  response = await handler({ method: 'GET', url: validUrl });
   assert.equal(response.status, 404);
 });

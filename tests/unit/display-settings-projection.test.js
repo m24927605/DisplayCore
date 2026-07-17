@@ -17,10 +17,11 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV4Config() {
+function createV5Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 4,
+    configVersion: 5,
+    standby: { backgroundImagePath: null },
     dateTime: { enabled: false, offsetSeconds: 0 },
     display: {
       ...defaultConfig.display,
@@ -30,10 +31,14 @@ function createV4Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV4Config();
+  const config = createV5Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
+  };
+  config.standby = {
+    backgroundImagePath:
+      'standby-backgrounds/fedcba987654321001234567.webp',
   };
   config.appearance = {
     backgroundColor: '#102030',
@@ -66,10 +71,14 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 4,
+    configVersion: 5,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
+    },
+    standby: {
+      backgroundImageUrl:
+        'displaycore://app/managed/standby-background/fedcba987654321001234567.webp',
     },
     appearance: {
       backgroundColor: '#102030',
@@ -90,6 +99,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   });
   assert.equal(Object.isFrozen(projected), true);
   assert.equal(Object.isFrozen(projected.logo), true);
+  assert.equal(Object.isFrozen(projected.standby), true);
   assert.equal(Object.isFrozen(projected.appearance), true);
   assert.equal(Object.isFrozen(projected.dateTime), true);
   assert.equal(Object.isFrozen(projected.emergency), true);
@@ -103,11 +113,16 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.hasOwn(projected.display, 'defaultDisplayId'), false);
   assert.equal(Object.hasOwn(projected.display, 'fullscreen'), false);
   assert.equal(Object.hasOwn(projected.logo, 'path'), false);
+  assert.equal(Object.hasOwn(projected.standby, 'backgroundImagePath'), false);
   assert.equal(JSON.stringify(projected).includes(config.logo.path), false);
+  assert.equal(
+    JSON.stringify(projected).includes(config.standby.backgroundImagePath),
+    false,
+  );
 });
 
-test('停用 Logo 時只發布 null URL，即使設定仍保留受管理識別', () => {
-  const config = createV4Config();
+test('停用 Logo 與未選待機背景時只發布 null URL', () => {
+  const config = createV5Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
@@ -115,25 +130,43 @@ test('停用 Logo 時只發布 null URL，即使設定仍保留受管理識別',
   );
 
   assert.deepEqual(projected.logo, { enabled: false, url: null });
+  assert.deepEqual(projected.standby, { backgroundImageUrl: null });
 });
 
-test('投影拒絕不合法 revision、設定內容與非雜湊 Logo 識別', () => {
+test('投影拒絕不合法 revision、設定內容與非受管理圖片識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV4Config(), -1),
-    createManagerSnapshot(createV4Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV4Config(), unknown: true }, 0),
+    createManagerSnapshot(createV5Config(), -1),
+    createManagerSnapshot(createV5Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV5Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV4Config(),
+        ...createV5Config(),
         logo: { enabled: true, path: 'logos/operator-logo.png' },
       },
       0,
     ),
     createManagerSnapshot(
       {
-        ...createV4Config(),
+        ...createV5Config(),
+        standby: { backgroundImagePath: 'C:\\private\\background.png' },
+      },
+      0,
+    ),
+    createManagerSnapshot(
+      {
+        ...createV5Config(),
+        standby: {
+          backgroundImagePath:
+            'standby-backgrounds/operator-background.png',
+        },
+      },
+      0,
+    ),
+    createManagerSnapshot(
+      {
+        ...createV5Config(),
         display: {
-          ...createV4Config().display,
+          ...createV5Config().display,
           renderResolution: '1280x720',
         },
       },
@@ -141,9 +174,9 @@ test('投影拒絕不合法 revision、設定內容與非雜湊 Logo 識別', ()
     ),
     createManagerSnapshot(
       {
-        ...createV4Config(),
+        ...createV5Config(),
         playback: {
-          ...createV4Config().playback,
+          ...createV5Config().playback,
           pageDurationSeconds: 0,
         },
       },

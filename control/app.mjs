@@ -715,6 +715,7 @@ function hasRequiredBridge(api) {
     'getSettings',
     'saveSettings',
     'chooseLogo',
+    'chooseStandbyBackground',
     'getOutputStatus',
     'onOutputStatusChanged',
   ].every((methodName) => typeof api?.[methodName] === 'function');
@@ -748,6 +749,7 @@ async function boot() {
     saveSettings: (config, expectedRevision) =>
       bridge.saveSettings(config, expectedRevision),
     chooseLogo: () => bridge.chooseLogo(),
+    chooseStandbyBackground: () => bridge.chooseStandbyBackground(),
     getOutputStatus: () => bridge.getOutputStatus(),
     onOutputStatusChanged: (listener) =>
       bridge.onOutputStatusChanged(listener),

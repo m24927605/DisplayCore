@@ -83,7 +83,7 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV4(
+function hasExpectedConfigV5(
   config,
   offsetSeconds,
   renderResolution,
@@ -94,7 +94,9 @@ function hasExpectedConfigV4(
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 4 &&
+    config.configVersion === 5 &&
+    hasExactKeys(config.standby, ['backgroundImagePath']) &&
+    config.standby.backgroundImagePath === null &&
     config.dateTime?.enabled === true &&
     config.dateTime?.offsetSeconds === offsetSeconds &&
     hasExactKeys(config.playback, [
@@ -122,7 +124,7 @@ function isExpectedSettingsSnapshot(
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV4(
+    hasExpectedConfigV5(
       snapshot.config,
       offsetSeconds,
       renderResolution,
@@ -130,7 +132,7 @@ function isExpectedSettingsSnapshot(
       repeatMode,
       roundCount,
     ) &&
-    hasExpectedConfigV4(snapshot.defaults, 0, 'auto', 3, 'finite', 1)
+    hasExpectedConfigV5(snapshot.defaults, 0, 'auto', 3, 'finite', 1)
   );
 }
 

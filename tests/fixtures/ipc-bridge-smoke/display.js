@@ -79,13 +79,16 @@ function isExpectedSettingsSnapshot(snapshot) {
       'logo',
       'marquee',
       'revision',
+      'standby',
     ]) &&
-    snapshot.configVersion === 4 &&
+    snapshot.configVersion === 5 &&
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'url']) &&
     snapshot.logo.enabled === false &&
     snapshot.logo.url === null &&
+    hasExactKeys(snapshot.standby, ['backgroundImageUrl']) &&
+    snapshot.standby.backgroundImageUrl === null &&
     hasExactKeys(snapshot.appearance, [
       'backgroundColor',
       'fontColor',

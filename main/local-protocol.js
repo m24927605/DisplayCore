@@ -6,15 +6,17 @@ const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 
 const {
-  MAXIMUM_LOGO_BYTES,
+  MAXIMUM_MANAGED_IMAGE_BYTES,
   matchesImageSignature,
-} = require('../config/logo-importer');
+} = require('../config/managed-image-importer');
 
 const APP_SCHEME = 'displaycore';
 const APP_HOST = 'app';
 const ALLOWED_RESOURCE_ROOTS = new Set(['assets', 'control', 'display']);
 const MANAGED_LOGO_ROUTE = /^\/managed\/logo\/([a-f0-9]{24}\.(png|jpg|webp))$/;
-const LOGO_MIME_TYPES = Object.freeze({
+const MANAGED_STANDBY_BACKGROUND_ROUTE =
+  /^\/managed\/standby-background\/([a-f0-9]{24}\.(png|jpg|webp))$/;
+const IMAGE_MIME_TYPES = Object.freeze({
   jpg: 'image/jpeg',
   png: 'image/png',
   webp: 'image/webp',
@@ -119,7 +121,7 @@ function createErrorResponse(status, statusText) {
   });
 }
 
-function resolveManagedLogoRequest(requestUrl) {
+function resolveManagedImageRequest(requestUrl, route) {
   let parsedUrl;
 
   try {
@@ -142,7 +144,7 @@ function resolveManagedLogoRequest(requestUrl) {
     return null;
   }
 
-  const match = MANAGED_LOGO_ROUTE.exec(parsedUrl.pathname);
+  const match = route.exec(parsedUrl.pathname);
 
   if (!match) {
     return null;
@@ -151,30 +153,42 @@ function resolveManagedLogoRequest(requestUrl) {
   return Object.freeze({ fileName: match[1], extension: `.${match[2]}` });
 }
 
-async function serveManagedLogo({
+function resolveManagedLogoRequest(requestUrl) {
+  return resolveManagedImageRequest(requestUrl, MANAGED_LOGO_ROUTE);
+}
+
+function resolveManagedStandbyBackgroundRequest(requestUrl) {
+  return resolveManagedImageRequest(
+    requestUrl,
+    MANAGED_STANDBY_BACKGROUND_ROUTE,
+  );
+}
+
+async function serveManagedImage({
   fileName,
   extension,
   method,
-  managedLogoDirectory,
-  getAllowedLogoPath,
+  assetPathPrefix,
+  managedDirectory,
+  getAllowedPath,
   fileSystem,
 }) {
   if (
-    typeof managedLogoDirectory !== 'string' ||
-    managedLogoDirectory.length === 0 ||
-    typeof getAllowedLogoPath !== 'function'
+    typeof managedDirectory !== 'string' ||
+    managedDirectory.length === 0 ||
+    typeof getAllowedPath !== 'function'
   ) {
     return createErrorResponse(404, 'Not Found');
   }
 
   try {
-    const expectedAssetPath = `logos/${fileName}`;
+    const expectedAssetPath = `${assetPathPrefix}/${fileName}`;
 
-    if (getAllowedLogoPath() !== expectedAssetPath) {
+    if (getAllowedPath() !== expectedAssetPath) {
       return createErrorResponse(404, 'Not Found');
     }
 
-    const allowedRoot = path.resolve(managedLogoDirectory);
+    const allowedRoot = path.resolve(managedDirectory);
     const filePath = path.resolve(allowedRoot, fileName);
     const relativePath = path.relative(allowedRoot, filePath);
 
@@ -192,7 +206,7 @@ async function serveManagedLogo({
       !stats.isFile() ||
       stats.isSymbolicLink() ||
       stats.size <= 0 ||
-      stats.size > MAXIMUM_LOGO_BYTES
+      stats.size > MAXIMUM_MANAGED_IMAGE_BYTES
     ) {
       return createErrorResponse(404, 'Not Found');
     }
@@ -201,7 +215,7 @@ async function serveManagedLogo({
 
     if (
       contents.length <= 0 ||
-      contents.length > MAXIMUM_LOGO_BYTES ||
+      contents.length > MAXIMUM_MANAGED_IMAGE_BYTES ||
       !matchesImageSignature(contents, extension)
     ) {
       return createErrorResponse(404, 'Not Found');
@@ -212,14 +226,14 @@ async function serveManagedLogo({
       .digest('hex')
       .slice(0, 24);
 
-    if (!fileName.startsWith(`${digest}.`)) {
+    if (fileName !== `${digest}${extension}`) {
       return createErrorResponse(404, 'Not Found');
     }
 
     return new Response(method === 'HEAD' ? null : contents, {
       status: 200,
       headers: {
-        'Content-Type': LOGO_MIME_TYPES[extension.slice(1)],
+        'Content-Type': IMAGE_MIME_TYPES[extension.slice(1)],
         'Content-Length': String(contents.length),
         'Cache-Control': 'no-store',
         'X-Content-Type-Options': 'nosniff',
@@ -234,7 +248,7 @@ async function serveManagedLogo({
 /**
  * 建立 Electron protocol.handle 使用的本機資源處理器。
  *
- * 公開靜態資源只允許專案白名單目錄；受管理 Logo 則使用獨立精確路由，
+ * 公開靜態資源只允許專案白名單目錄；受管理 Logo 與待機背景使用精確路由，
  * 並在每次讀取時重新驗證目前設定、普通檔案、大小、簽章與內容雜湊。
  *
  * @param {object} dependencies
@@ -242,6 +256,8 @@ async function serveManagedLogo({
  * @param {typeof Electron.net} dependencies.net
  * @param {string|null} [dependencies.managedLogoDirectory]
  * @param {(() => string|null)|null} [dependencies.getAllowedLogoPath]
+ * @param {string|null} [dependencies.managedStandbyBackgroundDirectory]
+ * @param {(() => string|null)|null} [dependencies.getAllowedStandbyBackgroundPath]
  * @param {typeof defaultFileSystem} [dependencies.fileSystem]
  * @returns {(request: GlobalRequest) => Promise<Response>}
  */
@@ -250,6 +266,8 @@ function createLocalProtocolHandler({
   net,
   managedLogoDirectory = null,
   getAllowedLogoPath = null,
+  managedStandbyBackgroundDirectory = null,
+  getAllowedStandbyBackgroundPath = null,
   fileSystem = defaultFileSystem,
 }) {
   return async function handleLocalResource(request) {
@@ -262,11 +280,26 @@ function createLocalProtocolHandler({
     const managedLogo = resolveManagedLogoRequest(request.url);
 
     if (managedLogo) {
-      return serveManagedLogo({
+      return serveManagedImage({
         ...managedLogo,
         method,
-        managedLogoDirectory,
-        getAllowedLogoPath,
+        assetPathPrefix: 'logos',
+        managedDirectory: managedLogoDirectory,
+        getAllowedPath: getAllowedLogoPath,
+        fileSystem,
+      });
+    }
+
+    const managedStandbyBackground =
+      resolveManagedStandbyBackgroundRequest(request.url);
+
+    if (managedStandbyBackground) {
+      return serveManagedImage({
+        ...managedStandbyBackground,
+        method,
+        assetPathPrefix: 'standby-backgrounds',
+        managedDirectory: managedStandbyBackgroundDirectory,
+        getAllowedPath: getAllowedStandbyBackgroundPath,
         fileSystem,
       });
     }
@@ -294,6 +327,8 @@ function createLocalProtocolHandler({
  * @param {string} dependencies.appRoot
  * @param {string} dependencies.managedLogoDirectory
  * @param {() => string|null} dependencies.getAllowedLogoPath
+ * @param {string} dependencies.managedStandbyBackgroundDirectory
+ * @param {() => string|null} dependencies.getAllowedStandbyBackgroundPath
  */
 function installLocalProtocol({
   protocol,
@@ -301,6 +336,8 @@ function installLocalProtocol({
   appRoot,
   managedLogoDirectory,
   getAllowedLogoPath,
+  managedStandbyBackgroundDirectory,
+  getAllowedStandbyBackgroundPath,
 }) {
   protocol.handle(
     APP_SCHEME,
@@ -309,6 +346,8 @@ function installLocalProtocol({
       net,
       managedLogoDirectory,
       getAllowedLogoPath,
+      managedStandbyBackgroundDirectory,
+      getAllowedStandbyBackgroundPath,
     }),
   );
 }
@@ -320,4 +359,5 @@ module.exports = {
   registerAppScheme,
   resolveAppResource,
   resolveManagedLogoRequest,
+  resolveManagedStandbyBackgroundRequest,
 };

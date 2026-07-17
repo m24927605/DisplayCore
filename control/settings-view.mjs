@@ -42,6 +42,18 @@ export function createSettingsView({
     logoPathError: document.getElementById('logo-path-error'),
     chooseLogoButton: document.getElementById('choose-logo-button'),
     removeLogoButton: document.getElementById('remove-logo-button'),
+    standbyBackgroundPath: document.getElementById(
+      'standby-background-path-input',
+    ),
+    standbyBackgroundPathError: document.getElementById(
+      'standby-background-path-error',
+    ),
+    chooseStandbyBackgroundButton: document.getElementById(
+      'choose-standby-background-button',
+    ),
+    removeStandbyBackgroundButton: document.getElementById(
+      'remove-standby-background-button',
+    ),
     backgroundColorPicker: document.getElementById('background-color-picker'),
     backgroundColor: document.getElementById('background-color-input'),
     backgroundColorError: document.getElementById('background-color-error'),
@@ -114,6 +126,7 @@ export function createSettingsView({
     defaults: null,
     revision: null,
     logoPath: null,
+    standbyBackgroundImagePath: null,
     ready: false,
     busy: false,
     dirty: false,
@@ -127,6 +140,14 @@ export function createSettingsView({
   const fieldTargets = Object.freeze({
     logo: [elements.logoPath, elements.logoPathError],
     'logo.path': [elements.logoPath, elements.logoPathError],
+    standby: [
+      elements.standbyBackgroundPath,
+      elements.standbyBackgroundPathError,
+    ],
+    'standby.backgroundImagePath': [
+      elements.standbyBackgroundPath,
+      elements.standbyBackgroundPathError,
+    ],
     appearance: [elements.backgroundColor, elements.backgroundColorError],
     'appearance.backgroundColor': [
       elements.backgroundColor,
@@ -244,6 +265,7 @@ export function createSettingsView({
       baseline: state.baseline,
       logoEnabled: elements.logoEnabled.checked,
       logoPath: state.logoPath,
+      standbyBackgroundImagePath: state.standbyBackgroundImagePath,
       backgroundColor: elements.backgroundColor.value,
       fontFamily: elements.fontFamily.value,
       fontColor: elements.fontColor.value,
@@ -277,6 +299,8 @@ export function createSettingsView({
     elements.saveButton.disabled = settingsDisabled || !state.dirty;
     elements.removeLogoButton.disabled =
       settingsDisabled || state.logoPath === null;
+    elements.removeStandbyBackgroundButton.disabled =
+      settingsDisabled || state.standbyBackgroundImagePath === null;
   }
 
   function setDirty(dirty) {
@@ -319,10 +343,13 @@ export function createSettingsView({
     }
 
     state.logoPath = config.logo.path;
+    state.standbyBackgroundImagePath = config.standby.backgroundImagePath;
     state.clockOffsetSeconds = config.dateTime.offsetSeconds;
     state.clockTimeTouched = false;
     elements.logoEnabled.checked = config.logo.enabled;
     elements.logoPath.value = config.logo.path ?? '';
+    elements.standbyBackgroundPath.value =
+      config.standby.backgroundImagePath ?? '';
     elements.backgroundColor.value = config.appearance.backgroundColor;
     elements.backgroundColorPicker.value =
       config.appearance.backgroundColor.toLowerCase();
@@ -417,6 +444,7 @@ export function createSettingsView({
     state.defaults = null;
     state.revision = null;
     state.logoPath = null;
+    state.standbyBackgroundImagePath = null;
     state.clockTimeTouched = false;
     state.clockOffsetSeconds = 0;
     clearSettingsErrors();
@@ -454,6 +482,12 @@ export function createSettingsView({
     }
   }
 
+  async function chooseStandbyBackground() {
+    if (await state.controller?.chooseStandbyBackground()) {
+      focusWhenUnlocked(elements.chooseStandbyBackgroundButton);
+    }
+  }
+
   function bind() {
     if (state.bound) {
       return;
@@ -467,10 +501,20 @@ export function createSettingsView({
       () => void chooseLogo(),
       { signal },
     );
+    elements.chooseStandbyBackgroundButton.addEventListener(
+      'click',
+      () => void chooseStandbyBackground(),
+      { signal },
+    );
     elements.removeLogoButton.addEventListener('click', () => {
       state.logoPath = null;
       elements.logoPath.value = '';
       elements.logoEnabled.checked = false;
+      handleDraftInput();
+    }, { signal });
+    elements.removeStandbyBackgroundButton.addEventListener('click', () => {
+      state.standbyBackgroundImagePath = null;
+      elements.standbyBackgroundPath.value = '';
       handleDraftInput();
     }, { signal });
     elements.loadDefaultsButton.addEventListener('click', () => {
@@ -564,6 +608,7 @@ export function createSettingsView({
       state.defaults = null;
       state.revision = null;
       state.logoPath = null;
+      state.standbyBackgroundImagePath = null;
       state.clockTimeTouched = false;
       state.clockOffsetSeconds = 0;
       state.closing = false;
@@ -600,6 +645,8 @@ export function createSettingsView({
         errorElement.hidden = false;
         const focusTarget = field === 'logo' || field === 'logo.path'
           ? elements.chooseLogoButton
+          : field === 'standby' || field === 'standby.backgroundImagePath'
+            ? elements.chooseStandbyBackgroundButton
           : field === 'playback.repeatMode'
             ? elements.repeatModeFinite
             : control;
@@ -613,6 +660,13 @@ export function createSettingsView({
       state.logoPath = assetPath;
       elements.logoPath.value = assetPath;
       elements.logoEnabled.checked = true;
+      clearSettingsErrors();
+      refreshDirtyState();
+    },
+
+    renderStandbyBackgroundSelection(assetPath) {
+      state.standbyBackgroundImagePath = assetPath;
+      elements.standbyBackgroundPath.value = assetPath;
       clearSettingsErrors();
       refreshDirtyState();
     },

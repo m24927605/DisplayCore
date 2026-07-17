@@ -11,6 +11,11 @@ const {
   MAXIMUM_LOGO_BYTES,
   validateLocalSourcePath,
 } = require('../../config/logo-importer');
+const {
+  MAXIMUM_MANAGED_IMAGE_BYTES,
+  ManagedImageImporter,
+  validateLocalImageSourcePath,
+} = require('../../config/managed-image-importer');
 
 const PNG_BYTES = Buffer.from([
   0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x01,
@@ -41,6 +46,15 @@ async function createHarness(t, dialogResult) {
 
   return { assetDirectory, calls, directory, importer, parentWindow };
 }
+
+test('Logo importer 保留既有 API 並改由共用受管理圖片安全核心提供驗證', () => {
+  assert.equal(
+    Object.getPrototypeOf(LogoImporter.prototype),
+    ManagedImageImporter.prototype,
+  );
+  assert.equal(MAXIMUM_LOGO_BYTES, MAXIMUM_MANAGED_IMAGE_BYTES);
+  assert.equal(validateLocalSourcePath, validateLocalImageSourcePath);
+});
 
 test('取消原生選檔時不建立檔案，也不回傳來源路徑', async (t) => {
   const harness = await createHarness(t, { canceled: true, filePaths: [] });
@@ -147,4 +161,3 @@ test('匯入拒絕 SVG、偽造副檔名、空檔、超量檔案與符號連結'
   });
   await assert.rejects(linkedHarness.importer.chooseAndImport());
 });
-

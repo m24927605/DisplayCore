@@ -11,6 +11,7 @@
     "Noto Sans TC",
     sans-serif;
   --logo-outline: rgb(255 255 255 / 10%);
+  --standby-scrim: rgb(0 0 0 / 48%);
   --display-safe-block: clamp(1rem, 3.5cqh, 12rem);
   --display-safe-inline: clamp(1.5rem, 4cqw, 16rem);
   --chrome-gap: clamp(0.5rem, 1.5cqh, 3rem);
@@ -117,6 +118,37 @@ body {
   padding-block: var(--display-safe-block);
   padding-inline: var(--display-safe-inline);
   overflow: hidden;
+  isolation: isolate;
+}
+
+/* 待機背景不參與 Grid 排版；圖片與遮罩永遠位於內容下方。 */
+.standby-background-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+}
+
+.standby-background-layer::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: var(--standby-scrim);
+}
+
+.standby-background-image {
+  display: block;
+  inline-size: 100%;
+  block-size: 100%;
+  object-fit: cover;
+  object-position: center;
+}
+
+.display-chrome,
+.page-layer,
+.standby-layer,
+.display-clock {
+  z-index: 2;
 }
 
 /* 沒有 Logo 與時間時移除空的 chrome 軌道與間距，讓訊息使用完整安全區。 */
@@ -130,6 +162,19 @@ body {
   grid-template-rows: auto auto;
   gap: clamp(1rem, 3.5cqh, 8rem);
   place-content: center;
+  place-items: center;
+}
+
+.display-stage[data-mode="blank"] .normal-layer.has-logo {
+  grid-template-rows: auto auto auto;
+}
+
+.display-stage[data-mode="blank"] .display-chrome {
+  justify-items: center;
+}
+
+.display-stage[data-mode="blank"] .logo-frame {
+  justify-self: center;
   place-items: center;
 }
 

@@ -47,10 +47,13 @@ test('首次啟動以原廠預設值原子建立 userData/config.json', async (t
 
   assert.deepEqual(snapshot.config, defaults);
   assert.deepEqual(snapshot.defaults, defaults);
+  assert.equal(snapshot.config.configVersion, 5);
+  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
   assert.equal(snapshot.revision, 0);
   assert.equal(snapshot.notice, null);
   assert.equal(Object.isFrozen(snapshot), true);
   assert.equal(Object.isFrozen(snapshot.config), true);
+  assert.equal(Object.isFrozen(snapshot.config.standby), true);
   assert.equal(persistedText.endsWith('\n'), true);
   assert.deepEqual(JSON.parse(persistedText), defaults);
   assert.deepEqual(await fileSystem.readdir(directory), ['config.json']);
@@ -70,7 +73,7 @@ test('有效使用者設定支援 UTF-8 BOM，載入時不擅自重寫檔案', a
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 v1 使用者設定在記憶體升級為 v4且不擅自覆寫原檔', async (t) => {
+test('既有 v1 使用者設定在記憶體升級為 v5且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 1,
@@ -94,7 +97,7 @@ test('既有 v1 使用者設定在記憶體升級為 v4且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 4);
+  assert.equal(snapshot.config.configVersion, 5);
   assert.equal(snapshot.config.appearance.backgroundColor, '#123ABC');
   assert.equal(snapshot.config.appearance.fontColor, '#FEDCBA');
   assert.equal(snapshot.config.appearance.fontSizePercent, 100);
@@ -105,6 +108,7 @@ test('既有 v1 使用者設定在記憶體升級為 v4且不擅自覆寫原檔'
   });
   assert.deepEqual(snapshot.config.emergency, snapshot.defaults.emergency);
   assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
+  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
   assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -115,12 +119,12 @@ test('既有 v1 使用者設定在記憶體升級為 v4且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    4,
+    5,
   );
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v2 使用者設定在記憶體升級為 v4且不擅自覆寫原檔', async (t) => {
+test('既有 v2 使用者設定在記憶體升級為 v5且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 2,
@@ -150,7 +154,7 @@ test('既有 v2 使用者設定在記憶體升級為 v4且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 4);
+  assert.equal(snapshot.config.configVersion, 5);
   assert.equal(snapshot.config.appearance.backgroundColor, '#234BCD');
   assert.equal(snapshot.config.appearance.fontColor, '#EDCB98');
   assert.deepEqual(snapshot.config.dateTime, {
@@ -158,6 +162,7 @@ test('既有 v2 使用者設定在記憶體升級為 v4且不擅自覆寫原檔'
     offsetSeconds: 0,
   });
   assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
+  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
   assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -168,12 +173,12 @@ test('既有 v2 使用者設定在記憶體升級為 v4且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    4,
+    5,
   );
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v3 使用者設定在記憶體升級為 v4且只補播放設定', async (t) => {
+test('既有 v3 使用者設定在記憶體升級為 v5且只補播放與待機設定', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 3,
@@ -204,10 +209,11 @@ test('既有 v3 使用者設定在記憶體升級為 v4且只補播放設定', a
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 4);
+  assert.equal(snapshot.config.configVersion, 5);
   assert.equal(snapshot.config.appearance.backgroundColor, '#345CDE');
   assert.equal(snapshot.config.appearance.fontColor, '#DCBA87');
   assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
+  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
   assert.deepEqual(snapshot.config.display, legacy.display);
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -217,9 +223,72 @@ test('既有 v3 使用者設定在記憶體升級為 v4且只補播放設定', a
     snapshot.revision,
   );
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
-  assert.equal(persisted.configVersion, 4);
+  assert.equal(persisted.configVersion, 5);
   assert.deepEqual(persisted.playback, snapshot.defaults.playback);
+  assert.deepEqual(persisted.standby, { backgroundImagePath: null });
   assert.equal(saved.revision, 1);
+});
+
+test('既有 v4 使用者設定在記憶體升級為 v5，不覆寫原檔且下次儲存持久化待機設定', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const legacy = {
+    configVersion: 4,
+    logo: {
+      enabled: true,
+      path: 'logos/0123456789abcdef01234567.png',
+    },
+    appearance: {
+      backgroundColor: '#456def',
+      fontFamily: 'Arial, sans-serif',
+      fontColor: '#cba987',
+      minimumFontSizeRem: 4,
+      fontSizePercent: 135,
+      lineSpacingPercent: 160,
+    },
+    dateTime: { enabled: false, offsetSeconds: -3_661 },
+    emergency: {
+      inspectionBackgroundColor: '#5f1b1b',
+      releaseBackgroundColor: '#12512b',
+    },
+    marquee: { enabled: true },
+    playback: {
+      pageDurationSeconds: 9,
+      repeatMode: 'continuous',
+      roundCount: 23,
+    },
+    display: {
+      selectionMode: 'manual',
+      defaultDisplayId: 84,
+      fullscreen: false,
+      renderResolution: '3840x2160',
+    },
+  };
+  const originalText = `\uFEFF${JSON.stringify(legacy)}`;
+  await fileSystem.writeFile(configPath, originalText, 'utf8');
+
+  const snapshot = await manager.initialize();
+
+  assert.equal(snapshot.config.configVersion, 5);
+  assert.deepEqual(snapshot.config.standby, { backgroundImagePath: null });
+  assert.deepEqual(snapshot.config.playback, legacy.playback);
+  assert.deepEqual(snapshot.config.display, legacy.display);
+  assert.equal(snapshot.config.logo.path, legacy.logo.path);
+  assert.equal(snapshot.notice, null);
+  assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
+
+  const next = structuredClone(snapshot.config);
+  next.standby.backgroundImagePath =
+    'standby-backgrounds/abcdefabcdefabcdefabcdef.webp';
+  const saved = await manager.saveConfig(next, snapshot.revision);
+  const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
+
+  assert.equal(saved.revision, 1);
+  assert.equal(persisted.configVersion, 5);
+  assert.deepEqual(persisted.playback, legacy.playback);
+  assert.equal(
+    persisted.standby.backgroundImagePath,
+    'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+  );
 });
 
 test('損壞或過大的使用者設定保留原檔，記憶體安全降級為預設值', async (t) => {
@@ -298,6 +367,27 @@ test('儲存成功後才更新 revision、記憶體、磁碟與訂閱者', async
   unsubscribe();
   await manager.saveConfig(structuredClone(initial.config), saved.revision);
   assert.equal(received.length, 1);
+});
+
+test('待機背景圖片路徑只在驗證與原子寫入成功後持久化', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const initial = await manager.initialize();
+  const next = structuredClone(initial.config);
+  next.standby = {
+    backgroundImagePath:
+      'standby-backgrounds/0123456789abcdef01234567.png',
+  };
+
+  const saved = await manager.saveConfig(next, initial.revision);
+  const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
+
+  assert.equal(saved.revision, 1);
+  assert.equal(
+    saved.config.standby.backgroundImagePath,
+    'standby-backgrounds/0123456789abcdef01234567.png',
+  );
+  assert.equal(Object.isFrozen(saved.config.standby), true);
+  assert.deepEqual(persisted.standby, saved.config.standby);
 });
 
 test('無效設定與過期 revision 不會改變既有檔案或記憶體', async (t) => {

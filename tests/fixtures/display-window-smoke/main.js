@@ -50,6 +50,10 @@ const LOGO_BYTES = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
   'base64',
 );
+const STANDBY_BACKGROUND_BYTES = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+  'base64',
+);
 
 let displayWindow = null;
 let coordinator = null;
@@ -240,6 +244,79 @@ async function verifyDisplayedClockOffset(expectedOffsetSeconds, description) {
   assert.match(measurement.text, /^\d{2}:\d{2}:\d{2}$/);
   assert.equal(measurement.dateTime, measurement.text);
   assert.ok(measurement.circularDifference <= 1);
+}
+
+/** 真實 BrowserWindow 驗證待機背景、Logo、歡迎文字與時間的層級。 */
+async function verifyStandbyPresentation(
+  expectedLogoUrl,
+  expectedStandbyBackgroundUrl,
+) {
+  await waitFor(
+    () => execute(`(() => {
+      const background = document.getElementById('standby-background-image');
+      const logo = document.getElementById('display-logo');
+      return document.getElementById('display-stage').dataset.mode === 'blank' &&
+        background && !background.hidden && background.complete &&
+        background.naturalWidth > 0 && logo && !logo.hidden &&
+        logo.complete && logo.naturalWidth > 0;
+    })()`),
+    '待機背景與 Logo 載入',
+  );
+
+  const inspection = await execute(`(() => {
+    const stage = document.getElementById('display-stage').getBoundingClientRect();
+    const layerElement = document.getElementById('standby-background-layer');
+    const layer = layerElement.getBoundingClientRect();
+    const backgroundElement = document.getElementById('standby-background-image');
+    const background = backgroundElement.getBoundingClientRect();
+    const logoElement = document.getElementById('display-logo');
+    const logo = logoElement.getBoundingClientRect();
+    const message = document.getElementById('standby-message').getBoundingClientRect();
+    const clock = document.getElementById('display-clock').getBoundingClientRect();
+    const center = (box) => box.left + (box.width / 2);
+    return {
+      layerHidden: layerElement.hidden,
+      backgroundHidden: backgroundElement.hidden,
+      backgroundSource: backgroundElement.getAttribute('src'),
+      backgroundObjectFit: getComputedStyle(backgroundElement).objectFit,
+      backgroundCoversStage:
+        Math.abs(layer.left - stage.left) <= 0.5 &&
+        Math.abs(layer.top - stage.top) <= 0.5 &&
+        Math.abs(layer.width - stage.width) <= 0.5 &&
+        Math.abs(layer.height - stage.height) <= 0.5 &&
+        Math.abs(background.width - stage.width) <= 0.5 &&
+        Math.abs(background.height - stage.height) <= 0.5,
+      chromeHidden: document.getElementById('display-chrome').hidden,
+      logoHidden: logoElement.hidden,
+      logoSource: logoElement.getAttribute('src'),
+      logoCenterError: Math.abs(center(logo) - center(stage)),
+      messageCenterError: Math.abs(center(message) - center(stage)),
+      clockCenterError: Math.abs(center(clock) - center(stage)),
+      verticalOrder:
+        logo.bottom <= message.top + 0.5 && message.bottom <= clock.top + 0.5,
+      rootOverflow:
+        document.documentElement.scrollWidth > document.documentElement.clientWidth ||
+        document.documentElement.scrollHeight > document.documentElement.clientHeight,
+    };
+  })()`);
+
+  assert.equal(inspection.layerHidden, false);
+  assert.equal(inspection.backgroundHidden, false);
+  assert.equal(inspection.backgroundSource, expectedStandbyBackgroundUrl);
+  assert.equal(inspection.backgroundObjectFit, 'cover');
+  assert.equal(inspection.backgroundCoversStage, true);
+  assert.equal(inspection.chromeHidden, false);
+  assert.equal(inspection.logoHidden, false);
+  assert.equal(inspection.logoSource, expectedLogoUrl);
+  assert.ok(inspection.logoCenterError < 1);
+  assert.ok(inspection.messageCenterError < 1);
+  assert.ok(inspection.clockCenterError < 1);
+  assert.equal(inspection.verticalOrder, true);
+  assert.equal(inspection.rootOverflow, false);
+  assert.doesNotMatch(
+    inspection.backgroundSource,
+    /file:|Users|userData|standby-backgrounds/i,
+  );
 }
 
 async function verifyResponsiveResolutions() {
@@ -458,7 +535,11 @@ async function verifyConfiguredRenderResolutions() {
   }
 }
 
-async function runWorkflow(timers, expectedLogoUrl) {
+async function runWorkflow(
+  timers,
+  expectedLogoUrl,
+  expectedStandbyBackgroundUrl,
+) {
   await waitFor(
     () => execute(`(() =>
       document.documentElement.dataset.displayReady === 'true' &&
@@ -494,6 +575,11 @@ async function runWorkflow(timers, expectedLogoUrl) {
     interactiveCount: 0,
     reducedMotion: true,
   });
+
+  await verifyStandbyPresentation(
+    expectedLogoUrl,
+    expectedStandbyBackgroundUrl,
+  );
 
   const literalHtml = '<img src=x onerror="globalThis.displayPwned=true">\n純文字';
   const messages = [
@@ -533,6 +619,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
       normalHasLogo: document.getElementById('normal-layer').classList.contains('has-logo'),
       normalHasClock: document.getElementById('normal-layer').classList.contains('has-clock'),
       chromeHidden: document.getElementById('display-chrome').hidden,
+      standbyBackgroundHidden:
+        document.getElementById('standby-background-layer').hidden,
+      standbyBackgroundSource:
+        document.getElementById('standby-background-image').getAttribute('src'),
       logoHidden: document.getElementById('display-logo').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
       clockHidden: document.getElementById('display-clock').hidden,
@@ -576,6 +666,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
     normalHasLogo: true,
     normalHasClock: true,
     chromeHidden: false,
+    standbyBackgroundHidden: true,
+    standbyBackgroundSource: expectedStandbyBackgroundUrl,
     logoHidden: false,
     logoSource: expectedLogoUrl,
     clockHidden: false,
@@ -600,6 +692,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
   await verifyDisplayedClockOffset(3_661, 'Display 套用離線時間偏移');
   assert.match(firstPage.fontFamily, /^Arial/i);
   assert.doesNotMatch(firstPage.logoSource, /file:|Users|userData/i);
+  assert.doesNotMatch(
+    firstPage.standbyBackgroundSource,
+    /file:|Users|userData|standby-backgrounds/i,
+  );
   assert.equal(
     firstPage.rowsFitVertically,
     true,
@@ -768,6 +864,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
     mode: document.getElementById('display-stage').dataset.mode,
     normalHidden: document.getElementById('normal-layer').hidden,
     chromeHidden: document.getElementById('display-chrome').hidden,
+    standbyBackgroundHidden:
+      document.getElementById('standby-background-layer').hidden,
     pageHidden: document.getElementById('page-layer').hidden,
     fillHidden: document.getElementById('fill-layer').hidden,
     cells: [...document.querySelectorAll('.fill-cell')].map(
@@ -783,6 +881,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(inspection.mode, 'emergency');
   assert.equal(inspection.normalHidden, true);
   assert.equal(inspection.chromeHidden, true);
+  assert.equal(inspection.standbyBackgroundHidden, true);
   assert.equal(inspection.pageHidden, true);
   assert.equal(inspection.fillHidden, false);
   assert.equal(
@@ -830,6 +929,13 @@ async function runWorkflow(timers, expectedLogoUrl) {
       fillChildren: document.getElementById('fill-layer').children.length,
       normalHidden: document.getElementById('normal-layer').hidden,
       chromeHidden: document.getElementById('display-chrome').hidden,
+      standbyBackgroundHidden:
+        document.getElementById('standby-background-layer').hidden,
+      standbyBackgroundSource:
+        document.getElementById('standby-background-image').getAttribute('src'),
+      standbyBackgroundObjectFit: getComputedStyle(
+        document.getElementById('standby-background-image')
+      ).objectFit,
       standbyHidden: document.getElementById('standby-layer').hidden,
       standbyText: document.getElementById('standby-message').textContent,
       clockText: document.getElementById('display-clock').textContent,
@@ -844,6 +950,12 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(standby.fillChildren, 0);
   assert.equal(standby.normalHidden, false);
   assert.equal(standby.chromeHidden, true);
+  assert.equal(standby.standbyBackgroundHidden, false);
+  assert.equal(
+    standby.standbyBackgroundSource,
+    expectedStandbyBackgroundUrl,
+  );
+  assert.equal(standby.standbyBackgroundObjectFit, 'cover');
   assert.equal(standby.standbyHidden, false);
   assert.equal(standby.standbyText, '歡迎光臨');
   assert.equal(
@@ -865,8 +977,15 @@ async function run() {
     `displaycore-display-smoke-data-${process.pid}`,
   );
   const managedLogoDirectory = path.join(runtimeDataRoot, 'logos');
+  const managedStandbyBackgroundDirectory = path.join(
+    runtimeDataRoot,
+    'standby-backgrounds',
+  );
   await fileSystem.rm(runtimeDataRoot, { recursive: true, force: true });
   await fileSystem.mkdir(managedLogoDirectory, { recursive: true });
+  await fileSystem.mkdir(managedStandbyBackgroundDirectory, {
+    recursive: true,
+  });
   const logoDigest = createHash('sha256')
     .update(LOGO_BYTES)
     .digest('hex')
@@ -878,9 +997,28 @@ async function run() {
     path.join(managedLogoDirectory, logoFileName),
     LOGO_BYTES,
   );
+  const standbyBackgroundDigest = createHash('sha256')
+    .update(STANDBY_BACKGROUND_BYTES)
+    .digest('hex')
+    .slice(0, 24);
+  const standbyBackgroundFileName = `${standbyBackgroundDigest}.png`;
+  const standbyBackgroundAssetPath =
+    `standby-backgrounds/${standbyBackgroundFileName}`;
+  const expectedStandbyBackgroundUrl =
+    `displaycore://app/managed/standby-background/${standbyBackgroundFileName}`;
+  await fileSystem.writeFile(
+    path.join(
+      managedStandbyBackgroundDirectory,
+      standbyBackgroundFileName,
+    ),
+    STANDBY_BACKGROUND_BYTES,
+  );
 
   const initialConfig = structuredClone(defaultConfig);
   initialConfig.logo = { enabled: true, path: logoAssetPath };
+  initialConfig.standby = {
+    backgroundImagePath: standbyBackgroundAssetPath,
+  };
   initialConfig.appearance = {
     ...initialConfig.appearance,
     backgroundColor: '#102030',
@@ -910,10 +1048,13 @@ async function run() {
     net,
     appRoot: projectRoot,
     managedLogoDirectory,
+    managedStandbyBackgroundDirectory,
     getAllowedLogoPath: () => {
       const logo = settingsManager.getSnapshot().config.logo;
       return logo.enabled ? logo.path : null;
     },
+    getAllowedStandbyBackgroundPath: () =>
+      settingsManager.getSnapshot().config.standby.backgroundImagePath,
   });
 
   displayWindow = new BrowserWindow(
@@ -978,7 +1119,11 @@ async function run() {
       }],
     },
   );
-  await runWorkflow(timers, expectedLogoUrl);
+  await runWorkflow(
+    timers,
+    expectedLogoUrl,
+    expectedStandbyBackgroundUrl,
+  );
   finish(0, '[DisplayCore] Display window workflow succeeded.');
 }
 

@@ -28,6 +28,16 @@ const LEGACY_V3_CONFIG_KEYS = Object.freeze([
   'logo',
   'marquee',
 ]);
+const LEGACY_V4_CONFIG_KEYS = Object.freeze([
+  'appearance',
+  'configVersion',
+  'dateTime',
+  'display',
+  'emergency',
+  'logo',
+  'marquee',
+  'playback',
+]);
 const LEGACY_APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -113,10 +123,10 @@ function isCanonicalV2Shape(candidate) {
 }
 
 /**
- * 將磁碟上的合法 v1／v2／v3 設定轉成 canonical v4。
+ * 將磁碟上的合法 v1／v2／v3／v4 設定轉成 canonical v5。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v4。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v4 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v5。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v5 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -132,6 +142,21 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V4_CONFIG_KEYS) &&
+    candidate.configVersion === 4
+  ) {
+    const migratedV4 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      standby: { ...defaults.value.standby },
+    });
+
+    return migratedV4.ok
+      ? { ok: true, value: migratedV4.value, migrated: true }
+      : migratedV4;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V3_CONFIG_KEYS) &&
     candidate.configVersion === 3
   ) {
@@ -139,6 +164,7 @@ function migrateStoredConfig(candidate, currentDefaults) {
       ...candidate,
       configVersion: defaults.value.configVersion,
       playback: { ...defaults.value.playback },
+      standby: { ...defaults.value.standby },
     });
 
     return migratedV3.ok
@@ -159,6 +185,7 @@ function migrateStoredConfig(candidate, currentDefaults) {
         renderResolution: defaults.value.display.renderResolution,
       },
       playback: { ...defaults.value.playback },
+      standby: { ...defaults.value.standby },
     });
 
     return migratedV2.ok
@@ -190,6 +217,7 @@ function migrateStoredConfig(candidate, currentDefaults) {
     emergency: { ...defaults.value.emergency },
     marquee: { ...candidate.marquee },
     playback: { ...defaults.value.playback },
+    standby: { ...defaults.value.standby },
     display: {
       ...candidate.display,
       renderResolution: defaults.value.display.renderResolution,

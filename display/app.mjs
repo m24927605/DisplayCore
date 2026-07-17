@@ -19,6 +19,8 @@ const elements = Object.freeze({
   stage: document.getElementById('display-stage'),
   announcement: document.getElementById('display-announcement'),
   normalLayer: document.getElementById('normal-layer'),
+  standbyBackgroundLayer: document.getElementById('standby-background-layer'),
+  standbyBackgroundImage: document.getElementById('standby-background-image'),
   chrome: document.getElementById('display-chrome'),
   logoFrame: document.getElementById('logo-frame'),
   logo: document.getElementById('display-logo'),
@@ -39,6 +41,8 @@ let renderGeneration = 0;
 let fitFrame = null;
 let expectedLogoUrl = null;
 let logoReady = false;
+let expectedStandbyBackgroundUrl = null;
+let standbyBackgroundReady = false;
 let clockHasValue = false;
 let clockSignature = null;
 
@@ -124,6 +128,8 @@ function clearVisualLayers() {
   elements.pageLayer.textContent = '';
   elements.fillLayer.textContent = '';
   elements.standbyLayer.hidden = true;
+  elements.standbyBackgroundLayer.hidden = true;
+  elements.standbyBackgroundImage.hidden = true;
   elements.pageLayer.removeAttribute('style');
   elements.stage.dataset.fittedRevision = '';
   elements.stage.dataset.fittedSettingsRevision = '';
@@ -348,13 +354,19 @@ function updateChromeVisibility() {
   const pageVisible = currentPresentation?.mode === 'page';
   const standbyVisible = currentPresentation?.mode === 'blank';
   const showLogo =
-    pageVisible && currentSettings.logo.enabled && logoReady;
+    (pageVisible || standbyVisible) &&
+    currentSettings.logo.enabled &&
+    logoReady;
+  const showStandbyBackground =
+    standbyVisible && standbyBackgroundReady;
   const showClock =
     (standbyVisible || (pageVisible && currentSettings.dateTime.enabled)) &&
     clockHasValue;
 
   elements.logoFrame.hidden = !showLogo;
   elements.logo.hidden = !showLogo;
+  elements.standbyBackgroundLayer.hidden = !showStandbyBackground;
+  elements.standbyBackgroundImage.hidden = !showStandbyBackground;
   elements.clock.hidden = !showClock;
   elements.normalLayer.classList.toggle('has-logo', showLogo);
   elements.normalLayer.classList.toggle('has-clock', showClock);
@@ -464,6 +476,71 @@ function applyLogo() {
   updateChromeVisibility();
 }
 
+function handleStandbyBackgroundLoad() {
+  if (
+    expectedStandbyBackgroundUrl === null ||
+    elements.standbyBackgroundImage.getAttribute('src') !==
+      expectedStandbyBackgroundUrl
+  ) {
+    return;
+  }
+
+  standbyBackgroundReady =
+    elements.standbyBackgroundImage.naturalWidth > 0 &&
+    elements.standbyBackgroundImage.naturalHeight > 0;
+  elements.stage.dataset.standbyBackgroundState = standbyBackgroundReady
+    ? 'ready'
+    : 'error';
+  updateChromeVisibility();
+}
+
+function handleStandbyBackgroundError() {
+  if (
+    expectedStandbyBackgroundUrl === null ||
+    elements.standbyBackgroundImage.getAttribute('src') !==
+      expectedStandbyBackgroundUrl
+  ) {
+    return;
+  }
+
+  standbyBackgroundReady = false;
+  elements.stage.dataset.standbyBackgroundState = 'error';
+  updateChromeVisibility();
+}
+
+/** 待機背景只接受 settings-state 已驗證的同源受管理 URL。 */
+function applyStandbyBackground() {
+  const nextUrl = currentSettings.standby.backgroundImageUrl;
+
+  if (nextUrl === null) {
+    expectedStandbyBackgroundUrl = null;
+    standbyBackgroundReady = false;
+    elements.standbyBackgroundImage.removeAttribute('src');
+    elements.stage.dataset.standbyBackgroundState = 'disabled';
+    updateChromeVisibility();
+    return;
+  }
+
+  expectedStandbyBackgroundUrl = nextUrl;
+
+  if (
+    elements.standbyBackgroundImage.getAttribute('src') === nextUrl &&
+    elements.standbyBackgroundImage.complete &&
+    elements.standbyBackgroundImage.naturalWidth > 0 &&
+    elements.standbyBackgroundImage.naturalHeight > 0
+  ) {
+    standbyBackgroundReady = true;
+    elements.stage.dataset.standbyBackgroundState = 'ready';
+    updateChromeVisibility();
+    return;
+  }
+
+  standbyBackgroundReady = false;
+  elements.stage.dataset.standbyBackgroundState = 'loading';
+  elements.standbyBackgroundImage.src = nextUrl;
+  updateChromeVisibility();
+}
+
 function calculateLogoOutline(backgroundColor) {
   const red = Number.parseInt(backgroundColor.slice(1, 3), 16);
   const green = Number.parseInt(backgroundColor.slice(3, 5), 16);
@@ -472,6 +549,17 @@ function calculateLogoOutline(backgroundColor) {
   return relativeBrightness >= 150
     ? 'rgb(0 0 0 / 10%)'
     : 'rgb(255 255 255 / 10%)';
+}
+
+/** 依文字明暗自動提供相反色遮罩，不增加管理員設定負擔。 */
+function calculateStandbyScrim(fontColor) {
+  const red = Number.parseInt(fontColor.slice(1, 3), 16);
+  const green = Number.parseInt(fontColor.slice(3, 5), 16);
+  const blue = Number.parseInt(fontColor.slice(5, 7), 16);
+  const relativeBrightness = (red * 299 + green * 587 + blue * 114) / 1000;
+  return relativeBrightness >= 150
+    ? 'rgb(0 0 0 / 48%)'
+    : 'rgb(255 255 255 / 52%)';
 }
 
 function applyEmergencyBackground(tone) {
@@ -518,10 +606,15 @@ function applyDisplaySettings(snapshot) {
     '--logo-outline',
     calculateLogoOutline(snapshot.appearance.backgroundColor),
   );
+  rootStyle.setProperty(
+    '--standby-scrim',
+    calculateStandbyScrim(snapshot.appearance.fontColor),
+  );
   elements.stage.dataset.settingsRevision = String(snapshot.revision);
   applyRenderResolution();
   applyEmergencyBackground(currentPresentation?.emergencyTone);
   applyLogo();
+  applyStandbyBackground();
   syncClock();
   updateChromeVisibility();
   scheduleFit();
@@ -635,6 +728,8 @@ function hasRequiredBridge(api) {
 
 elements.logo.addEventListener('load', handleLogoLoad);
 elements.logo.addEventListener('error', handleLogoError);
+elements.standbyBackgroundImage.addEventListener('load', handleStandbyBackgroundLoad);
+elements.standbyBackgroundImage.addEventListener('error', handleStandbyBackgroundError);
 applyDisplaySettings(SAFE_DISPLAY_SETTINGS);
 
 const resizeObserver = new ResizeObserver(() => {
@@ -709,6 +804,14 @@ window.addEventListener(
     resizeObserver.disconnect();
     elements.logo.removeEventListener('load', handleLogoLoad);
     elements.logo.removeEventListener('error', handleLogoError);
+    elements.standbyBackgroundImage.removeEventListener(
+      'load',
+      handleStandbyBackgroundLoad,
+    );
+    elements.standbyBackgroundImage.removeEventListener(
+      'error',
+      handleStandbyBackgroundError,
+    );
     cancelPendingFit();
   },
   { once: true },

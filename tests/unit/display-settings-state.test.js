@@ -9,10 +9,14 @@ async function loadModule() {
 
 function createSnapshot(revision = 0) {
   return {
-    configVersion: 4,
+    configVersion: 5,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
+    },
+    standby: {
+      backgroundImageUrl:
+        'displaycore://app/managed/standby-background/fedcba987654321001234567.webp',
     },
     appearance: {
       backgroundColor: '#102030',
@@ -42,8 +46,10 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
   assert.deepEqual(result.snapshot, source);
   assert.notEqual(result.snapshot, source);
   assert.notEqual(result.snapshot.logo, source.logo);
+  assert.notEqual(result.snapshot.standby, source.standby);
   assert.equal(Object.isFrozen(result.snapshot), true);
   assert.equal(Object.isFrozen(result.snapshot.logo), true);
+  assert.equal(Object.isFrozen(result.snapshot.standby), true);
   assert.equal(Object.isFrozen(result.snapshot.appearance), true);
   assert.equal(Object.isFrozen(result.snapshot.dateTime), true);
   assert.equal(Object.isFrozen(result.snapshot.emergency), true);
@@ -83,13 +89,23 @@ test('Display 設定 revision 單調遞增且 exact schema 拒絕未知欄位', 
     }).accepted,
     false,
   );
+  assert.equal(
+    acceptDisplaySettingsSnapshot(4, {
+      ...createSnapshot(5),
+      standby: {
+        ...createSnapshot(5).standby,
+        backgroundImagePath: 'standby-backgrounds/private.png',
+      },
+    }).accepted,
+    false,
+  );
 });
 
-test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定', async () => {
+test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設定', async () => {
   const { acceptDisplaySettingsSnapshot } = await loadModule();
   const valid = createSnapshot(1);
   const invalidCandidates = [
-    { ...valid, configVersion: 3 },
+    { ...valid, configVersion: 4 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { enabled: true, url: null } },
@@ -102,6 +118,25 @@ test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定
         url: 'displaycore://app/managed/logo/operator-logo.png',
       },
     },
+    {
+      ...valid,
+      standby: { backgroundImageUrl: 'file:///C:/private/background.png' },
+    },
+    {
+      ...valid,
+      standby: {
+        backgroundImageUrl:
+          'displaycore://app/managed/standby-background/operator.png',
+      },
+    },
+    {
+      ...valid,
+      standby: {
+        backgroundImageUrl:
+          'displaycore://app/managed/standby-background/fedcba987654321001234567.webp?cache=1',
+      },
+    },
+    { ...valid, standby: { backgroundImageUrl: 42 } },
     {
       ...valid,
       appearance: { ...valid.appearance, backgroundColor: 'black' },
@@ -157,12 +192,13 @@ test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定
   }
 });
 
-test('安全預設值為黑底白字且不顯示 Logo 與日期', async () => {
+test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', async () => {
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 4,
+    configVersion: 5,
     logo: { enabled: false, url: null },
+    standby: { backgroundImageUrl: null },
     appearance: {
       backgroundColor: '#000000',
       fontFamily:
@@ -182,6 +218,7 @@ test('安全預設值為黑底白字且不顯示 Logo 與日期', async () => {
     revision: -1,
   });
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS), true);
+  assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS.standby), true);
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS.appearance), true);
   assert.equal(Object.hasOwn(SAFE_DISPLAY_SETTINGS, 'playback'), false);
 });

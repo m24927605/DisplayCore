@@ -71,6 +71,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   assert.ok(api);
   assert.deepEqual(Object.keys(api).sort(), [
     'chooseLogo',
+    'chooseStandbyBackground',
     'clearPresentation',
     'getOutputStatus',
     'getPresentation',
@@ -98,6 +99,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
   await api.getSettings();
   await api.saveSettings({ configVersion: 1 }, 7);
   await api.chooseLogo();
+  await api.chooseStandbyBackground();
   await api.getOutputStatus();
 
   assert.deepEqual(
@@ -110,6 +112,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
       IPC_CHANNELS.CONTROL_GET_SETTINGS,
       IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
       IPC_CHANNELS.CONTROL_CHOOSE_LOGO,
+      IPC_CHANNELS.CONTROL_CHOOSE_STANDBY_BACKGROUND,
       IPC_CHANNELS.CONTROL_GET_OUTPUT_STATUS,
     ],
   );
@@ -134,6 +137,7 @@ test('Control preload 只暴露固定用途的 invoke 方法', async () => {
     JSON.parse(JSON.stringify(harness.invocations[5].args[0])),
     { config: { configVersion: 1 }, expectedRevision: 7 },
   );
+  assert.deepEqual(harness.invocations[7].args, []);
 });
 
 test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報能力', async () => {
@@ -155,6 +159,7 @@ test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報�
   assert.equal(api.clearPresentation, undefined);
   assert.equal(api.saveSettings, undefined);
   assert.equal(api.chooseLogo, undefined);
+  assert.equal(api.chooseStandbyBackground, undefined);
 
   await api.getPresentation();
   await api.getSettings();

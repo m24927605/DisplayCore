@@ -29,17 +29,18 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v4 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v5 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 4);
+  assert.equal(CONFIG_VERSION, 5);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
   assert.notEqual(result.value.appearance, source.appearance);
   assert.equal(Object.isFrozen(result.value), true);
   assert.equal(Object.isFrozen(result.value.logo), true);
+  assert.equal(Object.isFrozen(result.value.standby), true);
   assert.equal(Object.isFrozen(result.value.appearance), true);
   assert.equal(Object.isFrozen(result.value.emergency), true);
   assert.equal(Object.isFrozen(result.value.dateTime), true);
@@ -48,11 +49,15 @@ test('根目錄 config.json 通過 v4 schema，回傳深層凍結副本', async 
   assert.equal(Object.isFrozen(result.value.display), true);
 });
 
-test('顏色正規化，但 Logo 路徑與字型名稱不改寫', async () => {
+test('顏色正規化，但受管理圖片路徑與字型名稱不改寫', async () => {
   const source = await readDefaultConfig();
   source.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
+  };
+  source.standby = {
+    backgroundImagePath:
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
   };
   source.appearance.backgroundColor = '#a1b2c3';
   source.appearance.fontColor = '#d4e5f6';
@@ -62,6 +67,10 @@ test('顏色正規化，但 Logo 路徑與字型名稱不改寫', async () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.value.logo.path, source.logo.path);
+  assert.equal(
+    result.value.standby.backgroundImagePath,
+    source.standby.backgroundImagePath,
+  );
   assert.equal(result.value.appearance.fontFamily, source.appearance.fontFamily);
   assert.equal(result.value.appearance.backgroundColor, '#A1B2C3');
   assert.equal(result.value.appearance.fontColor, '#D4E5F6');
@@ -77,12 +86,78 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 1 },
     { ...source, configVersion: 2 },
     { ...source, configVersion: 3 },
-    { ...source, configVersion: 5 },
+    { ...source, configVersion: 4 },
+    { ...source, configVersion: 6 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
     assert.equal(result.ok, false);
     assert.equal(result.error.code, 'VALIDATION_FAILED');
+  }
+});
+
+test('待機背景接受 null 或受管理的 exact 點陣圖路徑', async () => {
+  const source = await readDefaultConfig();
+
+  for (const backgroundImagePath of [
+    null,
+    'standby-backgrounds/0123456789abcdef01234567.jpg',
+    'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+    'standby-backgrounds/ffffffffffffffffffffffff.webp',
+  ]) {
+    const result = validateConfig({
+      ...source,
+      standby: { backgroundImagePath },
+    });
+
+    assert.equal(result.ok, true, String(backgroundImagePath));
+    assert.deepEqual(result.value.standby, { backgroundImagePath });
+    assert.equal(Object.isFrozen(result.value.standby), true);
+  }
+});
+
+test('待機背景拒絕非 exact shape、本機路徑、網路路徑與非受管理圖片', async () => {
+  const source = await readDefaultConfig();
+  const validPath = 'standby-backgrounds/0123456789abcdef01234567.png';
+
+  for (const standby of [
+    {},
+    { backgroundImagePath: null, unexpected: true },
+  ]) {
+    const result = validateConfig({ ...source, standby });
+    assert.equal(result.ok, false, JSON.stringify(standby));
+    assert.equal(result.error.field, 'standby');
+  }
+
+  for (const backgroundImagePath of [
+    '',
+    123,
+    '/tmp/background.png',
+    'C:\\DisplayCore\\background.png',
+    '\\\\server\\share\\background.png',
+    'file:///C:/DisplayCore/background.png',
+    'https://example.invalid/background.png',
+    'standby-backgrounds/../background.png',
+    'standby-backgrounds/nested/0123456789abcdef01234567.png',
+    'logos/0123456789abcdef01234567.png',
+    'standby-backgrounds/0123456789abcdef0123456.png',
+    'standby-backgrounds/0123456789abcdef012345678.png',
+    'standby-backgrounds/0123456789abcdef0123456g.png',
+    'standby-backgrounds/0123456789ABCDEF01234567.png',
+    'standby-backgrounds/0123456789abcdef01234567.PNG',
+    'standby-backgrounds/0123456789abcdef01234567.jpeg',
+    'standby-backgrounds/0123456789abcdef01234567.svg',
+    'standby-backgrounds/0123456789abcdef01234567.png?cache=1',
+    'standby-backgrounds/0123456789abcdef01234567.png#fragment',
+    'standby-backgrounds/0123456789abcdef01234567\n.png',
+    `${validPath}/extra`,
+  ]) {
+    const result = validateConfig({
+      ...source,
+      standby: { backgroundImagePath },
+    });
+    assert.equal(result.ok, false, String(backgroundImagePath));
+    assert.equal(result.error.field, 'standby.backgroundImagePath');
   }
 });
 

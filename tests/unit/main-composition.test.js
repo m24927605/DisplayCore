@@ -63,3 +63,29 @@ test('Main 在設定後初始化拓樸與定位，退出時反向解除資源', 
   assert.match(shutdownBlock, /displayPlacementController\.dispose\(\)/);
   assert.match(shutdownBlock, /displayTopologyService\.dispose\(\)/);
 });
+
+test('Main 組合待機背景匯入器、Control IPC 與獨立受管理協定目錄', async () => {
+  const source = await readFile(path.join(projectRoot, 'main.js'), 'utf8');
+
+  assert.match(
+    source,
+    /require\('\.\/config\/standby-background-importer'\)/,
+  );
+  assert.match(source, /new StandbyBackgroundImporter\(\{/);
+  assert.match(
+    source,
+    /new StandbyBackgroundImporter\(\{[\s\S]*assetDirectory:\s*path\.join\(dataRoot,\s*'standby-backgrounds'\)/,
+  );
+  assert.match(
+    source,
+    /new IpcCoordinator\(\{[\s\S]*standbyBackgroundImporter,/,
+  );
+  assert.match(
+    source,
+    /installLocalProtocol\(\{[\s\S]*managedStandbyBackgroundDirectory:\s*path\.join\(dataRoot,\s*'standby-backgrounds'\)/,
+  );
+  assert.match(
+    source,
+    /getAllowedStandbyBackgroundPath:\s*\(\)\s*=>[\s\S]*config\.standby\.backgroundImagePath/,
+  );
+});

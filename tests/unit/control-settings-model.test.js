@@ -27,6 +27,7 @@ function createValidDraftInput(overrides = {}) {
     baseline: defaultConfig,
     logoEnabled: false,
     logoPath: null,
+    standbyBackgroundImagePath: null,
     backgroundColor: '#000000',
     fontFamily: defaultConfig.appearance.fontFamily,
     fontColor: '#FFFFFF',
@@ -62,10 +63,13 @@ test('Control 接受完整設定 snapshot，建立深層凍結副本', async () 
   assert.notEqual(result.snapshot.config, source.config);
   assert.notEqual(result.snapshot.defaults, source.defaults);
   assert.notEqual(result.snapshot.config.playback, source.config.playback);
+  assert.notEqual(result.snapshot.config.standby, source.config.standby);
   assert.equal(Object.isFrozen(result.snapshot), true);
   assert.equal(Object.isFrozen(result.snapshot.config), true);
   assert.equal(Object.isFrozen(result.snapshot.config.appearance), true);
   assert.equal(Object.isFrozen(result.snapshot.config.playback), true);
+  assert.equal(Object.isFrozen(result.snapshot.config.standby), true);
+  assert.equal(Object.isFrozen(result.snapshot.defaults.standby), true);
   assert.equal(Object.isFrozen(result.snapshot.defaults.playback), true);
   assert.equal(Object.isFrozen(result.snapshot.notice), true);
 });
@@ -82,7 +86,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
     createSnapshot({ notice: { code: 'INVALID_USER_CONFIG' } }),
     createSnapshot({ config: { ...defaultConfig, unknown: true } }),
     createSnapshot({
-      config: { ...defaultConfig, configVersion: 3 },
+      config: { ...defaultConfig, configVersion: 4 },
     }),
     createSnapshot({
       config: {
@@ -109,7 +113,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含 playback v4、顯示外觀、校時及解析度，並保留相容輸出欄位', async () => {
+test('設定草稿包含待機背景、playback v5、顯示外觀、校時及解析度', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -123,6 +127,8 @@ test('設定草稿包含 playback v4、顯示外觀、校時及解析度，並�
     baseline,
     logoEnabled: true,
     logoPath: 'logos/0123456789abcdef01234567.png',
+    standbyBackgroundImagePath:
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
     backgroundColor: '#102a3c',
     fontFamily: 'Arial, sans-serif',
     fontColor: '#f0e0d0',
@@ -142,10 +148,14 @@ test('設定草稿包含 playback v4、顯示外觀、校時及解析度，並�
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 4,
+    configVersion: 5,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
+    },
+    standby: {
+      backgroundImagePath:
+        'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
     },
     appearance: {
       backgroundColor: '#102A3C',
@@ -183,6 +193,10 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { logoEnabled: true, logoPath: null },
     { logoPath: 'C:\\logo.png' },
     { logoPath: 'logos/operator-logo.png' },
+    { standbyBackgroundImagePath: 'C:\\background.png' },
+    { standbyBackgroundImagePath: 'logos/0123456789abcdef01234567.png' },
+    { standbyBackgroundImagePath: 'standby-backgrounds/operator.png' },
+    { standbyBackgroundImagePath: 'standby-backgrounds/../private.png' },
     { backgroundColor: '#000' },
     { fontColor: 'white' },
     { fontFamily: '   ' },
@@ -284,12 +298,15 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   const changedPageDuration = structuredClone(defaultConfig);
   const changedRepeatMode = structuredClone(defaultConfig);
   const changedRoundCount = structuredClone(defaultConfig);
+  const changedStandbyBackground = structuredClone(defaultConfig);
   changed.marquee.enabled = false;
   changedTime.dateTime.offsetSeconds = 1;
   changedResolution.display.renderResolution = '1920x1080';
   changedPageDuration.playback.pageDurationSeconds += 1;
   changedRepeatMode.playback.repeatMode = 'continuous';
   changedRoundCount.playback.roundCount += 1;
+  changedStandbyBackground.standby.backgroundImagePath =
+    'standby-backgrounds/0123456789abcdef01234567.png';
 
   assert.equal(settingsEqual(defaultConfig, same), true);
   assert.equal(settingsEqual(defaultConfig, changed), false);
@@ -298,5 +315,6 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   assert.equal(settingsEqual(defaultConfig, changedPageDuration), false);
   assert.equal(settingsEqual(defaultConfig, changedRepeatMode), false);
   assert.equal(settingsEqual(defaultConfig, changedRoundCount), false);
+  assert.equal(settingsEqual(defaultConfig, changedStandbyBackground), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
 });

@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 4;
+const CONFIG_VERSION = 5;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -15,6 +15,7 @@ const DISPLAY_SELECTION_MODES = Object.freeze({
 const CONFIG_LIMITS = Object.freeze({
   MAX_FILE_BYTES: 65_536,
   MAX_LOGO_PATH_LENGTH: 128,
+  MAX_STANDBY_BACKGROUND_PATH_LENGTH: 128,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
@@ -50,8 +51,10 @@ const CONFIG_KEYS = Object.freeze([
   'logo',
   'marquee',
   'playback',
+  'standby',
 ]);
 const LOGO_KEYS = Object.freeze(['enabled', 'path']);
+const STANDBY_KEYS = Object.freeze(['backgroundImagePath']);
 const APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -80,6 +83,8 @@ const DISPLAY_KEYS = Object.freeze([
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
 // LogoImporter 只會產生 SHA-256 前 24 位的小寫識別；設定不得自行命名檔案。
 const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
+const MANAGED_STANDBY_BACKGROUND_PATH =
+  /^standby-backgrounds\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 
 function isPlainObject(value) {
@@ -139,6 +144,35 @@ function validateLogo(logo) {
   }
 
   return { ok: true, value: { enabled: logo.enabled, path: logo.path } };
+}
+
+function validateStandby(standby) {
+  if (!hasExactKeys(standby, STANDBY_KEYS)) {
+    return validationFailure('待機背景設定格式不正確。', 'standby');
+  }
+
+  if (standby.backgroundImagePath === null) {
+    return { ok: true, value: { backgroundImagePath: null } };
+  }
+
+  if (
+    typeof standby.backgroundImagePath !== 'string' ||
+    standby.backgroundImagePath.length === 0 ||
+    standby.backgroundImagePath.length >
+      CONFIG_LIMITS.MAX_STANDBY_BACKGROUND_PATH_LENGTH ||
+    CONTROL_CHARACTERS.test(standby.backgroundImagePath) ||
+    !MANAGED_STANDBY_BACKGROUND_PATH.test(standby.backgroundImagePath)
+  ) {
+    return validationFailure(
+      '待機背景必須是已匯入 DisplayCore 的 PNG、JPEG 或 WebP 圖片。',
+      'standby.backgroundImagePath',
+    );
+  }
+
+  return {
+    ok: true,
+    value: { backgroundImagePath: standby.backgroundImagePath },
+  };
 }
 
 function validateAppearance(appearance) {
@@ -354,6 +388,7 @@ function freezeConfig(config) {
     'emergency',
     'marquee',
     'playback',
+    'standby',
     'display',
   ]) {
     Object.freeze(config[section]);
@@ -362,7 +397,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v4。 */
+/** 驗證、正規化並深層複製完整的 canonical config v5。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -376,6 +411,7 @@ function validateConfig(candidate) {
   }
 
   const logo = validateLogo(candidate.logo);
+  const standby = validateStandby(candidate.standby);
   const appearance = validateAppearance(candidate.appearance);
   const dateTime = validateDateTime(candidate.dateTime);
   const emergency = validateEmergency(candidate.emergency);
@@ -385,6 +421,7 @@ function validateConfig(candidate) {
 
   for (const result of [
     logo,
+    standby,
     appearance,
     dateTime,
     emergency,
@@ -402,6 +439,7 @@ function validateConfig(candidate) {
     value: freezeConfig({
       configVersion: CONFIG_VERSION,
       logo: logo.value,
+      standby: standby.value,
       appearance: appearance.value,
       dateTime: dateTime.value,
       emergency: emergency.value,

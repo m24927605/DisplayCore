@@ -7,6 +7,7 @@ const CONFIG_KEYS = Object.freeze([
   'logo',
   'marquee',
   'playback',
+  'standby',
 ]);
 const SNAPSHOT_KEYS = Object.freeze([
   'config',
@@ -16,6 +17,8 @@ const SNAPSHOT_KEYS = Object.freeze([
 ]);
 const NOTICE_KEYS = Object.freeze(['code', 'message']);
 const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
+const MANAGED_STANDBY_BACKGROUND_PATH =
+  /^standby-backgrounds\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
 const CONTROL_CHARACTERS = /[\u0000-\u001f\u007f]/;
 const DECIMAL_NUMBER = /^\d+(?:\.\d{1,2})?$/;
@@ -27,6 +30,7 @@ const INVALID_USER_CONFIG_NOTICE = Object.freeze({
 
 export const SETTINGS_LIMITS = Object.freeze({
   MAX_LOGO_PATH_LENGTH: 128,
+  MAX_STANDBY_BACKGROUND_PATH_LENGTH: 128,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
@@ -89,6 +93,7 @@ function freezeConfig(config) {
     'marquee',
     'playback',
     'display',
+    'standby',
   ]) {
     Object.freeze(config[section]);
   }
@@ -98,7 +103,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 4) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 5) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -124,6 +129,28 @@ function normalizeConfig(candidate) {
 
   if (candidate.logo.enabled && candidate.logo.path === null) {
     return failure('logo.path', '啟用 Logo 前請先選擇圖片。');
+  }
+
+  const standby = candidate.standby;
+  if (!hasExactKeys(standby, ['backgroundImagePath'])) {
+    return failure('standby', '待機畫面設定格式不正確。');
+  }
+
+  if (
+    standby.backgroundImagePath !== null &&
+    (
+      typeof standby.backgroundImagePath !== 'string' ||
+      standby.backgroundImagePath.length === 0 ||
+      standby.backgroundImagePath.length >
+        SETTINGS_LIMITS.MAX_STANDBY_BACKGROUND_PATH_LENGTH ||
+      CONTROL_CHARACTERS.test(standby.backgroundImagePath) ||
+      !MANAGED_STANDBY_BACKGROUND_PATH.test(standby.backgroundImagePath)
+    )
+  ) {
+    return failure(
+      'standby.backgroundImagePath',
+      '請重新選擇有效的待機背景圖片。',
+    );
   }
 
   const appearance = candidate.appearance;
@@ -310,10 +337,13 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 4,
+      configVersion: 5,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
+      },
+      standby: {
+        backgroundImagePath: standby.backgroundImagePath,
       },
       appearance: {
         backgroundColor: appearance.backgroundColor.toUpperCase(),
@@ -394,6 +424,7 @@ export function buildSettingsDraft({
   baseline,
   logoEnabled,
   logoPath,
+  standbyBackgroundImagePath,
   backgroundColor,
   fontFamily,
   fontColor,
@@ -438,8 +469,9 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 4,
+    configVersion: 5,
     logo: { enabled: logoEnabled, path: logoPath },
+    standby: { backgroundImagePath: standbyBackgroundImagePath },
     appearance: {
       backgroundColor,
       fontFamily,

@@ -55,6 +55,8 @@ const IPC_CHANNELS = Object.freeze({
   CONTROL_GET_SETTINGS: 'dc:v2:control:settings:get',
   CONTROL_SAVE_SETTINGS: 'dc:v2:control:settings:save',
   CONTROL_CHOOSE_LOGO: 'dc:v2:control:settings:logo:choose',
+  CONTROL_CHOOSE_STANDBY_BACKGROUND:
+    'dc:v2:control:settings:standby-background:choose',
   CONTROL_GET_OUTPUT_STATUS: 'dc:v2:control:output-status:get',
   DISPLAY_GET_PRESENTATION: 'dc:v2:display:presentation:get',
   DISPLAY_GET_SETTINGS: 'dc:v2:display:settings:get',
