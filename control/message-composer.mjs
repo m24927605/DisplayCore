@@ -17,7 +17,6 @@ export const EMERGENCY_CODES = Object.freeze({
 
 /** 可一鍵顯示的固定營運訊息；Main 與 Display 仍只把它們視為一般文字。 */
 export const OPERATION_MESSAGES = Object.freeze({
-  WELCOME: '歡迎光臨',
   QUIET: '請輕聲細語',
 });
 

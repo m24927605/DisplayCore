@@ -19,6 +19,8 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /aria-atomic="true"/);
   assert.match(html, /id="normal-layer"[^>]+aria-hidden="true"/);
+  assert.match(html, /id="standby-layer"[^>]+aria-hidden="true"/);
+  assert.match(html, /id="standby-message"[^>]*>\s*歡迎光臨\s*</);
   assert.match(html, /id="display-chrome"[^>]+aria-hidden="true"/);
   assert.match(
     html,
@@ -57,6 +59,14 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   assert.match(css, /\.display-clock\s*{[^}]*position:\s*absolute[^}]*inset-inline-end:/s);
   assert.match(css, /\.display-clock\s*{[^}]*inset-block-end:/s);
+  assert.match(
+    css,
+    /\.display-stage\[data-mode="blank"\]\s+\.normal-layer\s*{[^}]*place-content:\s*center/s,
+  );
+  assert.match(
+    css,
+    /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*position:\s*static[^}]*text-align:\s*center/s,
+  );
   assert.match(css, /\.message-row\s*{[^}]*white-space:\s*nowrap/s);
   assert.match(css, /\.message-row\s*{[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/s);
   assert.match(css, /\.message-row\[data-alignment="center"\]/);

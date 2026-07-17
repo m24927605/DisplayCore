@@ -22,6 +22,7 @@ const elements = Object.freeze({
   logo: document.getElementById('display-logo'),
   clock: document.getElementById('display-clock'),
   pageLayer: document.getElementById('page-layer'),
+  standbyLayer: document.getElementById('standby-layer'),
   fillLayer: document.getElementById('fill-layer'),
 });
 
@@ -120,6 +121,7 @@ function clearVisualLayers() {
   cancelPendingFit();
   elements.pageLayer.textContent = '';
   elements.fillLayer.textContent = '';
+  elements.standbyLayer.hidden = true;
   elements.pageLayer.removeAttribute('style');
   elements.stage.dataset.fittedRevision = '';
   elements.stage.dataset.fittedSettingsRevision = '';
@@ -335,10 +337,12 @@ function scheduleFit() {
 
 function updateChromeVisibility() {
   const pageVisible = currentPresentation?.mode === 'page';
+  const standbyVisible = currentPresentation?.mode === 'blank';
   const showLogo =
     pageVisible && currentSettings.logo.enabled && logoReady;
   const showClock =
-    pageVisible && currentSettings.dateTime.enabled && clockHasValue;
+    (standbyVisible || (pageVisible && currentSettings.dateTime.enabled)) &&
+    clockHasValue;
 
   elements.logoFrame.hidden = !showLogo;
   elements.logo.hidden = !showLogo;
@@ -349,8 +353,8 @@ function updateChromeVisibility() {
 }
 
 function syncClock() {
-  const enabled =
-    currentPresentation?.mode === 'page' && currentSettings.dateTime.enabled;
+  const enabled = currentPresentation?.mode === 'blank' ||
+    (currentPresentation?.mode === 'page' && currentSettings.dateTime.enabled);
   const signature = String(enabled);
 
   if (signature === clockSignature) {
@@ -482,9 +486,10 @@ function applyDisplaySettings(snapshot) {
 
 function renderBlank(snapshot) {
   clearVisualLayers();
-  updateAnnouncement('', 'polite');
-  elements.normalLayer.hidden = true;
+  updateAnnouncement('歡迎光臨', 'polite');
+  elements.normalLayer.hidden = false;
   elements.pageLayer.hidden = true;
+  elements.standbyLayer.hidden = false;
   elements.fillLayer.hidden = true;
   elements.stage.dataset.mode = 'blank';
   delete elements.stage.dataset.emergencyTone;
@@ -501,6 +506,7 @@ function renderPage(snapshot) {
   );
   elements.fillLayer.hidden = true;
   elements.normalLayer.hidden = false;
+  elements.standbyLayer.hidden = true;
   elements.pageLayer.hidden = false;
   elements.pageLayer.style.setProperty(
     '--row-count',
@@ -533,6 +539,7 @@ function renderEmergency(snapshot) {
   updateAnnouncement(message, 'assertive');
   elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
+  elements.standbyLayer.hidden = true;
   elements.fillLayer.hidden = false;
   applyEmergencyBackground(snapshot.emergencyTone);
   elements.stage.dataset.emergencyTone = snapshot.emergencyTone;

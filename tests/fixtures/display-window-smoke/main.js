@@ -620,6 +620,14 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(inspection.chromeHidden, true);
   assert.equal(inspection.pageHidden, true);
   assert.equal(inspection.fillHidden, false);
+  assert.equal(
+    await execute(`document.getElementById('standby-layer').hidden`),
+    true,
+  );
+  assert.equal(
+    await execute(`document.getElementById('display-clock').hidden`),
+    true,
+  );
   assert.equal(inspection.cells.length, 24);
   assert.equal(inspection.cells.every((value) => value === '555'), true);
   assert.equal(inspection.marqueeCount, 0);
@@ -641,26 +649,36 @@ async function runWorkflow(timers, expectedLogoUrl) {
 
   presentationService.clearPresentation();
   await waitForRevision(7, false);
-  assert.deepEqual(
-    await execute(`(() => ({
+  const standby = await execute(`(() => {
+    const stage = document.getElementById('display-stage').getBoundingClientRect();
+    const message = document.getElementById('standby-message').getBoundingClientRect();
+    const clock = document.getElementById('display-clock').getBoundingClientRect();
+    return {
       mode: document.getElementById('display-stage').dataset.mode,
       announcement: document.getElementById('display-announcement').textContent,
       pageChildren: document.getElementById('page-layer').children.length,
       fillChildren: document.getElementById('fill-layer').children.length,
       normalHidden: document.getElementById('normal-layer').hidden,
       chromeHidden: document.getElementById('display-chrome').hidden,
+      standbyHidden: document.getElementById('standby-layer').hidden,
+      standbyText: document.getElementById('standby-message').textContent,
       clockText: document.getElementById('display-clock').textContent,
-    }))()`),
-    {
-      mode: 'blank',
-      announcement: '',
-      pageChildren: 0,
-      fillChildren: 0,
-      normalHidden: true,
-      chromeHidden: true,
-      clockText: '',
-    },
-  );
+      messageCenter: message.left + (message.width / 2),
+      clockCenter: clock.left + (clock.width / 2),
+      stageCenter: stage.left + (stage.width / 2),
+    };
+  })()`);
+  assert.equal(standby.mode, 'blank');
+  assert.equal(standby.announcement, '歡迎光臨');
+  assert.equal(standby.pageChildren, 0);
+  assert.equal(standby.fillChildren, 0);
+  assert.equal(standby.normalHidden, false);
+  assert.equal(standby.chromeHidden, true);
+  assert.equal(standby.standbyHidden, false);
+  assert.equal(standby.standbyText, '歡迎光臨');
+  assert.match(standby.clockText, /^\d{2}:\d{2}:\d{2}$/);
+  assert.ok(Math.abs(standby.messageCenter - standby.stageCenter) < 1);
+  assert.ok(Math.abs(standby.clockCenter - standby.stageCenter) < 1);
 }
 
 async function run() {

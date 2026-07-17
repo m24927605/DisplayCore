@@ -112,6 +112,35 @@ body {
   gap: 0;
 }
 
+/* 待機時只呈現置中的歡迎文字與時間，不建立假的播放訊息。 */
+.display-stage[data-mode="blank"] .normal-layer {
+  grid-template-rows: auto auto;
+  gap: clamp(1rem, 3.5vh, 8rem);
+  place-content: center;
+  place-items: center;
+}
+
+.standby-layer {
+  display: grid;
+  max-inline-size: 100%;
+  place-items: center;
+}
+
+.standby-message {
+  margin: 0;
+  color: inherit;
+  font-size: clamp(
+    3rem,
+    calc(10vmin * var(--message-font-scale)),
+    18rem
+  );
+  font-weight: 800;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
 .display-chrome {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -153,6 +182,12 @@ body {
   line-height: 1;
   text-align: end;
   white-space: nowrap;
+}
+
+.display-stage[data-mode="blank"] .display-clock {
+  position: static;
+  font-size: clamp(2rem, 5vmin, 10rem);
+  text-align: center;
 }
 
 .normal-layer.has-clock .page-layer {

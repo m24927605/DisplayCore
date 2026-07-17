@@ -472,7 +472,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     () => execute(`(() =>
       document.getElementById('operation-status').textContent ===
         '控制介面已就緒。' &&
-      document.getElementById('operation-welcome-button').disabled === false &&
+      document.getElementById('operation-quiet-button').disabled === false &&
       document.getElementById('inspection-555-button').disabled === false
     )()`),
     'Control 啟動',
@@ -524,22 +524,22 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
 
   // 罐頭訊息直接顯示，沒有先加入本機待播清單的中間狀態。
   await execute(`(() => {
-    const button = document.getElementById('operation-welcome-button');
+    const button = document.getElementById('operation-quiet-button');
     button.focus();
     button.click();
   })()`);
   await waitForRevision(store, 1);
   await waitForLiveMessages(
-    ['歡迎光臨'],
+    ['請輕聲細語'],
     '播放第 1 / 1 頁 · 第 1 / 2 輪',
   );
   await waitFor(
-    () => execute(`document.activeElement?.id === 'operation-welcome-button'`),
+    () => execute(`document.activeElement?.id === 'operation-quiet-button'`),
     '罐頭訊息顯示後恢復原操作焦點',
   );
   assert.deepEqual(store.getControlSnapshot(), {
     mode: 'page',
-    messages: [{ message: '歡迎光臨', alignment: 'center' }],
+    messages: [{ message: '請輕聲細語', alignment: 'center' }],
     layout: 'single-line',
     pageDurationSeconds: 4,
     pageNumber: 1,
@@ -554,7 +554,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   await click('operation-quiet-button');
   await waitForRevision(store, 2);
   await waitForLiveMessages(
-    ['歡迎光臨', '請輕聲細語'],
+    ['請輕聲細語', '請輕聲細語'],
     '播放第 1 / 1 頁 · 第 1 / 2 輪',
   );
 
@@ -562,20 +562,20 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
   await submitNormalMessage('001', 'go-to-lobby', '001請至前廳');
   await waitForRevision(store, 3);
   await waitForLiveMessages(
-    ['歡迎光臨', '請輕聲細語', '001請至前廳'],
+    ['請輕聲細語', '請輕聲細語', '001請至前廳'],
     '播放第 1 / 1 頁 · 第 1 / 2 輪',
   );
 
   await submitNormalMessage('Nancy', 'lobby-code', 'Nancy前廳000');
   await waitForRevision(store, 4);
   const allMessages = [
-    '歡迎光臨',
+    '請輕聲細語',
     '請輕聲細語',
     '001請至前廳',
     'Nancy前廳000',
   ];
   const allPresentations = [
-    { message: '歡迎光臨', alignment: 'center' },
+    { message: '請輕聲細語', alignment: 'center' },
     { message: '請輕聲細語', alignment: 'center' },
     { message: '001請至前廳', alignment: 'left' },
     { message: 'Nancy前廳000', alignment: 'left' },

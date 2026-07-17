@@ -37,7 +37,6 @@ const elements = Object.freeze({
   preview: document.getElementById('message-preview'),
   displayButton: document.getElementById('display-message-button'),
   operationButtons: Object.freeze([
-    document.getElementById('operation-welcome-button'),
     document.getElementById('operation-quiet-button'),
   ]),
   livePageSummary: document.getElementById('live-page-summary'),
@@ -354,7 +353,7 @@ function renderLiveStatus(snapshot) {
     visibleMessages = snapshot.messages;
     elements.livePageSummary.textContent = '滿屏顯示';
   } else {
-    elements.livePageSummary.textContent = '播放第 —';
+    elements.livePageSummary.textContent = '待機畫面';
   }
 
   const fragment = document.createDocumentFragment();

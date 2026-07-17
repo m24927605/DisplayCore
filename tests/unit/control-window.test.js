@@ -12,10 +12,19 @@ async function readControlFile(fileName) {
 }
 
 test('Control 採一鍵立即顯示流程，不再建立待播清單', async () => {
-  const html = await readControlFile('index.html');
+  const [html, appSource] = await Promise.all([
+    readControlFile('index.html'),
+    readControlFile('app.mjs'),
+  ]);
 
-  assert.match(html, /id="operation-welcome-button"[^>]+data-operation-message="歡迎光臨"/);
+  assert.doesNotMatch(html, /id="operation-welcome-button"|data-operation-message="歡迎光臨"/);
   assert.match(html, /id="operation-quiet-button"[^>]+data-operation-message="請輕聲細語"/);
+  assert.match(
+    appSource,
+    /displayMessage\(\s*\{ message, alignment: 'center' \}/,
+  );
+  assert.match(html, /待機顯示：歡迎光臨與時間/);
+  assert.match(appSource, /livePageSummary\.textContent = '待機畫面'/);
   assert.match(html, /<form[^>]+id="message-form"/);
   assert.match(html, /<input[^>]+id="recipient-input"/);
   assert.match(html, /<fieldset[^>]+id="action-fieldset"/);
