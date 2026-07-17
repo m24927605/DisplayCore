@@ -85,7 +85,7 @@ npm run make
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
-- Node.js 24.18.0 完整自動化測試 332/332 通過，覆蓋播放設定持久化、一鍵顯示、Logo 最高 1000%／透明度處理／高亮、固定及無閃爍輪播待機背景、原生全螢幕回歸、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
+- 完整自動化測試 338/338 通過，覆蓋播放設定持久化、一鍵顯示、Logo 最高 1000%／透明度處理／高亮、固定及風吹沙輪播待機背景、一般訊息固定三槽、原生全螢幕回歸、離線校時、排版解析度、顯示清單獨立分頁與刪除、555／888 無限時、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
 - 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
