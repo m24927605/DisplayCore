@@ -685,8 +685,33 @@ async function verifyResponsiveResolutions() {
           clock.left >= -0.5 && clock.top >= -0.5 &&
           clock.right <= viewport.width + 0.5 &&
           clock.bottom <= viewport.height + 0.5,
-        clockDoesNotOverlap:
-          rows.length === 0 || rows.at(-1).getBoundingClientRect().bottom <= clock.top + 0.5,
+        clockInTopRight:
+          clock.top <= normal.top + normal.height * 0.25 &&
+          Math.abs(clock.right - page.right) <= 0.75,
+        logoAndClockSameTopRow:
+          Math.abs(
+            (logo.top + logo.height / 2) -
+            (clock.top + clock.height / 2)
+          ) <= 1,
+        clockAndPageSeparate: clock.bottom <= page.top + 0.5,
+        clockFontSize: Number.parseFloat(
+          getComputedStyle(document.getElementById('display-clock')).fontSize
+        ),
+        minimumProminentClockFontSize:
+          Math.min(stageElement.clientWidth, stageElement.clientHeight) * 0.04,
+        clockEvidence: {
+          clockTop: clock.top,
+          clockRight: clock.right,
+          clockBottom: clock.bottom,
+          clockCenterY: clock.top + clock.height / 2,
+          logoTop: logo.top,
+          logoBottom: logo.bottom,
+          logoCenterY: logo.top + logo.height / 2,
+          pageTop: page.top,
+          pageRight: page.right,
+          normalTop: normal.top,
+          normalHeight: normal.height,
+        },
         fontSize: Number.parseFloat(getComputedStyle(
           document.getElementById('page-layer')
         ).fontSize),
@@ -711,9 +736,28 @@ async function verifyResponsiveResolutions() {
     assert.equal(inspection.rowsInside, true, `${width}×${height} row bounds`);
     assert.equal(inspection.clockInside, true, `${width}×${height} clock bounds`);
     assert.equal(
-      inspection.clockDoesNotOverlap,
+      inspection.clockInTopRight,
       true,
-      `${width}×${height} clock overlaps message`,
+      `${width}×${height} clock 必須位於右上角：` +
+        JSON.stringify(inspection.clockEvidence),
+    );
+    assert.equal(
+      inspection.logoAndClockSameTopRow,
+      true,
+      `${width}×${height} Logo 與 clock 必須在同一頂部列：` +
+        JSON.stringify(inspection.clockEvidence),
+    );
+    assert.equal(
+      inspection.clockAndPageSeparate,
+      true,
+      `${width}×${height} 訊息區不得與 clock 重疊：` +
+        JSON.stringify(inspection.clockEvidence),
+    );
+    assert.ok(
+      inspection.clockFontSize >= inspection.minimumProminentClockFontSize,
+      `${width}×${height} clock 字級必須明顯放大：` +
+        `${inspection.clockFontSize}px < ` +
+        `${inspection.minimumProminentClockFontSize}px`,
     );
     assert.ok(inspection.logoWidth > 0, `${width}×${height} logo width`);
     assert.ok(
@@ -966,6 +1010,97 @@ async function verifyFixedMessageLayout() {
   assert.equal(operation.firstRowTextAlign, 'center');
   assert.ok(Math.abs(operation.firstTextCenterX - operation.pageCenterX) <= 1);
   assert.ok(Math.abs(operation.firstTextCenterY - operation.pageCenterY) <= 1);
+}
+
+/** 關閉 Logo 後，一般訊息的大時鐘仍必須固定在右上角。 */
+async function verifyClockWithoutLogo() {
+  displayWindow.setContentSize(1_600, 900, false);
+  await waitFor(
+    () => execute('window.innerWidth === 1600 && window.innerHeight === 900'),
+    '無 Logo 時鐘排版 viewport',
+  );
+
+  const config = structuredClone(settingsManager.getSnapshot().config);
+  config.logo.enabled = false;
+  config.dateTime.enabled = true;
+  config.display.renderResolution = 'auto';
+  const settingsRevision = settingsManager.publish(config).revision;
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.settingsRevision === ` +
+      `'${settingsRevision}'`,
+    ),
+    '無 Logo 時鐘設定套用',
+  );
+
+  presentationService.startProgram({
+    messages: [{ message: '001請至前廳', alignment: 'left' }],
+    pageDurationSeconds: 3_600,
+    repeat: { mode: 'finite', rounds: 1 },
+  });
+  const pageRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(pageRevision);
+
+  const pageClock = await execute(`(() => {
+    const stage = document.getElementById('display-stage').getBoundingClientRect();
+    const normal = document.getElementById('normal-layer').getBoundingClientRect();
+    const page = document.getElementById('page-layer').getBoundingClientRect();
+    const clockElement = document.getElementById('display-clock');
+    const clock = clockElement.getBoundingClientRect();
+    return {
+      clockHidden: clockElement.hidden,
+      logoHidden: document.getElementById('display-logo').hidden,
+      clockInTopRight:
+        clock.top <= normal.top + normal.height * 0.25 &&
+        Math.abs(clock.right - page.right) <= 0.75,
+      clockAndPageSeparate: clock.bottom <= page.top + 0.5,
+      clockFontSize: Number.parseFloat(getComputedStyle(clockElement).fontSize),
+      minimumProminentClockFontSize: Math.min(stage.width, stage.height) * 0.04,
+    };
+  })()`);
+  assert.equal(pageClock.clockHidden, false);
+  assert.equal(pageClock.logoHidden, true);
+  assert.equal(pageClock.clockInTopRight, true, '無 Logo 時 clock 仍必須在右上角');
+  assert.equal(
+    pageClock.clockAndPageSeparate,
+    true,
+    '無 Logo 時訊息區不得與 clock 重疊',
+  );
+  assert.ok(
+    pageClock.clockFontSize >= pageClock.minimumProminentClockFontSize,
+    `無 Logo 時 clock 字級未明顯放大：${JSON.stringify(pageClock)}`,
+  );
+
+  presentationService.clearPresentation();
+  const blankRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(blankRevision, false);
+  const standbyClock = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage').getBoundingClientRect();
+      const clockElement = document.getElementById('display-clock');
+      const clock = clockElement.getBoundingClientRect();
+      if (
+        document.getElementById('display-stage').dataset.mode !== 'blank' ||
+        clockElement.hidden || !/^\\d{2}:\\d{2}:\\d{2}$/.test(clockElement.textContent)
+      ) {
+        return false;
+      }
+      return {
+        centerErrorX: Math.abs(
+          (clock.left + clock.width / 2) - (stage.left + stage.width / 2)
+        ),
+        centerErrorY: Math.abs(
+          (clock.top + clock.height / 2) - (stage.top + stage.height / 2)
+        ),
+        fontSize: Number.parseFloat(getComputedStyle(clockElement).fontSize),
+        minimumLargeFontSize: Math.min(stage.width, stage.height) * 0.12,
+      };
+    })()`),
+    '無 Logo 待機大時鐘',
+  );
+  assert.ok(standbyClock.centerErrorX <= 1);
+  assert.ok(standbyClock.centerErrorY <= 1);
+  assert.ok(standbyClock.fontSize >= standbyClock.minimumLargeFontSize);
 }
 
 async function runWorkflow(
@@ -1510,6 +1645,11 @@ async function runWorkflow(
     await execute(`getComputedStyle(document.body).backgroundColor`),
     'rgb(20, 83, 45)',
   );
+  assert.equal(
+    await execute(`document.getElementById('display-clock').hidden`),
+    true,
+    '888 解除臨檢時仍不得顯示 clock',
+  );
   assert.equal(timers.active().length, 0, '888 不得建立時間限制 timer');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(presentationService.getSnapshot().revision, 6);
@@ -1558,7 +1698,11 @@ async function runWorkflow(
   assert.equal(standby.pageChildren, 0);
   assert.equal(standby.fillChildren, 0);
   assert.equal(standby.normalHidden, false);
-  assert.equal(standby.chromeHidden, true);
+  assert.equal(
+    standby.chromeHidden,
+    false,
+    '待機時 chrome 必須保留，才能呈現置中的大時鐘',
+  );
   assert.equal(standby.standbyBackgroundHidden, false);
   assert.equal(
     standby.standbyBackgroundSource,
@@ -1612,6 +1756,7 @@ async function runWorkflow(
   await waitForRevision(logoPageRevision);
   await verifyLogoSizeScaling('page');
   await verifyFixedMessageLayout();
+  await verifyClockWithoutLogo();
 }
 
 async function run() {

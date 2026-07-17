@@ -459,7 +459,8 @@ function updateChromeVisibility() {
   elements.clock.hidden = !showClock;
   elements.normalLayer.classList.toggle('has-logo', showLogo);
   elements.normalLayer.classList.toggle('has-clock', showClock);
-  elements.chrome.hidden = !showLogo;
+  elements.normalLayer.classList.toggle('has-chrome', showLogo || showClock);
+  elements.chrome.hidden = !(showLogo || showClock);
 }
 
 function syncClock() {

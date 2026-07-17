@@ -43,6 +43,11 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
     /<img[^>]+id="display-logo"[^>]+alt=""[^>]+aria-hidden="true"/,
   );
   assert.match(html, /<time[^>]+id="display-clock"[^>]+aria-hidden="true"/);
+  assert.match(
+    html,
+    /<header[^>]+id="display-chrome"[\s\S]*?<time[^>]+id="display-clock"[\s\S]*?<\/header>/,
+    '一般訊息的時間必須與 Logo 共用同一個頂部 chrome',
+  );
   assert.match(html, /id="page-layer"[^>]+aria-hidden="true"/);
   assert.match(html, /id="fill-layer"[^>]+aria-hidden="true"/);
   assert.match(
@@ -122,15 +127,30 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
     /\.logo-frame\[data-logo-treatment="light-plate"\]\s+\.display-logo\s*{[^}]*filter:\s*drop-shadow\([^;]*rgb\(0 0 0 \/ 35%\)[^;]*\)/s,
   );
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
-  assert.match(css, /\.display-clock\s*{[^}]*position:\s*absolute[^}]*inset-inline-end:/s);
-  assert.match(css, /\.display-clock\s*{[^}]*inset-block-end:/s);
+  assert.match(
+    css,
+    /\.display-chrome\s*{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)\s+auto[^}]*align-items:\s*center/s,
+  );
+  assert.match(
+    css,
+    /\.display-clock\s*{[^}]*position:\s*static[^}]*grid-column:\s*2[^}]*justify-self:\s*end/s,
+  );
+  assert.match(
+    css,
+    /\.display-clock\s*{[^}]*calc\(8cqmin \* var\(--message-font-scale\)\)/s,
+  );
+  assert.doesNotMatch(css, /\.display-clock\s*{[^}]*inset-block-end:/s);
+  assert.match(
+    css,
+    /\.normal-layer:not\(\.has-chrome\)\s*{[^}]*grid-template-rows:\s*minmax\(0,\s*1fr\)/s,
+  );
   assert.match(
     css,
     /\.display-stage\[data-mode="blank"\]\s+\.normal-layer\s*{[^}]*place-content:\s*center/s,
   );
   assert.match(
     css,
-    /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*position:\s*static[^}]*text-align:\s*center/s,
+    /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*grid-column:\s*1[^}]*text-align:\s*center/s,
   );
   assert.match(
     css,
@@ -195,6 +215,8 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /\.setProperty\(\s*'--display-background'/);
   assert.match(source, /\.setProperty\(\s*'--display-font-family'/);
   assert.match(source, /row\.dataset\.alignment\s*=\s*alignment/);
+  assert.match(source, /classList\.toggle\('has-chrome',\s*showLogo\s*\|\|\s*showClock\)/);
+  assert.match(source, /elements\.chrome\.hidden\s*=\s*!\(showLogo\s*\|\|\s*showClock\)/);
   assert.match(source, /snapshot\.emergencyTone/);
   assert.match(source, /'--message-line-spacing-scale'/);
   assert.match(source, /'--message-font-scale'/);
