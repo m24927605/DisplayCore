@@ -68,6 +68,11 @@ test('右側分離唯讀即時狀態與可獨立分頁、逐筆刪除的顯示�
   assert.match(html, /id="display-message-list"/);
   assert.match(html, /id="display-list-prev"/);
   assert.match(html, /id="display-list-next"/);
+  assert.ok(
+    html.indexOf('id="display-list-title"') <
+      html.indexOf('id="live-status-title"'),
+    '可操作的顯示清單必須放在唯讀的電視目前顯示上方',
+  );
   assert.match(html, /<button[^>]+id="clear-display-button"[^>]+type="button"/);
   assert.match(html, />\s*全部刪除\s*<\/button>/);
   assert.match(html, /播放第/);
