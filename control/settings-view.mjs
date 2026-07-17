@@ -40,6 +40,10 @@ export function createSettingsView({
     logoEnabled: document.getElementById('logo-enabled-input'),
     logoPath: document.getElementById('logo-path-input'),
     logoPathError: document.getElementById('logo-path-error'),
+    logoSizePercent: document.getElementById('logo-size-percent-input'),
+    logoSizePercentError: document.getElementById(
+      'logo-size-percent-error',
+    ),
     chooseLogoButton: document.getElementById('choose-logo-button'),
     removeLogoButton: document.getElementById('remove-logo-button'),
     standbyBackgroundPath: document.getElementById(
@@ -140,6 +144,10 @@ export function createSettingsView({
   const fieldTargets = Object.freeze({
     logo: [elements.logoPath, elements.logoPathError],
     'logo.path': [elements.logoPath, elements.logoPathError],
+    'logo.sizePercent': [
+      elements.logoSizePercent,
+      elements.logoSizePercentError,
+    ],
     standby: [
       elements.standbyBackgroundPath,
       elements.standbyBackgroundPathError,
@@ -265,6 +273,7 @@ export function createSettingsView({
       baseline: state.baseline,
       logoEnabled: elements.logoEnabled.checked,
       logoPath: state.logoPath,
+      logoSizePercent: elements.logoSizePercent.value,
       standbyBackgroundImagePath: state.standbyBackgroundImagePath,
       backgroundColor: elements.backgroundColor.value,
       fontFamily: elements.fontFamily.value,
@@ -348,6 +357,7 @@ export function createSettingsView({
     state.clockTimeTouched = false;
     elements.logoEnabled.checked = config.logo.enabled;
     elements.logoPath.value = config.logo.path ?? '';
+    elements.logoSizePercent.value = String(config.logo.sizePercent);
     elements.standbyBackgroundPath.value =
       config.standby.backgroundImagePath ?? '';
     elements.backgroundColor.value = config.appearance.backgroundColor;
@@ -564,6 +574,7 @@ export function createSettingsView({
 
     for (const control of [
       elements.logoEnabled,
+      elements.logoSizePercent,
       elements.fontFamily,
       elements.minimumFontSize,
       elements.fontSizePercent,

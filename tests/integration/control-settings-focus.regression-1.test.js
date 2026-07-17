@@ -44,7 +44,8 @@ async function runElectronFixture() {
       dirty?.afterClose?.pageDuration !== '3' ||
       dirty?.afterClose?.finiteChecked !== true ||
       dirty?.afterClose?.continuousChecked !== false ||
-      dirty?.afterClose?.roundCount !== '1'
+      dirty?.afterClose?.roundCount !== '1' ||
+      dirty?.afterClose?.logoSizePercent !== '100'
     ) {
       console.error(
         `[DisplayCore] 設定焦點結果不正確：${JSON.stringify(result)}。`,

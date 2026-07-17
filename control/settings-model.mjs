@@ -30,6 +30,8 @@ const INVALID_USER_CONFIG_NOTICE = Object.freeze({
 
 export const SETTINGS_LIMITS = Object.freeze({
   MAX_LOGO_PATH_LENGTH: 128,
+  MINIMUM_LOGO_SIZE_PERCENT: 50,
+  MAXIMUM_LOGO_SIZE_PERCENT: 200,
   MAX_STANDBY_BACKGROUND_PATH_LENGTH: 128,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
@@ -103,12 +105,12 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 5) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 6) {
     return failure('settings', '設定資料格式不正確。');
   }
 
   if (
-    !hasExactKeys(candidate.logo, ['enabled', 'path']) ||
+    !hasExactKeys(candidate.logo, ['enabled', 'path', 'sizePercent']) ||
     typeof candidate.logo.enabled !== 'boolean'
   ) {
     return failure('logo', 'Logo 設定格式不正確。');
@@ -129,6 +131,18 @@ function normalizeConfig(candidate) {
 
   if (candidate.logo.enabled && candidate.logo.path === null) {
     return failure('logo.path', '啟用 Logo 前請先選擇圖片。');
+  }
+
+  if (
+    !Number.isSafeInteger(candidate.logo.sizePercent) ||
+    candidate.logo.sizePercent < SETTINGS_LIMITS.MINIMUM_LOGO_SIZE_PERCENT ||
+    candidate.logo.sizePercent > SETTINGS_LIMITS.MAXIMUM_LOGO_SIZE_PERCENT ||
+    candidate.logo.sizePercent % SETTINGS_LIMITS.PERCENTAGE_STEP !== 0
+  ) {
+    return failure(
+      'logo.sizePercent',
+      'Logo 大小必須介於 50% 至 200%，並以 5% 遞增。',
+    );
   }
 
   const standby = candidate.standby;
@@ -337,10 +351,11 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 5,
+      configVersion: 6,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
+        sizePercent: candidate.logo.sizePercent,
       },
       standby: {
         backgroundImagePath: standby.backgroundImagePath,
@@ -424,6 +439,7 @@ export function buildSettingsDraft({
   baseline,
   logoEnabled,
   logoPath,
+  logoSizePercent,
   standbyBackgroundImagePath,
   backgroundColor,
   fontFamily,
@@ -458,6 +474,7 @@ export function buildSettingsDraft({
   }
 
   for (const [value, field, label] of [
+    [logoSizePercent, 'logo.sizePercent', 'Logo 大小'],
     [fontSizePercent, 'appearance.fontSizePercent', '字體大小'],
     [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
     [pageDurationSeconds, 'playback.pageDurationSeconds', '每頁顯示秒數'],
@@ -469,8 +486,12 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 5,
-    logo: { enabled: logoEnabled, path: logoPath },
+    configVersion: 6,
+    logo: {
+      enabled: logoEnabled,
+      path: logoPath,
+      sizePercent: Number(logoSizePercent),
+    },
     standby: { backgroundImagePath: standbyBackgroundImagePath },
     appearance: {
       backgroundColor,

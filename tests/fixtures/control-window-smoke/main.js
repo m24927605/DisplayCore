@@ -367,6 +367,14 @@ async function openPlaybackSettings(settingsManager) {
     hasDisplaySelect: document.getElementById('default-display-select') !== null,
     hasFullscreenToggle:
       document.getElementById('display-fullscreen-input') !== null,
+    logoSizePercent:
+      document.getElementById('logo-size-percent-input').value,
+    logoSizeMinimum:
+      document.getElementById('logo-size-percent-input').min,
+    logoSizeMaximum:
+      document.getElementById('logo-size-percent-input').max,
+    logoSizeStep:
+      document.getElementById('logo-size-percent-input').step,
     fontSizePercent: document.getElementById('font-size-percent-input').value,
     lineSpacingPercent:
       document.getElementById('line-spacing-percent-input').value,
@@ -394,6 +402,10 @@ async function openPlaybackSettings(settingsManager) {
     hasManualDisplay: false,
     hasDisplaySelect: false,
     hasFullscreenToggle: false,
+    logoSizePercent: '100',
+    logoSizeMinimum: '50',
+    logoSizeMaximum: '200',
+    logoSizeStep: '5',
     fontSizePercent: '100',
     lineSpacingPercent: '100',
     inspectionBackground: '#000000',
@@ -451,6 +463,7 @@ async function openPlaybackSettings(settingsManager) {
 
   await setInput('page-duration-input', '4');
   await setInput('round-count-input', '2');
+  await setInput('logo-size-percent-input', '125');
 
   // Regression: ISSUE-001 — 播放設定變更未被納入系統設定 dirty state。
   // Found by /qa on 2026-07-17
@@ -510,6 +523,10 @@ async function openPlaybackSettings(settingsManager) {
     '#123456',
   );
   assert.equal(
+    settingsManager.getSnapshot().config.logo.sizePercent,
+    125,
+  );
+  assert.equal(
     settingsManager.getSnapshot().config.dateTime.offsetSeconds,
     0,
     '未碰時間欄位時，儲存其他設定必須保留既有校正值',
@@ -549,6 +566,8 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('settings-dirty-status').textContent,
     standbyBackgroundPath:
       document.getElementById('standby-background-path-input').value,
+    logoSizePercent:
+      document.getElementById('logo-size-percent-input').value,
   }))()`), {
     pageDuration: '4',
     rounds: '2',
@@ -557,9 +576,11 @@ async function openPlaybackSettings(settingsManager) {
     dirtyStatus: '所有變更皆已儲存',
     standbyBackgroundPath:
       'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+    logoSizePercent: '125',
   });
 
-  // 移除只改草稿；未儲存就關閉時必須恢復已儲存背景。
+  // Logo 大小與背景移除只改草稿；未儲存關閉必須一起恢復 baseline。
+  await setInput('logo-size-percent-input', '150');
   await click('remove-standby-background-button');
   await waitFor(
     () => execute(`(() =>
@@ -580,10 +601,57 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('settings-dialog').open &&
       document.getElementById('settings-status').textContent === '設定已載入。' &&
       document.getElementById('standby-background-path-input').value ===
-        'standby-backgrounds/abcdefabcdefabcdefabcdef.png'
+        'standby-backgrounds/abcdefabcdefabcdefabcdef.png' &&
+      document.getElementById('logo-size-percent-input').value === '125'
     )()`),
-    '重新載入已儲存待機背景',
+    '重新載入已儲存待機背景與 Logo 大小',
   );
+
+  // 載入預設值也只產生草稿；捨棄後仍應回到已儲存的 125%。
+  await click('load-defaults-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('logo-size-percent-input').value === '100' &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '有未儲存變更' &&
+      document.getElementById('save-settings-button').disabled === false
+    )()`),
+    'Logo 大小載入預設草稿',
+  );
+  await click('settings-close-button');
+  await waitFor(
+    () => execute(`document.getElementById('settings-dialog').open === false`),
+    '捨棄 Logo 大小預設草稿',
+  );
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('settings-status').textContent === '設定已載入。' &&
+      document.getElementById('logo-size-percent-input').value === '125'
+    )()`),
+    '捨棄後重新載入 Logo 大小 baseline',
+  );
+
+  // 非 5% 級距不得送往 Main，錯誤必須顯示在單一欄位並取得焦點。
+  await setInput('logo-size-percent-input', '123');
+  await click('save-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('logo-size-percent-error').hidden === false &&
+      document.getElementById('logo-size-percent-input').getAttribute(
+        'aria-invalid'
+      ) === 'true' &&
+      document.activeElement?.id === 'logo-size-percent-input'
+    )()`),
+    '拒絕無效 Logo 大小並聚焦欄位',
+  );
+  assert.equal(
+    await execute(`document.getElementById('logo-size-percent-error').textContent`),
+    'Logo 大小必須介於 50% 至 200%，並以 5% 遞增。',
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 1);
+  await setInput('logo-size-percent-input', '125');
 
   await setInput('clock-time-input', '24:00:00');
   await click('save-settings-button');

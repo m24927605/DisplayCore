@@ -76,6 +76,19 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
     /\.standby-background-image\s*{[^}]*inline-size:\s*100%[^}]*block-size:\s*100%[^}]*object-fit:\s*cover/s,
   );
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
+  assert.match(css, /--logo-size-scale:\s*1/);
+  assert.match(
+    css,
+    /\.logo-frame\s*{[^}]*block-size:[^;]*var\(--logo-size-scale\)[^}]*max-inline-size:[^;]*var\(--logo-size-scale\)/s,
+  );
+  assert.match(
+    css,
+    /\.display-logo\s*{[^}]*block-size:[^;]*var\(--logo-size-scale\)[^}]*max-inline-size:[^;]*var\(--logo-size-scale\)/s,
+  );
+  assert.match(
+    css,
+    /\.display-logo\s*{[^}]*filter:\s*brightness\(0\)\s*invert\(1\)\s*drop-shadow\([^;]*rgb\(255 255 255 \/ 45%\)[^;]*\)\s*drop-shadow\([^;]*rgb\(0 0 0 \/ 70%\)[^;]*\)/s,
+  );
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
   assert.match(css, /\.display-clock\s*{[^}]*position:\s*absolute[^}]*inset-inline-end:/s);
   assert.match(css, /\.display-clock\s*{[^}]*inset-block-end:/s);
@@ -146,6 +159,10 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /snapshot\.emergencyTone/);
   assert.match(source, /'--message-line-spacing-scale'/);
   assert.match(source, /'--message-font-scale'/);
+  assert.match(
+    source,
+    /\.setProperty\(\s*'--logo-size-scale',\s*String\(snapshot\.logo\.sizePercent\s*\/\s*100\)/s,
+  );
   assert.match(source, /'--emergency-background'/);
   assert.match(source, /'--viewport-background'/);
   assert.match(source, /standby\.backgroundImageUrl/);

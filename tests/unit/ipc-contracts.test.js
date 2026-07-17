@@ -343,7 +343,7 @@ test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推
   }
 });
 
-test('設定儲存接受完整 v5 config、有限／持續播放偏好與目前 revision', () => {
+test('設定儲存接受完整 v6 Logo 尺寸、有限／持續播放偏好與目前 revision', () => {
   const finiteConfig = structuredClone(defaultConfig);
   finiteConfig.playback = {
     pageDurationSeconds: 8,

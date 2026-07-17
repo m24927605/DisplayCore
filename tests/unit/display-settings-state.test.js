@@ -9,10 +9,11 @@ async function loadModule() {
 
 function createSnapshot(revision = 0) {
   return {
-    configVersion: 5,
+    configVersion: 6,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
+      sizePercent: 150,
     },
     standby: {
       backgroundImageUrl:
@@ -105,19 +106,25 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
   const { acceptDisplaySettingsSnapshot } = await loadModule();
   const valid = createSnapshot(1);
   const invalidCandidates = [
-    { ...valid, configVersion: 4 },
+    { ...valid, configVersion: 5 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
-    { ...valid, logo: { enabled: true, url: null } },
-    { ...valid, logo: { enabled: false, url: valid.logo.url } },
-    { ...valid, logo: { enabled: true, url: 'file:///C:/private/logo.png' } },
+    { ...valid, logo: { ...valid.logo, url: null } },
+    { ...valid, logo: { ...valid.logo, enabled: false } },
+    { ...valid, logo: { ...valid.logo, url: 'file:///C:/private/logo.png' } },
     {
       ...valid,
       logo: {
+        ...valid.logo,
         enabled: true,
         url: 'displaycore://app/managed/logo/operator-logo.png',
       },
     },
+    { ...valid, logo: { ...valid.logo, sizePercent: 49 } },
+    { ...valid, logo: { ...valid.logo, sizePercent: 201 } },
+    { ...valid, logo: { ...valid.logo, sizePercent: 101 } },
+    { ...valid, logo: { ...valid.logo, sizePercent: 100.5 } },
+    { ...valid, logo: { ...valid.logo, sizePercent: '100' } },
     {
       ...valid,
       standby: { backgroundImageUrl: 'file:///C:/private/background.png' },
@@ -196,8 +203,8 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 5,
-    logo: { enabled: false, url: null },
+    configVersion: 6,
+    logo: { enabled: false, url: null, sizePercent: 100 },
     standby: { backgroundImageUrl: null },
     appearance: {
       backgroundColor: '#000000',

@@ -83,18 +83,21 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV5(
+function hasExpectedConfigV6(
   config,
   offsetSeconds,
   renderResolution,
   pageDurationSeconds,
   repeatMode,
   roundCount,
+  logoSizePercent,
 ) {
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 5 &&
+    config.configVersion === 6 &&
+    hasExactKeys(config.logo, ['enabled', 'path', 'sizePercent']) &&
+    config.logo.sizePercent === logoSizePercent &&
     hasExactKeys(config.standby, ['backgroundImagePath']) &&
     config.standby.backgroundImagePath === null &&
     config.dateTime?.enabled === true &&
@@ -119,20 +122,22 @@ function isExpectedSettingsSnapshot(
   pageDurationSeconds,
   repeatMode,
   roundCount,
+  logoSizePercent,
 ) {
   return (
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV5(
+    hasExpectedConfigV6(
       snapshot.config,
       offsetSeconds,
       renderResolution,
       pageDurationSeconds,
       repeatMode,
       roundCount,
+      logoSizePercent,
     ) &&
-    hasExpectedConfigV5(snapshot.defaults, 0, 'auto', 3, 'finite', 1)
+    hasExpectedConfigV6(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
   );
 }
 
@@ -150,6 +155,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         3,
         'finite',
         1,
+        100,
       )
     ) {
       document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';
@@ -162,6 +168,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     nextConfig.playback.repeatMode = 'continuous';
     nextConfig.playback.roundCount = 7;
     nextConfig.display.renderResolution = '2560x1440';
+    nextConfig.logo.sizePercent = 150;
     const savedSettings = await window.displayCoreControl.saveSettings(
       nextConfig,
       loadedSettings.data.revision,
@@ -177,6 +184,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         8,
         'continuous',
         7,
+        150,
       )
     ) {
       document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';

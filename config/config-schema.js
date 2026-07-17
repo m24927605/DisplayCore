@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 5;
+const CONFIG_VERSION = 6;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -15,6 +15,8 @@ const DISPLAY_SELECTION_MODES = Object.freeze({
 const CONFIG_LIMITS = Object.freeze({
   MAX_FILE_BYTES: 65_536,
   MAX_LOGO_PATH_LENGTH: 128,
+  MINIMUM_LOGO_SIZE_PERCENT: 50,
+  MAXIMUM_LOGO_SIZE_PERCENT: 200,
   MAX_STANDBY_BACKGROUND_PATH_LENGTH: 128,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
@@ -53,7 +55,7 @@ const CONFIG_KEYS = Object.freeze([
   'playback',
   'standby',
 ]);
-const LOGO_KEYS = Object.freeze(['enabled', 'path']);
+const LOGO_KEYS = Object.freeze(['enabled', 'path', 'sizePercent']);
 const STANDBY_KEYS = Object.freeze(['backgroundImagePath']);
 const APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
@@ -124,10 +126,29 @@ function validateLogo(logo) {
     return validationFailure('Logo 設定格式不正確。', 'logo');
   }
 
+  if (
+    !Number.isSafeInteger(logo.sizePercent) ||
+    logo.sizePercent < CONFIG_LIMITS.MINIMUM_LOGO_SIZE_PERCENT ||
+    logo.sizePercent > CONFIG_LIMITS.MAXIMUM_LOGO_SIZE_PERCENT ||
+    logo.sizePercent % CONFIG_LIMITS.PERCENTAGE_STEP !== 0
+  ) {
+    return validationFailure(
+      `Logo 大小必須是 ${CONFIG_LIMITS.MINIMUM_LOGO_SIZE_PERCENT}% 至 ${CONFIG_LIMITS.MAXIMUM_LOGO_SIZE_PERCENT}% 的整數，並以 ${CONFIG_LIMITS.PERCENTAGE_STEP}% 遞增。`,
+      'logo.sizePercent',
+    );
+  }
+
   if (logo.path === null) {
     return logo.enabled
       ? validationFailure('啟用 Logo 前必須設定圖片路徑。', 'logo.path')
-      : { ok: true, value: { enabled: false, path: null } };
+      : {
+          ok: true,
+          value: {
+            enabled: false,
+            path: null,
+            sizePercent: logo.sizePercent,
+          },
+        };
   }
 
   if (
@@ -143,7 +164,14 @@ function validateLogo(logo) {
     );
   }
 
-  return { ok: true, value: { enabled: logo.enabled, path: logo.path } };
+  return {
+    ok: true,
+    value: {
+      enabled: logo.enabled,
+      path: logo.path,
+      sizePercent: logo.sizePercent,
+    },
+  };
 }
 
 function validateStandby(standby) {
@@ -397,7 +425,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v5。 */
+/** 驗證、正規化並深層複製完整的 canonical config v6。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');

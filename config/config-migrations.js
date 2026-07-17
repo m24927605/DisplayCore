@@ -38,6 +38,17 @@ const LEGACY_V4_CONFIG_KEYS = Object.freeze([
   'marquee',
   'playback',
 ]);
+const LEGACY_V5_CONFIG_KEYS = Object.freeze([
+  'appearance',
+  'configVersion',
+  'dateTime',
+  'display',
+  'emergency',
+  'logo',
+  'marquee',
+  'playback',
+  'standby',
+]);
 const LEGACY_APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -123,10 +134,10 @@ function isCanonicalV2Shape(candidate) {
 }
 
 /**
- * 將磁碟上的合法 v1／v2／v3／v4 設定轉成 canonical v5。
+ * 將磁碟上的合法 v1／v2／v3／v4／v5 設定轉成 canonical v6。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v5。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v5 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v6。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v6 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -142,12 +153,36 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V5_CONFIG_KEYS) &&
+    candidate.configVersion === 5 &&
+    hasExactKeys(candidate.logo, ['enabled', 'path'])
+  ) {
+    const migratedV5 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      logo: {
+        ...candidate.logo,
+        sizePercent: defaults.value.logo.sizePercent,
+      },
+    });
+
+    return migratedV5.ok
+      ? { ok: true, value: migratedV5.value, migrated: true }
+      : migratedV5;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V4_CONFIG_KEYS) &&
-    candidate.configVersion === 4
+    candidate.configVersion === 4 &&
+    hasExactKeys(candidate.logo, ['enabled', 'path'])
   ) {
     const migratedV4 = validateConfig({
       ...candidate,
       configVersion: defaults.value.configVersion,
+      logo: {
+        ...candidate.logo,
+        sizePercent: defaults.value.logo.sizePercent,
+      },
       standby: { ...defaults.value.standby },
     });
 
@@ -158,11 +193,16 @@ function migrateStoredConfig(candidate, currentDefaults) {
 
   if (
     hasExactKeys(candidate, LEGACY_V3_CONFIG_KEYS) &&
-    candidate.configVersion === 3
+    candidate.configVersion === 3 &&
+    hasExactKeys(candidate.logo, ['enabled', 'path'])
   ) {
     const migratedV3 = validateConfig({
       ...candidate,
       configVersion: defaults.value.configVersion,
+      logo: {
+        ...candidate.logo,
+        sizePercent: defaults.value.logo.sizePercent,
+      },
       playback: { ...defaults.value.playback },
       standby: { ...defaults.value.standby },
     });
@@ -176,6 +216,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
     const migratedV2 = validateConfig({
       ...candidate,
       configVersion: defaults.value.configVersion,
+      logo: {
+        ...candidate.logo,
+        sizePercent: defaults.value.logo.sizePercent,
+      },
       dateTime: {
         enabled: candidate.dateTime.enabled,
         offsetSeconds: defaults.value.dateTime.offsetSeconds,
@@ -205,7 +249,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
 
   const migrated = validateConfig({
     configVersion: defaults.value.configVersion,
-    logo: { ...candidate.logo },
+    logo: {
+      ...candidate.logo,
+      sizePercent: defaults.value.logo.sizePercent,
+    },
     appearance: {
       ...defaults.value.appearance,
       ...candidate.appearance,

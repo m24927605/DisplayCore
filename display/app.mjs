@@ -595,6 +595,10 @@ function applyDisplaySettings(snapshot) {
     snapshot.appearance.fontFamily,
   );
   rootStyle.setProperty(
+    '--logo-size-scale',
+    String(snapshot.logo.sizePercent / 100),
+  );
+  rootStyle.setProperty(
     '--message-font-scale',
     String(snapshot.appearance.fontSizePercent / 100),
   );

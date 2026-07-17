@@ -92,7 +92,7 @@ test('載入設定時驗證 snapshot，再交給 view 建立基準與預設值',
   assert.equal(loaded, true);
   assert.equal(harness.calls.snapshots.length, 1);
   assert.equal(harness.calls.snapshots[0].revision, 0);
-  assert.equal(harness.calls.snapshots[0].config.configVersion, 5);
+  assert.equal(harness.calls.snapshots[0].config.configVersion, 6);
   assert.deepEqual(
     harness.calls.snapshots[0].config.playback,
     defaultConfig.playback,
@@ -153,10 +153,14 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   ]);
 });
 
-test('儲存成功 envelope 仍必須是完整 standby/playback v5 snapshot', async () => {
+test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v6 snapshot', async () => {
   const { createSettingsController } = await loadModule();
   const invalidConfigs = [
-    { ...defaultConfig, configVersion: 4 },
+    { ...defaultConfig, configVersion: 5 },
+    {
+      ...defaultConfig,
+      logo: { ...defaultConfig.logo, sizePercent: 101 },
+    },
     { ...defaultConfig, standby: { backgroundImagePath: 'C:\\private.png' } },
     { ...defaultConfig, playback: { ...defaultConfig.playback, roundCount: 0 } },
     { ...defaultConfig, playback: { ...defaultConfig.playback, extra: true } },

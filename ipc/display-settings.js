@@ -80,6 +80,7 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
     logo: {
       enabled: config.logo.enabled,
       url: logoUrl,
+      sizePercent: config.logo.sizePercent,
     },
     standby: { backgroundImageUrl },
     appearance: {

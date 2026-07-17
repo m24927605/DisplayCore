@@ -17,10 +17,11 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV5Config() {
+function createV6Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 5,
+    configVersion: 6,
+    logo: { enabled: false, path: null, sizePercent: 100 },
     standby: { backgroundImagePath: null },
     dateTime: { enabled: false, offsetSeconds: 0 },
     display: {
@@ -31,10 +32,11 @@ function createV5Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV5Config();
+  const config = createV6Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
+    sizePercent: 150,
   };
   config.standby = {
     backgroundImagePath:
@@ -71,10 +73,11 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 5,
+    configVersion: 6,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
+      sizePercent: 150,
     },
     standby: {
       backgroundImageUrl:
@@ -122,39 +125,47 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
 });
 
 test('停用 Logo 與未選待機背景時只發布 null URL', () => {
-  const config = createV5Config();
+  const config = createV6Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
     createManagerSnapshot(config, 3),
   );
 
-  assert.deepEqual(projected.logo, { enabled: false, url: null });
+  assert.deepEqual(projected.logo, {
+    enabled: false,
+    url: null,
+    sizePercent: 100,
+  });
   assert.deepEqual(projected.standby, { backgroundImageUrl: null });
 });
 
 test('投影拒絕不合法 revision、設定內容與非受管理圖片識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV5Config(), -1),
-    createManagerSnapshot(createV5Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV5Config(), unknown: true }, 0),
+    createManagerSnapshot(createV6Config(), -1),
+    createManagerSnapshot(createV6Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV6Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV5Config(),
-        logo: { enabled: true, path: 'logos/operator-logo.png' },
+        ...createV6Config(),
+        logo: {
+          enabled: true,
+          path: 'logos/operator-logo.png',
+          sizePercent: 100,
+        },
       },
       0,
     ),
     createManagerSnapshot(
       {
-        ...createV5Config(),
+        ...createV6Config(),
         standby: { backgroundImagePath: 'C:\\private\\background.png' },
       },
       0,
     ),
     createManagerSnapshot(
       {
-        ...createV5Config(),
+        ...createV6Config(),
         standby: {
           backgroundImagePath:
             'standby-backgrounds/operator-background.png',
@@ -164,9 +175,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV5Config(),
+        ...createV6Config(),
         display: {
-          ...createV5Config().display,
+          ...createV6Config().display,
           renderResolution: '1280x720',
         },
       },
@@ -174,9 +185,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV5Config(),
+        ...createV6Config(),
         playback: {
-          ...createV5Config().playback,
+          ...createV6Config().playback,
           pageDurationSeconds: 0,
         },
       },
@@ -186,6 +197,19 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     assert.throws(
       () => createDisplaySettingsSnapshot(snapshot),
       { name: 'TypeError', message: 'Display 設定 snapshot 格式不正確。' },
+    );
+  }
+});
+
+test('投影拒絕超界、非 5% 步進與非整數 Logo 大小', () => {
+  for (const sizePercent of [49, 201, 101, 100.5, '100']) {
+    const config = createV6Config();
+    config.logo.sizePercent = sizePercent;
+
+    assert.throws(
+      () => createDisplaySettingsSnapshot(createManagerSnapshot(config)),
+      { name: 'TypeError', message: 'Display 設定 snapshot 格式不正確。' },
+      String(sizePercent),
     );
   }
 });

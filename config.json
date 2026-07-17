@@ -1,8 +1,9 @@
 {
-  "configVersion": 5,
+  "configVersion": 6,
   "logo": {
     "enabled": false,
-    "path": null
+    "path": null,
+    "sizePercent": 100
   },
   "standby": {
     "backgroundImagePath": null

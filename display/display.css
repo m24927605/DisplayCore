@@ -11,6 +11,7 @@
     "Noto Sans TC",
     sans-serif;
   --logo-outline: rgb(255 255 255 / 10%);
+  --logo-size-scale: 1;
   --standby-scrim: rgb(0 0 0 / 48%);
   --display-safe-block: clamp(1rem, 3.5cqh, 12rem);
   --display-safe-inline: clamp(1.5rem, 4cqw, 16rem);
@@ -210,21 +211,50 @@ body {
 .logo-frame {
   display: grid;
   justify-self: start;
-  block-size: clamp(3rem, 9cqh, 16rem);
-  max-inline-size: 30cqw;
-  max-block-size: clamp(3rem, 9cqh, 16rem);
+  block-size: clamp(
+    calc(3rem * var(--logo-size-scale)),
+    calc(9cqh * var(--logo-size-scale)),
+    calc(16rem * var(--logo-size-scale))
+  );
+  max-inline-size: calc(30cqw * var(--logo-size-scale));
+  max-block-size: clamp(
+    calc(3rem * var(--logo-size-scale)),
+    calc(9cqh * var(--logo-size-scale)),
+    calc(16rem * var(--logo-size-scale))
+  );
   place-items: center start;
 }
 
 .display-logo {
   display: block;
   inline-size: auto;
-  block-size: clamp(3rem, 9cqh, 16rem);
-  max-inline-size: 30cqw;
-  max-block-size: clamp(3rem, 9cqh, 16rem);
+  block-size: clamp(
+    calc(3rem * var(--logo-size-scale)),
+    calc(9cqh * var(--logo-size-scale)),
+    calc(16rem * var(--logo-size-scale))
+  );
+  max-inline-size: calc(30cqw * var(--logo-size-scale));
+  max-block-size: clamp(
+    calc(3rem * var(--logo-size-scale)),
+    calc(9cqh * var(--logo-size-scale)),
+    calc(16rem * var(--logo-size-scale))
+  );
   object-fit: contain;
   border-radius: 0.2rem;
   box-shadow: 0 0 0 max(0.0625rem, 0.08cqmin) var(--logo-outline);
+  /* 統一轉為白字等級的亮白輪廓，純黑 Logo 也不會只剩外圍光暈。 */
+  filter:
+    brightness(0)
+    invert(1)
+    drop-shadow(
+      0 0 clamp(0.25rem, 0.5cqmin, 1rem) rgb(255 255 255 / 45%)
+    )
+    drop-shadow(
+      0
+      clamp(0.0625rem, 0.12cqmin, 0.3rem)
+      clamp(0.08rem, 0.18cqmin, 0.45rem)
+      rgb(0 0 0 / 70%)
+    );
 }
 
 .display-clock {

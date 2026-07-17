@@ -170,6 +170,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   for (const inputId of [
     'logo-enabled-input',
     'logo-path-input',
+    'logo-size-percent-input',
     'standby-background-path-input',
     'background-color-input',
     'font-family-select',
@@ -189,6 +190,24 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     assert.match(html, new RegExp(`id="${inputId}"`));
   }
   assert.match(html, /Logo 與待機背景/);
+  const logoFieldset = html.match(
+    /<fieldset[^>]+id="logo-settings-fieldset"[\s\S]*?<\/fieldset>/,
+  )?.[0] ?? '';
+  assert.match(logoFieldset, /<label[^>]+for="logo-size-percent-input"[^>]*>\s*Logo 大小（%）\s*<\/label>/);
+  assert.match(
+    logoFieldset,
+    /<input[^>]+id="logo-size-percent-input"[^>]+type="number"[^>]+min="50"[^>]+max="200"[^>]+step="5"[^>]+aria-describedby="logo-size-percent-help logo-size-percent-error"/,
+  );
+  assert.match(
+    logoFieldset,
+    /id="logo-size-percent-help"[^>]*>[^<]*一般訊息[^<]*待機[^<]*Logo[^<]*亮白/,
+  );
+  assert.match(logoFieldset, /id="logo-size-percent-error"[^>]+class="field-error"[^>]+hidden/);
+  assert.equal(
+    (html.match(/id="logo-size-percent-input"/g) ?? []).length,
+    1,
+    'Logo 大小只保留一個緊湊數字欄位',
+  );
   assert.match(html, /id="choose-standby-background-button"/);
   assert.match(html, /id="remove-standby-background-button"/);
   assert.doesNotMatch(html, /id="standby-background-enabled-input"/);

@@ -69,7 +69,8 @@ npm run make
 - Control 提供獨立設定對話框、未儲存狀態、載入預設值、欄位錯誤與安全儲存流程。
 - Main 只將 Display 所需的唯讀設定白名單投影至專用 IPC，不會傳送預設設定、警告內容、本機路徑或 Control 寫入能力。
 - Logo 與待機背景透過各自的 `displaycore://app/managed/...` 受限路由載入；每次請求都重新核對目前設定、檔案類型、大小、簽章與內容雜湊。
-- Logo、待機背景、背景色、字型、字色、整體字體比例、行距、最小字級、555／888 背景、時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
+- Logo 大小、待機背景、背景色、字型、字色、整體字體比例、行距、最小字級、555／888 背景、時間與跑馬燈設定會在儲存後即時套用至 Display，不必重新啟動或重送播放內容。
+- Logo 尺寸可在 50%～200% 之間以 5% 調整，一般訊息與待機畫面共用；Display 固定將 Logo 呈現為亮白輪廓，搭配白色光暈與深色邊緣，純黑 Logo 在深色或圖片背景上也能保持白字等級的辨識度。
 - 待機時間置中顯示；一般訊息頁的時間固定於右下角。兩者都只顯示 24 小時制 `HH:mm:ss`，並對齊下一個整秒更新。
 - 管理員可用 `HH:mm:ss` 校正 DisplayCore 顯示時間；程式只保存日內偏移，不修改 Windows 系統時間，也不需要網路或系統管理員權限。
 - 一般畫面會為 Logo 與右下角時間保留比例式安全區；臨檢滿屏會隱藏所有裝飾資訊。
@@ -83,7 +84,7 @@ npm run make
 - HDMI 查詢在背景執行，熱插拔事件會 debounce 並保持 single-flight，不會阻塞雙視窗啟動或連續建立 PowerShell 子程序。
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
-- Node.js 24.18.0 完整自動化測試 307/307 通過，覆蓋播放設定持久化、一鍵顯示、待機 Logo／背景、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
+- Node.js 24.18.0 完整自動化測試 313/313 通過，覆蓋播放設定持久化、一鍵顯示、Logo 尺寸／高亮、待機 Logo／背景、離線校時、排版解析度、顯示清單獨立分頁與刪除、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
 - 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
@@ -120,7 +121,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 
 可設定欄位包括：
 
-- Logo 是否顯示與受管理的相對資產名稱；啟用後同時用於一般訊息頁及待機歡迎文字上方。
+- Logo 是否顯示、受管理的相對資產名稱與 50%～200% 顯示尺寸；啟用後同時用於一般訊息頁及待機歡迎文字上方。
 - 待機畫面背景圖片；選擇後啟用，移除後回到純色背景。
 - 背景顏色、字型、字體顏色、整體字體大小比例、行距與最小字體大小；字體比例也套用於待機「歡迎光臨」、待機時間及 555／888。
 - 555 臨檢與 888 解除臨檢各自的背景顏色。
@@ -130,7 +131,7 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 - 最小字體仍放不下時是否使用水平跑馬燈。
 - 每頁顯示秒數、指定整輪次數或持續顯示模式。
 
-目前設定格式為 `configVersion: 5`。既有的有效 v1／v2／v3／v4 使用者設定會在載入時於記憶體安全遷移至 v5，新增欄位採用原廠預設值，下一次儲存才原子寫回。程式仍不提供手動指定輸出螢幕、視窗模式或作業系統顯示模式。
+目前設定格式為 `configVersion: 6`。既有的有效 v1／v2／v3／v4／v5 使用者設定會在載入時於記憶體安全遷移至 v6，Logo 尺寸採用 100% 預設值，下一次儲存才原子寫回。程式仍不提供手動指定輸出螢幕、視窗模式或作業系統顯示模式。
 
 Logo 與待機背景選擇都由 Main Process 開啟系統原生對話框。來源圖片經檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到各自的受管理目錄；設定只保存相對資產識別。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
 
@@ -190,7 +191,7 @@ Control：
 Display：
 
 - `display/index.html`：無互動元素的唯讀顯示舞台。
-- `display/display.css`：Logo／時鐘安全區、待機滿版背景、單行分頁、跑馬燈與 6×4 滿屏響應式排版。
+- `display/display.css`：Logo 響應式尺寸／亮白輪廓、時鐘安全區、待機滿版背景、單行分頁、跑馬燈與 6×4 滿屏排版。
 - `display/presentation-state.mjs`：Display snapshot 白名單與 revision 驗證。
 - `display/display-controller.mjs`：先訂閱後查詢與亂序防護。
 - `display/settings-state.mjs`：Display 設定白名單、型別驗證、安全預設值與 revision 防亂序規則。
@@ -199,7 +200,7 @@ Display：
 - `display/render-resolution.mjs`：自動或固定邏輯解析度的等比例縮放與置中計算。
 - `display/text-fit.mjs`：依實際列高計算有效字級範圍並執行有界二分搜尋。
 - `display/page-progress.mjs`：layout generation、跑馬燈列完成追蹤、舊 DOM listener 取消及暫時性 IPC 失敗重試。
-- `display/app.mjs`：純文字呈現、即時視覺設定、待機背景、Logo、時鐘、字體適配、跑馬燈與 ResizeObserver。
+- `display/app.mjs`：純文字呈現、即時視覺設定、待機背景、Logo 比例、時鐘、字體適配、跑馬燈與 ResizeObserver。
 
 Presentation 中每個項目只有一個完整 `message`，不會拆成 title、編號、花名或動作欄位；額外的 `alignment` 只描述呈現方式。555／888 的模式由專用 IPC 狀態傳遞，Display 不依文字內容判斷緊急類型。
 

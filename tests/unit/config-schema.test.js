@@ -29,11 +29,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v5 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v6 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 5);
+  assert.equal(CONFIG_VERSION, 6);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
@@ -54,6 +54,7 @@ test('顏色正規化，但受管理圖片路徑與字型名稱不改寫', async
   source.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
+    sizePercent: 125,
   };
   source.standby = {
     backgroundImagePath:
@@ -87,7 +88,8 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 2 },
     { ...source, configVersion: 3 },
     { ...source, configVersion: 4 },
-    { ...source, configVersion: 6 },
+    { ...source, configVersion: 5 },
+    { ...source, configVersion: 7 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -215,30 +217,76 @@ test('播放設定拒絕缺少／多餘欄位、錯誤型別與超出資源上�
 
 test('Logo 僅接受受管理的相對點陣圖識別，啟用時不得缺少路徑', async () => {
   const source = await readDefaultConfig();
+  const withDefaultSize = (logo) => ({ ...logo, sizePercent: 100 });
   const candidates = [
-    { enabled: true, path: null },
-    { enabled: false, path: '' },
-    { enabled: true, path: '/tmp/logo.png' },
-    { enabled: true, path: 'C:\\DisplayCore\\logo.png' },
-    { enabled: true, path: '\\\\server\\share\\logo.png' },
-    { enabled: true, path: 'https://example.invalid/logo.png' },
-    { enabled: true, path: 'logos/../logo.png' },
-    { enabled: true, path: 'logos/nested/logo.png' },
-    { enabled: true, path: 'logos/logo.svg' },
-    { enabled: true, path: 'logos/operator-logo.png' },
-    { enabled: true, path: 'logos/0123456789abcdef01234567.PNG' },
-    { enabled: true, path: 'C:\\logo.exe' },
-    { enabled: true, path: 'logos/logo\n.png' },
-    {
+    withDefaultSize({ enabled: true, path: null }),
+    withDefaultSize({ enabled: false, path: '' }),
+    withDefaultSize({ enabled: true, path: '/tmp/logo.png' }),
+    withDefaultSize({ enabled: true, path: 'C:\\DisplayCore\\logo.png' }),
+    withDefaultSize({ enabled: true, path: '\\\\server\\share\\logo.png' }),
+    withDefaultSize({
+      enabled: true,
+      path: 'https://example.invalid/logo.png',
+    }),
+    withDefaultSize({ enabled: true, path: 'logos/../logo.png' }),
+    withDefaultSize({ enabled: true, path: 'logos/nested/logo.png' }),
+    withDefaultSize({ enabled: true, path: 'logos/logo.svg' }),
+    withDefaultSize({ enabled: true, path: 'logos/operator-logo.png' }),
+    withDefaultSize({
+      enabled: true,
+      path: 'logos/0123456789abcdef01234567.PNG',
+    }),
+    withDefaultSize({ enabled: true, path: 'C:\\logo.exe' }),
+    withDefaultSize({ enabled: true, path: 'logos/logo\n.png' }),
+    withDefaultSize({
       enabled: true,
       path: `logos/${'a'.repeat(CONFIG_LIMITS.MAX_LOGO_PATH_LENGTH)}.png`,
-    },
+    }),
   ];
 
   for (const logo of candidates) {
     const result = validateConfig({ ...source, logo });
     assert.equal(result.ok, false, JSON.stringify(logo));
     assert.equal(result.error.field, 'logo.path');
+  }
+});
+
+test('Logo 尺寸接受 50% 至 200% 且只能以 5% 遞增', async () => {
+  const source = await readDefaultConfig();
+
+  for (const sizePercent of [50, 100, 200]) {
+    const result = validateConfig({
+      ...source,
+      logo: { ...source.logo, sizePercent },
+    });
+
+    assert.equal(result.ok, true, String(sizePercent));
+    assert.deepEqual(result.value.logo, { ...source.logo, sizePercent });
+  }
+
+  for (const sizePercent of [49, 201, 51, 99, 100.5, '100', null]) {
+    const result = validateConfig({
+      ...source,
+      logo: { ...source.logo, sizePercent },
+    });
+
+    assert.equal(result.ok, false, String(sizePercent));
+    assert.equal(result.error.field, 'logo.sizePercent');
+  }
+});
+
+test('Logo 必須具備 enabled、path、sizePercent 三個精確欄位', async () => {
+  const source = await readDefaultConfig();
+  const { sizePercent: _sizePercent, ...missingSize } = source.logo;
+
+  for (const logo of [
+    missingSize,
+    { ...source.logo, unexpected: true },
+  ]) {
+    const result = validateConfig({ ...source, logo });
+
+    assert.equal(result.ok, false, JSON.stringify(logo));
+    assert.equal(result.error.field, 'logo');
   }
 });
 

@@ -57,6 +57,16 @@
             <input id="logo-enabled-input" type="checkbox">
             <input id="logo-path-input" type="text">
             <p id="logo-path-error" hidden></p>
+            <label for="logo-size-percent-input">Logo 大小（%）</label>
+            <input
+              id="logo-size-percent-input"
+              type="number"
+              min="50"
+              max="200"
+              step="5"
+              value="100"
+            >
+            <p id="logo-size-percent-error" hidden></p>
             <button id="choose-logo-button" type="button">選擇 Logo</button>
             <button id="remove-logo-button" type="button">移除 Logo</button>
             <input id="standby-background-path-input" type="text">
@@ -145,8 +155,12 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 5,
-        logo: Object.freeze({ enabled: false, path: null }),
+        configVersion: 6,
+        logo: Object.freeze({
+          enabled: false,
+          path: null,
+          sizePercent: 100,
+        }),
         standby: Object.freeze({ backgroundImagePath: null }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
@@ -228,11 +242,14 @@
           'input[name="repeat-mode"][value="continuous"]',
         );
         const roundCount = document.getElementById('round-count-input');
+        const logoSize = document.getElementById('logo-size-percent-input');
         const dirtyStatus = document.getElementById('settings-dirty-status');
         const closeButton = document.getElementById('settings-close-button');
         const saveButton = document.getElementById('save-settings-button');
 
         if (dirtyPlayback) {
+          logoSize.value = '150';
+          logoSize.dispatchEvent(new Event('input', { bubbles: true }));
           pageDuration.value = '4';
           pageDuration.dispatchEvent(new Event('input', { bubbles: true }));
           roundCount.value = '2';
@@ -264,6 +281,7 @@
             finiteChecked: repeatFinite.checked,
             continuousChecked: repeatContinuous.checked,
             roundCount: roundCount.value,
+            logoSizePercent: logoSize.value,
           },
         };
       }

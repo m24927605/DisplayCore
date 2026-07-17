@@ -11,10 +11,11 @@ function createSnapshot(
   revision = 0,
   backgroundColor = '#000000',
   backgroundImageUrl = null,
+  logoSizePercent = 100,
 ) {
   return {
-    configVersion: 5,
-    logo: { enabled: false, url: null },
+    configVersion: 6,
+    logo: { enabled: false, url: null, sizePercent: logoSizePercent },
     standby: { backgroundImageUrl },
     appearance: {
       backgroundColor,
@@ -109,7 +110,7 @@ test('快速設定事件只套用最高 revision，畸形資料保留最後有�
 
   const managedBackgroundUrl =
     'displaycore://app/managed/standby-background/fedcba987654321001234567.webp';
-  harness.emit(createSnapshot(3, '#333333', managedBackgroundUrl));
+  harness.emit(createSnapshot(3, '#333333', managedBackgroundUrl, 200));
   harness.emit(createSnapshot(2, '#222222'));
   harness.emit({ ...createSnapshot(4), unknown: true });
   harness.emit({
@@ -132,6 +133,7 @@ test('快速設定事件只套用最高 revision，畸形資料保留最後有�
     harness.applied[1].standby.backgroundImageUrl,
     managedBackgroundUrl,
   );
+  assert.equal(harness.applied[1].logo.sizePercent, 200);
 });
 
 test('畸形待機背景 URL 不覆蓋最後有效設定', async () => {

@@ -22,7 +22,7 @@ const EMERGENCY_KEYS = Object.freeze([
   'inspectionBackgroundColor',
   'releaseBackgroundColor',
 ]);
-const LOGO_KEYS = Object.freeze(['enabled', 'url']);
+const LOGO_KEYS = Object.freeze(['enabled', 'sizePercent', 'url']);
 const STANDBY_KEYS = Object.freeze(['backgroundImageUrl']);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
 const DISPLAY_KEYS = Object.freeze(['renderResolution']);
@@ -51,6 +51,9 @@ const MAXIMUM_LINE_SPACING_PERCENT = 300;
 const PERCENTAGE_STEP = 5;
 const MINIMUM_CLOCK_OFFSET_SECONDS = -43_199;
 const MAXIMUM_CLOCK_OFFSET_SECONDS = 43_200;
+const MINIMUM_LOGO_SIZE_PERCENT = 50;
+const MAXIMUM_LOGO_SIZE_PERCENT = 200;
+const LOGO_SIZE_PERCENT_STEP = 5;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -76,7 +79,11 @@ function hasExactKeys(value, expectedKeys) {
 function isValidLogo(logo) {
   if (
     !hasExactKeys(logo, LOGO_KEYS) ||
-    typeof logo.enabled !== 'boolean'
+    typeof logo.enabled !== 'boolean' ||
+    !Number.isSafeInteger(logo.sizePercent) ||
+    logo.sizePercent < MINIMUM_LOGO_SIZE_PERCENT ||
+    logo.sizePercent > MAXIMUM_LOGO_SIZE_PERCENT ||
+    logo.sizePercent % LOGO_SIZE_PERCENT_STEP !== 0
   ) {
     return false;
   }
@@ -159,7 +166,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 5 &&
+    candidate.configVersion === 6 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -188,7 +195,11 @@ function freezeSettings(settings) {
 function cloneSettings(candidate) {
   return freezeSettings({
     configVersion: candidate.configVersion,
-    logo: { enabled: candidate.logo.enabled, url: candidate.logo.url },
+    logo: {
+      enabled: candidate.logo.enabled,
+      url: candidate.logo.url,
+      sizePercent: candidate.logo.sizePercent,
+    },
     standby: {
       backgroundImageUrl: candidate.standby.backgroundImageUrl,
     },
@@ -217,8 +228,8 @@ function cloneSettings(candidate) {
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 5,
-  logo: { enabled: false, url: null },
+  configVersion: 6,
+  logo: { enabled: false, url: null, sizePercent: 100 },
   standby: { backgroundImageUrl: null },
   appearance: {
     backgroundColor: '#000000',

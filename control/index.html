@@ -291,10 +291,20 @@
               <span><strong>顯示 Logo</strong><small>使用已匯入的本機圖片。</small></span>
               <input id="logo-enabled-input" type="checkbox">
             </label>
-            <div class="settings-field">
-              <label for="logo-path-input">已匯入圖片</label>
-              <input id="logo-path-input" type="text" readonly placeholder="尚未選擇 Logo">
-              <p id="logo-path-error" class="field-error" hidden></p>
+            <div class="settings-control-grid">
+              <div class="settings-field">
+                <label for="logo-path-input">已匯入圖片</label>
+                <input id="logo-path-input" type="text" readonly placeholder="尚未選擇 Logo">
+                <p id="logo-path-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field">
+                <label for="logo-size-percent-input">Logo 大小（%）</label>
+                <input id="logo-size-percent-input" type="number" min="50" max="200" step="5" value="100" inputmode="numeric" aria-describedby="logo-size-percent-help logo-size-percent-error">
+                <small id="logo-size-percent-help" class="settings-field-help">
+                  同時套用於一般訊息與待機畫面的 Logo，顯示時統一轉為亮白輪廓。
+                </small>
+                <p id="logo-size-percent-error" class="field-error" hidden></p>
+              </div>
             </div>
             <div class="settings-inline-actions">
               <button id="choose-logo-button" class="button button-secondary" type="button">選擇 Logo</button>

@@ -153,7 +153,13 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 5);
+  assert.equal(config.configVersion, 6);
+  assert.deepEqual(Object.keys(config.logo).sort(), [
+    'enabled',
+    'path',
+    'sizePercent',
+  ]);
+  assert.equal(config.logo.sizePercent, 100);
   assert.deepEqual(Object.keys(config.standby).sort(), [
     'backgroundImagePath',
   ]);

@@ -496,8 +496,8 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 5,
-      logo: { enabled: false, url: null },
+      configVersion: 6,
+      logo: { enabled: false, sizePercent: 100, url: null },
       standby: { backgroundImageUrl: null },
       appearance: defaultConfig.appearance,
       dateTime: defaultConfig.dateTime,
@@ -532,6 +532,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   config.playback.repeatMode = 'continuous';
   config.playback.roundCount = 7;
   config.display.renderResolution = '2560x1440';
+  config.logo.sizePercent = 150;
 
   const saved = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
@@ -547,8 +548,8 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 5,
-    logo: { enabled: false, url: null },
+    configVersion: 6,
+    logo: { enabled: false, sizePercent: 150, url: null },
     standby: { backgroundImageUrl: null },
     appearance: config.appearance,
     dateTime: config.dateTime,

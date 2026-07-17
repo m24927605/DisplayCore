@@ -164,6 +164,51 @@ function createFakeTimers() {
   };
 }
 
+function assertLogoHighlight(filter, context) {
+  assert.match(filter, /brightness\(0\)/, `${context} Logo 清除原始暗色`);
+  assert.match(filter, /invert\(1\)/, `${context} Logo 轉為亮白`);
+  assert.match(
+    filter,
+    /rgba\(255, 255, 255, 0\.45\)/,
+    `${context} Logo 白色光暈`,
+  );
+  assert.match(
+    filter,
+    /rgba\(0, 0, 0, 0\.7\)/,
+    `${context} Logo 深色邊緣`,
+  );
+}
+
+/**
+ * 測試圖片是透明底純黑 PNG；擷取實際 Electron 畫面中心像素，確認不是
+ * 只有外圍光暈，而是 Logo 本體也真正轉為接近白字的亮度。
+ */
+async function verifyLogoRenderedBrightWhite(context) {
+  const center = await execute(`(() => {
+    const logo = document.getElementById('display-logo').getBoundingClientRect();
+    return {
+      x: Math.floor(logo.left + (logo.width / 2)),
+      y: Math.floor(logo.top + (logo.height / 2)),
+    };
+  })()`);
+  const image = await displayWindow.webContents.capturePage({
+    x: center.x,
+    y: center.y,
+    width: 1,
+    height: 1,
+  });
+  const bitmap = image.toBitmap();
+
+  assert.ok(bitmap.length >= 4, `${context} Logo 像素可擷取`);
+  for (let offset = 0; offset <= bitmap.length - 4; offset += 4) {
+    const colorChannels = [bitmap[offset], bitmap[offset + 1], bitmap[offset + 2]];
+    assert.ok(
+      colorChannels.every((channel) => channel >= 240),
+      `${context} Logo 本體未達亮白：${colorChannels.join(',')}`,
+    );
+  }
+}
+
 function createSettingsManager(initialConfig) {
   const initialValidation = validateConfig(initialConfig);
 
@@ -289,6 +334,9 @@ async function verifyStandbyPresentation(
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoHidden: logoElement.hidden,
       logoSource: logoElement.getAttribute('src'),
+      logoSizeScale: getComputedStyle(document.documentElement)
+        .getPropertyValue('--logo-size-scale').trim(),
+      logoFilter: getComputedStyle(logoElement).filter,
       logoCenterError: Math.abs(center(logo) - center(stage)),
       messageCenterError: Math.abs(center(message) - center(stage)),
       clockCenterError: Math.abs(center(clock) - center(stage)),
@@ -308,6 +356,9 @@ async function verifyStandbyPresentation(
   assert.equal(inspection.chromeHidden, false);
   assert.equal(inspection.logoHidden, false);
   assert.equal(inspection.logoSource, expectedLogoUrl);
+  assert.equal(inspection.logoSizeScale, '1');
+  assertLogoHighlight(inspection.logoFilter, '待機');
+  await verifyLogoRenderedBrightWhite('待機');
   assert.ok(inspection.logoCenterError < 1);
   assert.ok(inspection.messageCenterError < 1);
   assert.ok(inspection.clockCenterError < 1);
@@ -317,6 +368,76 @@ async function verifyStandbyPresentation(
     inspection.backgroundSource,
     /file:|Users|userData|standby-backgrounds/i,
   );
+}
+
+/** 同一邏輯解析度下，50／100／200% 必須等比例縮放 Logo。 */
+async function verifyLogoSizeScaling(mode) {
+  const measurements = [];
+
+  for (const sizePercent of [50, 100, 200]) {
+    const nextConfig = structuredClone(settingsManager.getSnapshot().config);
+    nextConfig.logo.enabled = true;
+    nextConfig.logo.sizePercent = sizePercent;
+    nextConfig.display.renderResolution = 'auto';
+    const settingsRevision = settingsManager.publish(nextConfig).revision;
+
+    await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        const logo = document.getElementById('display-logo');
+        return stage.dataset.mode === '${mode}' &&
+          stage.dataset.settingsRevision === '${settingsRevision}' &&
+          ${mode === 'page'
+            ? `stage.dataset.fittedSettingsRevision === '${settingsRevision}' &&`
+            : ''}
+          logo && !logo.hidden && logo.complete && logo.naturalWidth > 0;
+      })()`),
+      `${mode} Logo ${sizePercent}% 套用`,
+    );
+
+    const measurement = await execute(`(() => {
+      const rootStyle = getComputedStyle(document.documentElement);
+      const frame = document.getElementById('logo-frame');
+      const logo = document.getElementById('display-logo');
+      return {
+        sizePercent: ${sizePercent},
+        scale: rootStyle.getPropertyValue('--logo-size-scale').trim(),
+        frameHeight: frame.getBoundingClientRect().height,
+        imageHeight: logo.getBoundingClientRect().height,
+        frameMaxWidth: Number.parseFloat(getComputedStyle(frame).maxInlineSize),
+        imageMaxWidth: Number.parseFloat(getComputedStyle(logo).maxInlineSize),
+        filter: getComputedStyle(logo).filter,
+        standbyBackgroundHidden:
+          document.getElementById('standby-background-layer').hidden,
+      };
+    })()`);
+
+    assert.equal(measurement.scale, String(sizePercent / 100));
+    assert.ok(measurement.frameHeight > 0);
+    assert.ok(Math.abs(measurement.frameHeight - measurement.imageHeight) <= 0.5);
+    assert.ok(Number.isFinite(measurement.frameMaxWidth));
+    assert.ok(Number.isFinite(measurement.imageMaxWidth));
+    assert.equal(measurement.standbyBackgroundHidden, mode === 'page');
+    assertLogoHighlight(measurement.filter, `${mode} ${sizePercent}%`);
+    measurements.push(measurement);
+  }
+
+  const [half, normal, double] = measurements;
+  for (const [field, label] of [
+    ['frameHeight', 'frame 高度'],
+    ['imageHeight', 'image 高度'],
+    ['frameMaxWidth', 'frame 最大寬度'],
+    ['imageMaxWidth', 'image 最大寬度'],
+  ]) {
+    assert.ok(
+      Math.abs((half[field] / normal[field]) - 0.5) <= 0.05,
+      `${mode} ${label} 50% 比例`,
+    );
+    assert.ok(
+      Math.abs((double[field] / normal[field]) - 2) <= 0.05,
+      `${mode} ${label} 200% 比例`,
+    );
+  }
 }
 
 async function verifyResponsiveResolutions() {
@@ -967,6 +1088,16 @@ async function runWorkflow(
   assert.ok(Math.abs(standby.clockCenter - standby.stageCenter) < 1);
   await verifyDisplayedClockOffset(3_661, '待機時保留離線時間偏移');
   await verifyConfiguredRenderResolutions();
+  await verifyLogoSizeScaling('blank');
+
+  presentationService.startProgram({
+    messages: [{ message: '001聯絡櫃台', alignment: 'left' }],
+    pageDurationSeconds: 3_600,
+    repeat: { mode: 'finite', rounds: 1 },
+  });
+  const logoPageRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(logoPageRevision);
+  await verifyLogoSizeScaling('page');
 }
 
 async function run() {
@@ -1015,7 +1146,11 @@ async function run() {
   );
 
   const initialConfig = structuredClone(defaultConfig);
-  initialConfig.logo = { enabled: true, path: logoAssetPath };
+  initialConfig.logo = {
+    enabled: true,
+    path: logoAssetPath,
+    sizePercent: 100,
+  };
   initialConfig.standby = {
     backgroundImagePath: standbyBackgroundAssetPath,
   };
