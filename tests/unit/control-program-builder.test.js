@@ -18,20 +18,21 @@ async function loadBuilder() {
 function createMessages(count) {
   return Array.from({ length: count }, (_, index) => ({
     message: `${String(index + 1).padStart(3, '0')}請至前廳`,
+    alignment: 'left',
   }));
 }
 
 test('加入訊息會保留完整文字、輸入順序與不可變資料', async () => {
   const { appendMessage } = await loadBuilder();
-  const original = [{ message: '001請至前廳' }];
+  const original = [{ message: '001請至前廳', alignment: 'left' }];
   const literal = '  Nancy\n<img src=x>  ';
-  const result = appendMessage(original, literal);
+  const result = appendMessage(original, literal, 'center');
 
   assert.deepEqual(result, {
     ok: true,
     messages: [
-      { message: '001請至前廳' },
-      { message: literal },
+      { message: '001請至前廳', alignment: 'left' },
+      { message: literal, alignment: 'center' },
     ],
   });
   assert.notEqual(result.messages, original);
@@ -163,24 +164,36 @@ test('空清單、非整數秒數、錯誤模式與非法整輪次數都安全�
 test('清單上限與 Unicode code point 總量上限在 Control 先行擋下', async () => {
   const { appendMessage, buildProgram } = await loadBuilder();
 
-  assert.equal(appendMessage(createMessages(500), '超量').ok, false);
-  assert.equal(appendMessage([], '😀'.repeat(10_000)).ok, true);
-  assert.equal(appendMessage([], '😀'.repeat(10_001)).ok, false);
+  assert.equal(appendMessage(createMessages(500), '超量', 'left').ok, false);
+  assert.equal(appendMessage([], '😀'.repeat(10_000), 'left').ok, true);
+  assert.equal(appendMessage([], '😀'.repeat(10_001), 'left').ok, false);
   assert.equal(
     appendMessage(
-      [{ message: '甲'.repeat(6_000) }],
+      [{ message: '甲'.repeat(6_000), alignment: 'left' }],
       '乙'.repeat(4_001),
+      'left',
     ).ok,
     false,
   );
-  assert.equal(appendMessage([], '').ok, false);
-  assert.equal(appendMessage([], 555).ok, false);
+  assert.equal(appendMessage([], '', 'left').ok, false);
+  assert.equal(appendMessage([], 555, 'left').ok, false);
+  assert.equal(appendMessage([], '合法', 'right').ok, false);
 
   const malformedMessages = createMessages(1);
   malformedMessages[0].extra = true;
   assert.equal(
     buildProgram({
       messages: malformedMessages,
+      pageDurationSeconds: 3,
+      repeatMode: 'finite',
+      rounds: 1,
+    }).ok,
+    false,
+  );
+
+  assert.equal(
+    buildProgram({
+      messages: [{ message: '缺少排版資訊' }],
       pageDurationSeconds: 3,
       repeatMode: 'finite',
       rounds: 1,

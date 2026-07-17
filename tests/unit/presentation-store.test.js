@@ -9,6 +9,7 @@ function createProgram(messageCount, repeat = { mode: 'finite', rounds: 2 }) {
   return {
     messages: Array.from({ length: messageCount }, (_value, index) => ({
       message: `訊息${index + 1}`,
+      alignment: index === 0 ? 'center' : 'left',
     })),
     pageDurationSeconds: 3,
     repeat,
@@ -25,6 +26,7 @@ function expectedBlank(revision) {
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: null,
     revision,
   };
 }
@@ -47,9 +49,9 @@ test('四則訊息依三則上限完成兩頁兩輪，最後一頁完整停留�
   assert.deepEqual(page1Round1, {
     mode: 'page',
     messages: [
-      { message: '訊息1' },
-      { message: '訊息2' },
-      { message: '訊息3' },
+      { message: '訊息1', alignment: 'center' },
+      { message: '訊息2', alignment: 'left' },
+      { message: '訊息3', alignment: 'left' },
     ],
     layout: 'single-line',
     pageDurationSeconds: 3,
@@ -57,11 +59,15 @@ test('四則訊息依三則上限完成兩頁兩輪，最後一頁完整停留�
     pageCount: 2,
     roundNumber: 1,
     totalRounds: 2,
+    emergencyTone: null,
     revision: 1,
   });
   assert.equal(page2Round1.pageNumber, 2);
   assert.equal(page2Round1.roundNumber, 1);
-  assert.deepEqual(page2Round1.messages, [{ message: '訊息4' }]);
+  assert.deepEqual(page2Round1.messages, [{
+    message: '訊息4',
+    alignment: 'left',
+  }]);
   assert.equal(page1Round2.pageNumber, 1);
   assert.equal(page1Round2.roundNumber, 2);
   assert.equal(page2Round2.pageNumber, 2);
@@ -97,18 +103,20 @@ test('555／888 是 sticky 滿屏狀態，既不是 clear 也不能被舊翻頁�
 
   assert.deepEqual(inspection, {
     mode: 'emergency',
-    messages: [{ message: '555' }],
+    messages: [{ message: '555', alignment: 'center' }],
     layout: 'fill-screen',
     pageDurationSeconds: null,
     pageNumber: null,
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: 'inspection',
     revision: 2,
   });
   assert.deepEqual(staleAdvance, inspection);
   assert.equal(release.messages[0].message, '888');
   assert.equal(release.mode, 'emergency');
+  assert.equal(release.emergencyTone, 'release');
   assert.equal(release.revision, 3);
   assert.equal(store.shouldScheduleNextPage(), false);
 });
@@ -133,15 +141,15 @@ test('Control 取得完整 active 內容，翻頁不改 contentRevision，內容
 
   assert.equal(Object.hasOwn(firstDisplayPage, 'contentRevision'), false);
   assert.deepEqual(firstDisplayPage.messages, [
-    { message: '訊息1' },
-    { message: '訊息2' },
-    { message: '訊息3' },
+    { message: '訊息1', alignment: 'center' },
+    { message: '訊息2', alignment: 'left' },
+    { message: '訊息3', alignment: 'left' },
   ]);
   assert.deepEqual(firstControlPage.messages, [
-    { message: '訊息1' },
-    { message: '訊息2' },
-    { message: '訊息3' },
-    { message: '訊息4' },
+    { message: '訊息1', alignment: 'center' },
+    { message: '訊息2', alignment: 'left' },
+    { message: '訊息3', alignment: 'left' },
+    { message: '訊息4', alignment: 'left' },
   ]);
   assert.equal(firstControlPage.contentRevision, 1);
 

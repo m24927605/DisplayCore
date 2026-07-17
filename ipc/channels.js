@@ -19,6 +19,18 @@ const PRESENTATION_MODES = Object.freeze({
   EMERGENCY: 'emergency',
 });
 
+/** 每則訊息的純排版資訊；Display 不解析 message 內容。 */
+const MESSAGE_ALIGNMENTS = Object.freeze({
+  LEFT: 'left',
+  CENTER: 'center',
+});
+
+/** Main 由專用緊急指令決定背景設定，不讓 Display 比對 555／888 文字。 */
+const EMERGENCY_TONES = Object.freeze({
+  INSPECTION: 'inspection',
+  RELEASE: 'release',
+});
+
 /** 一般訊息清單的整輪播放模式。 */
 const PLAYBACK_MODES = Object.freeze({
   CONTINUOUS: 'continuous',
@@ -55,8 +67,10 @@ const IPC_CHANNELS = Object.freeze({
 });
 
 module.exports = {
+  EMERGENCY_TONES,
   IPC_CHANNELS,
   IPC_ROLES,
+  MESSAGE_ALIGNMENTS,
   PAGE_PROGRESS_PHASES,
   PLAYBACK_MODES,
   PRESENTATION_LAYOUTS,

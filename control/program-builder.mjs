@@ -21,7 +21,8 @@ export const PROGRAM_LIMITS = Object.freeze({
   MAX_ROUNDS: 999,
 });
 
-const MESSAGE_KEYS = Object.freeze(['message']);
+const MESSAGE_KEYS = Object.freeze(['alignment', 'message']);
+const MESSAGE_ALIGNMENTS = new Set(['left', 'center']);
 
 function failure(field, message) {
   return Object.freeze({
@@ -44,11 +45,12 @@ function hasExactMessageShape(item) {
     return false;
   }
 
-  const keys = Object.keys(item);
+  const keys = Object.keys(item).sort();
   return (
     keys.length === MESSAGE_KEYS.length &&
     keys.every((key, index) => key === MESSAGE_KEYS[index]) &&
-    typeof item.message === 'string'
+    typeof item.message === 'string' &&
+    MESSAGE_ALIGNMENTS.has(item.alignment)
   );
 }
 
@@ -83,7 +85,10 @@ function validateAndCopyMessages(messages, { allowEmpty }) {
 
   for (const item of messages) {
     if (!hasExactMessageShape(item)) {
-      return failure('messages', '每則訊息只能包含一個文字 message 欄位。');
+      return failure(
+        'messages',
+        '每則訊息必須包含完整 message 與允許的 alignment。',
+      );
     }
 
     if (item.message.length === 0) {
@@ -99,7 +104,10 @@ function validateAndCopyMessages(messages, { allowEmpty }) {
       );
     }
 
-    copiedMessages.push(Object.freeze({ message: item.message }));
+    copiedMessages.push(Object.freeze({
+      message: item.message,
+      alignment: item.alignment,
+    }));
   }
 
   return Object.freeze({
@@ -136,8 +144,12 @@ export function countPages(messageCount) {
 /**
  * 把一則完整 message 追加到清單。文字不 trim、不正規化也不解析。
  */
-export function appendMessage(messages, message) {
-  if (typeof message !== 'string' || message.length === 0) {
+export function appendMessage(messages, message, alignment) {
+  if (
+    typeof message !== 'string' ||
+    message.length === 0 ||
+    !MESSAGE_ALIGNMENTS.has(alignment)
+  ) {
     return failure('message', '請加入有內容的訊息。');
   }
 
@@ -148,7 +160,7 @@ export function appendMessage(messages, message) {
   }
 
   return validateAndCopyMessages(
-    [...current.messages, { message }],
+    [...current.messages, { message, alignment }],
     { allowEmpty: true },
   );
 }

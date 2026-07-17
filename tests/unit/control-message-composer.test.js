@@ -36,6 +36,7 @@ test('固定動作把編號或花名放在完整 message 最前方', async () =>
       ok: true,
       presentation: {
         message: '001請至前廳',
+        alignment: 'left',
         layout: 'single-line',
       },
     },
@@ -50,6 +51,7 @@ test('固定動作把編號或花名放在完整 message 最前方', async () =>
       ok: true,
       presentation: {
         message: 'Nancy前廳000',
+        alignment: 'left',
         layout: 'single-line',
       },
     },
@@ -69,6 +71,7 @@ test('自定義動作可加編號／花名，也可直接顯示公告', async ()
       ok: true,
       presentation: {
         message: '001請至後門',
+        alignment: 'left',
         layout: 'single-line',
       },
     },
@@ -83,6 +86,7 @@ test('自定義動作可加編號／花名，也可直接顯示公告', async ()
       ok: true,
       presentation: {
         message: '公告今日停止服務',
+        alignment: 'left',
         layout: 'single-line',
       },
     },
@@ -103,6 +107,7 @@ test('編號／花名與自定義內容皆原樣保留，不做 trim 或 HTML �
       ok: true,
       presentation: {
         message: `  Nancy  ${customText}`,
+        alignment: 'left',
         layout: 'single-line',
       },
     },
@@ -151,6 +156,7 @@ test('固定動作需要編號／花名，自定義需要非空字串', async ()
       ok: true,
       presentation: {
         message: '   請至前廳',
+        alignment: 'left',
         layout: 'single-line',
       },
     },
@@ -190,6 +196,7 @@ test('555 與 888 明確映射為滿屏 presentation，其他代碼一律拒絕'
     ok: true,
     presentation: {
       message: '555',
+      alignment: 'center',
       layout: 'fill-screen',
     },
   });
@@ -197,6 +204,7 @@ test('555 與 888 明確映射為滿屏 presentation，其他代碼一律拒絕'
     ok: true,
     presentation: {
       message: '888',
+      alignment: 'center',
       layout: 'fill-screen',
     },
   });

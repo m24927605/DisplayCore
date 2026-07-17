@@ -2,18 +2,25 @@
 
 const {
   PLAYBACK_MODES,
+  EMERGENCY_TONES,
+  MESSAGE_ALIGNMENTS,
   PRESENTATION_LAYOUTS,
   PRESENTATION_MODES,
 } = require('./channels');
 const { MESSAGES_PER_PAGE } = require('./validators');
 
+const EMERGENCY_TONE_BY_CODE = Object.freeze({
+  '555': EMERGENCY_TONES.INSPECTION,
+  '888': EMERGENCY_TONES.RELEASE,
+});
+
 function copyMessages(messages) {
-  return messages.map(({ message }) => ({ message }));
+  return messages.map(({ message, alignment }) => ({ message, alignment }));
 }
 
 function freezeProgram(program) {
-  const messages = program.messages.map(({ message }) =>
-    Object.freeze({ message }),
+  const messages = program.messages.map(({ message, alignment }) =>
+    Object.freeze({ message, alignment }),
   );
 
   return Object.freeze({
@@ -30,6 +37,7 @@ function createBlankState(revision, contentRevision) {
     pageIndex: null,
     roundNumber: null,
     emergencyCode: null,
+    emergencyTone: null,
     revision,
     contentRevision,
   });
@@ -59,6 +67,7 @@ class PresentationStore {
         pageCount: null,
         roundNumber: null,
         totalRounds: null,
+        emergencyTone: null,
         revision: state.revision,
       };
     }
@@ -66,13 +75,17 @@ class PresentationStore {
     if (state.mode === PRESENTATION_MODES.EMERGENCY) {
       return {
         mode: PRESENTATION_MODES.EMERGENCY,
-        messages: [{ message: state.emergencyCode }],
+        messages: [{
+          message: state.emergencyCode,
+          alignment: MESSAGE_ALIGNMENTS.CENTER,
+        }],
         layout: PRESENTATION_LAYOUTS.FILL_SCREEN,
         pageDurationSeconds: null,
         pageNumber: null,
         pageCount: null,
         roundNumber: null,
         totalRounds: null,
+        emergencyTone: state.emergencyTone,
         revision: state.revision,
       };
     }
@@ -96,6 +109,7 @@ class PresentationStore {
       pageCount,
       roundNumber: isFinite ? state.roundNumber : null,
       totalRounds: isFinite ? state.program.repeat.rounds : null,
+      emergencyTone: null,
       revision: state.revision,
     };
   }
@@ -124,6 +138,7 @@ class PresentationStore {
       pageIndex: 0,
       roundNumber: isFinite ? 1 : null,
       emergencyCode: null,
+      emergencyTone: null,
       revision: this.state.revision + 1,
       contentRevision: this.state.contentRevision + 1,
     });
@@ -177,12 +192,18 @@ class PresentationStore {
   }
 
   showEmergency(code) {
+    const emergencyTone = EMERGENCY_TONE_BY_CODE[code];
+    if (!emergencyTone) {
+      throw new TypeError('不支援的滿屏代碼。');
+    }
+
     this.state = Object.freeze({
       mode: PRESENTATION_MODES.EMERGENCY,
       program: null,
       pageIndex: null,
       roundNumber: null,
       emergencyCode: code,
+      emergencyTone,
       revision: this.state.revision + 1,
       contentRevision: this.state.contentRevision + 1,
     });

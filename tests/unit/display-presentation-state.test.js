@@ -18,6 +18,7 @@ function createPage(revision = 1, count = 3) {
     mode: 'page',
     messages: Array.from({ length: count }, (_value, index) => ({
       message: `訊息${index + 1}`,
+      alignment: index === 0 ? 'center' : 'left',
     })),
     layout: 'single-line',
     pageDurationSeconds: 3,
@@ -25,6 +26,7 @@ function createPage(revision = 1, count = 3) {
     pageCount: 3,
     roundNumber: 2,
     totalRounds: 10,
+    emergencyTone: null,
     revision,
   };
 }
@@ -58,17 +60,22 @@ test('Display 接受空白與任意 fill-screen message，但不判斷 555／888
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: null,
     revision: 0,
   };
   const emergency = {
     mode: 'emergency',
-    messages: [{ message: '任意滿屏文字<script>純文字</script>' }],
+    messages: [{
+      message: '任意滿屏文字<script>純文字</script>',
+      alignment: 'center',
+    }],
     layout: 'fill-screen',
     pageDurationSeconds: null,
     pageNumber: null,
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: 'inspection',
     revision: 1,
   };
 
@@ -89,7 +96,9 @@ test('Display 拒絕相同／較舊 revision、未知欄位與不可能的頁面
     { ...valid, messages: [] },
     { ...valid, messages: createPage(6, 4).messages },
     { ...valid, messages: [{ message: '' }] },
-    { ...valid, messages: [{ message: '合法', extra: true }] },
+    { ...valid, messages: [{ message: '合法', alignment: 'right' }] },
+    { ...valid, messages: [{ message: '合法', alignment: 'left', extra: true }] },
+    { ...valid, emergencyTone: 'inspection' },
     { ...valid, pageDurationSeconds: 0 },
     { ...valid, pageNumber: 0 },
     { ...valid, pageNumber: 4, pageCount: 3 },

@@ -2,6 +2,7 @@ const ALLOWED_LAYOUTS = new Set(['single-line', 'fill-screen']);
 const ALLOWED_MODES = new Set(['blank', 'page', 'emergency']);
 const SNAPSHOT_KEYS = Object.freeze([
   'contentRevision',
+  'emergencyTone',
   'layout',
   'messages',
   'mode',
@@ -12,7 +13,9 @@ const SNAPSHOT_KEYS = Object.freeze([
   'roundNumber',
   'totalRounds',
 ]);
-const MESSAGE_KEYS = Object.freeze(['message']);
+const MESSAGE_KEYS = Object.freeze(['alignment', 'message']);
+const MESSAGE_ALIGNMENTS = new Set(['left', 'center']);
+const EMERGENCY_TONES = new Set(['inspection', 'release']);
 const MESSAGES_PER_PAGE = 3;
 const MAX_ACTIVE_MESSAGES = 500;
 const MAX_PAGE_COUNT = Math.ceil(MAX_ACTIVE_MESSAGES / MESSAGES_PER_PAGE);
@@ -52,7 +55,8 @@ function isValidMessages(messages) {
     if (
       !hasExactKeys(item, MESSAGE_KEYS) ||
       typeof item.message !== 'string' ||
-      item.message.length === 0
+      item.message.length === 0 ||
+      !MESSAGE_ALIGNMENTS.has(item.alignment)
     ) {
       return false;
     }
@@ -105,6 +109,7 @@ function isValidPageMetadata(snapshot) {
     snapshot.pageNumber >= 1 &&
     snapshot.pageNumber <= snapshot.pageCount &&
     (hasContinuousRepeat || hasFiniteRepeat)
+    && snapshot.emergencyTone === null
   );
 }
 
@@ -126,6 +131,7 @@ function isValidSnapshot(snapshot) {
     return (
       snapshot.layout === 'single-line' &&
       snapshot.messages.length === 0 &&
+      snapshot.emergencyTone === null &&
       hasNullPlaybackMetadata(snapshot)
     );
   }
@@ -134,6 +140,8 @@ function isValidSnapshot(snapshot) {
     return (
       snapshot.layout === 'fill-screen' &&
       snapshot.messages.length === 1 &&
+      snapshot.messages[0].alignment === 'center' &&
+      EMERGENCY_TONES.has(snapshot.emergencyTone) &&
       hasNullPlaybackMetadata(snapshot)
     );
   }
@@ -159,13 +167,17 @@ export function acceptPresentationSnapshot(currentRevision, candidate) {
     accepted: true,
     snapshot: {
       mode: candidate.mode,
-      messages: candidate.messages.map(({ message }) => ({ message })),
+      messages: candidate.messages.map(({ message, alignment }) => ({
+        message,
+        alignment,
+      })),
       layout: candidate.layout,
       pageDurationSeconds: candidate.pageDurationSeconds,
       pageNumber: candidate.pageNumber,
       pageCount: candidate.pageCount,
       roundNumber: candidate.roundNumber,
       totalRounds: candidate.totalRounds,
+      emergencyTone: candidate.emergencyTone,
       revision: candidate.revision,
       contentRevision: candidate.contentRevision,
     },

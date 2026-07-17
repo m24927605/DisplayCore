@@ -77,6 +77,7 @@ export function composeMessage({ recipient, action, customText }) {
     ok: true,
     presentation: {
       message: `${recipient}${actionText}`,
+      alignment: 'left',
       layout: 'single-line',
     },
   };
@@ -98,6 +99,7 @@ export function createEmergencyPresentation(emergencyCode) {
     ok: true,
     presentation: {
       message: emergencyCode,
+      alignment: 'center',
       layout: 'fill-screen',
     },
   };

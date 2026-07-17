@@ -6,6 +6,8 @@ const test = require('node:test');
 const {
   IPC_CHANNELS,
   IPC_ROLES,
+  EMERGENCY_TONES,
+  MESSAGE_ALIGNMENTS,
   PAGE_PROGRESS_PHASES,
   PLAYBACK_MODES,
   PRESENTATION_LAYOUTS,
@@ -30,6 +32,7 @@ const defaultConfig = require('../../config.json');
 function createMessages(count, prefix = '訊息') {
   return Array.from({ length: count }, (_value, index) => ({
     message: `${prefix}${index + 1}`,
+    alignment: 'left',
   }));
 }
 
@@ -50,6 +53,14 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
     BLANK: 'blank',
     PAGE: 'page',
     EMERGENCY: 'emergency',
+  });
+  assert.deepEqual(MESSAGE_ALIGNMENTS, {
+    LEFT: 'left',
+    CENTER: 'center',
+  });
+  assert.deepEqual(EMERGENCY_TONES, {
+    INSPECTION: 'inspection',
+    RELEASE: 'release',
   });
   assert.deepEqual(PLAYBACK_MODES, {
     CONTINUOUS: 'continuous',
@@ -80,6 +91,8 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
   for (const value of [
     IPC_CHANNELS,
     IPC_ROLES,
+    EMERGENCY_TONES,
+    MESSAGE_ALIGNMENTS,
     PAGE_PROGRESS_PHASES,
     PRESENTATION_LAYOUTS,
     PRESENTATION_MODES,
@@ -158,9 +171,12 @@ test('Display 頁面進度只接受目前版面雙閘門需要的 exact payload'
 
 test('一般顯示接受完整 message 清單與明確的持續／有限輪播模式', () => {
   const messages = [
-    { message: '001請至前廳' },
-    { message: 'Nancy前廳000' },
-    { message: '公告\n原始換行保留<script>純文字</script>' },
+    { message: '001請至前廳', alignment: 'left' },
+    { message: '歡迎光臨', alignment: 'center' },
+    {
+      message: '公告\n原始換行保留<script>純文字</script>',
+      alignment: 'left',
+    },
   ];
   const continuous = validateStartProgramPayload({
     messages,
@@ -219,7 +235,10 @@ test('每頁固定最多三則，並為訊息數、時間、輪次與總字數�
   }
 
   const exactlyAtLimit = validateStartProgramPayload({
-    messages: [{ message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS) }],
+    messages: [{
+      message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS),
+      alignment: 'left',
+    }],
     pageDurationSeconds: MAX_PAGE_DURATION_SECONDS,
     repeat: { mode: 'finite', rounds: MAX_CYCLE_COUNT },
     expectedContentRevision: Number.MAX_SAFE_INTEGER,
@@ -229,7 +248,7 @@ test('每頁固定最多三則，並為訊息數、時間、輪次與總字數�
 
 test('一般顯示原子拒絕未知欄位、空項目、錯誤 repeat 與超量資料', () => {
   const valid = {
-    messages: [{ message: '001請至前廳' }],
+    messages: [{ message: '001請至前廳', alignment: 'left' }],
     pageDurationSeconds: 3,
     repeat: { mode: 'continuous' },
     expectedContentRevision: 0,
@@ -242,11 +261,19 @@ test('一般顯示原子拒絕未知欄位、空項目、錯誤 repeat 與超量
     { ...valid, messages: [] },
     { ...valid, messages: createMessages(MAX_MESSAGE_COUNT + 1) },
     { ...valid, messages: ['不是 message 物件'] },
-    { ...valid, messages: [{ message: '' }] },
-    { ...valid, messages: [{ message: '合法', title: '禁止欄位' }] },
+    { ...valid, messages: [{ message: '', alignment: 'left' }] },
+    { ...valid, messages: [{ message: '合法' }] },
+    { ...valid, messages: [{ message: '合法', alignment: 'right' }] },
     {
       ...valid,
-      messages: [{ message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS + 1) }],
+      messages: [{ message: '合法', alignment: 'left', title: '禁止欄位' }],
+    },
+    {
+      ...valid,
+      messages: [{
+        message: '😀'.repeat(MAX_MESSAGE_CODE_POINTS + 1),
+        alignment: 'left',
+      }],
     },
     { ...valid, pageDurationSeconds: 0 },
     { ...valid, pageDurationSeconds: 1.5 },

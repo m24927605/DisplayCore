@@ -1,6 +1,10 @@
 'use strict';
 
-const { PAGE_PROGRESS_PHASES, PLAYBACK_MODES } = require('./channels');
+const {
+  MESSAGE_ALIGNMENTS,
+  PAGE_PROGRESS_PHASES,
+  PLAYBACK_MODES,
+} = require('./channels');
 const { validateConfig } = require('../config/config-schema');
 
 // 所有限制都由 Main 再驗證，Renderer 的欄位狀態不能視為安全邊界。
@@ -18,7 +22,7 @@ const PROGRAM_KEYS = Object.freeze([
   'repeat',
 ]);
 const CLEAR_PRESENTATION_KEYS = Object.freeze(['expectedContentRevision']);
-const MESSAGE_KEYS = Object.freeze(['message']);
+const MESSAGE_KEYS = Object.freeze(['alignment', 'message']);
 const EMERGENCY_KEYS = Object.freeze(['code']);
 const SAVE_SETTINGS_KEYS = Object.freeze(['config', 'expectedRevision']);
 const PAGE_PROGRESS_KEYS = Object.freeze([
@@ -90,9 +94,13 @@ function validateMessages(messages) {
   const copiedMessages = [];
 
   for (const item of messages) {
-    if (!hasExactKeys(item, MESSAGE_KEYS) || typeof item.message !== 'string') {
+    if (
+      !hasExactKeys(item, MESSAGE_KEYS) ||
+      typeof item.message !== 'string' ||
+      !Object.values(MESSAGE_ALIGNMENTS).includes(item.alignment)
+    ) {
       return validationFailure(
-        '每則訊息只能包含一個文字 message 欄位。',
+        '每則訊息必須包含完整 message 與允許的 alignment。',
         'messages',
       );
     }
@@ -112,7 +120,10 @@ function validateMessages(messages) {
       }
     }
 
-    copiedMessages.push({ message: item.message });
+    copiedMessages.push({
+      message: item.message,
+      alignment: item.alignment,
+    });
   }
 
   return { ok: true, value: copiedMessages };

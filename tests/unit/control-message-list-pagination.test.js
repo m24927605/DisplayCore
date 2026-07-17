@@ -22,6 +22,7 @@ async function loadPagination() {
 function createMessages(count) {
   return Array.from({ length: count }, (_value, index) => ({
     message: `訊息${index + 1}`,
+    alignment: index === 0 ? 'center' : 'left',
   }));
 }
 
@@ -35,9 +36,9 @@ test('七則訊息固定分成三頁，並保留每則訊息的全域索引', as
     pageNumber: 2,
     pageStart: 3,
     visibleMessages: [
-      { message: '訊息4', globalIndex: 3 },
-      { message: '訊息5', globalIndex: 4 },
-      { message: '訊息6', globalIndex: 5 },
+      { message: '訊息4', alignment: 'left', globalIndex: 3 },
+      { message: '訊息5', alignment: 'left', globalIndex: 4 },
+      { message: '訊息6', alignment: 'left', globalIndex: 5 },
     ],
     hasPreviousPage: true,
     hasNextPage: true,
@@ -57,9 +58,9 @@ test('刪除第三頁唯一訊息後，要求第三頁會安全縮回第二頁',
     pageNumber: 2,
     pageStart: 3,
     visibleMessages: [
-      { message: '訊息4', globalIndex: 3 },
-      { message: '訊息5', globalIndex: 4 },
-      { message: '訊息6', globalIndex: 5 },
+      { message: '訊息4', alignment: 'left', globalIndex: 3 },
+      { message: '訊息5', alignment: 'left', globalIndex: 4 },
+      { message: '訊息6', alignment: 'left', globalIndex: 5 },
     ],
     hasPreviousPage: true,
     hasNextPage: false,
@@ -78,9 +79,9 @@ test('超出範圍的頁碼會 clamp，上一頁與下一頁永遠維持安全�
       pageNumber: 1,
       pageStart: 0,
       visibleMessages: [
-        { message: '訊息1', globalIndex: 0 },
-        { message: '訊息2', globalIndex: 1 },
-        { message: '訊息3', globalIndex: 2 },
+        { message: '訊息1', alignment: 'center', globalIndex: 0 },
+        { message: '訊息2', alignment: 'left', globalIndex: 1 },
+        { message: '訊息3', alignment: 'left', globalIndex: 2 },
       ],
       hasPreviousPage: false,
       hasNextPage: true,
@@ -131,8 +132,10 @@ test('拒絕非清單、畸形訊息與非安全整數頁碼', async () => {
     null,
     '訊息',
     [{}],
-    [{ message: '' }],
-    [{ message: '訊息', extra: true }],
+    [{ message: '', alignment: 'left' }],
+    [{ message: '訊息' }],
+    [{ message: '訊息', alignment: 'right' }],
+    [{ message: '訊息', alignment: 'left', extra: true }],
   ]) {
     assert.throws(
       () => paginateMessageList(messages, 1),

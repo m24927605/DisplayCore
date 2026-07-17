@@ -17,8 +17,8 @@ function createPageSnapshot(revision = 3) {
   return {
     mode: 'page',
     messages: [
-      { message: '001請至前廳' },
-      { message: 'Nancy前廳000' },
+      { message: '001請至前廳', alignment: 'left' },
+      { message: 'Nancy前廳000', alignment: 'left' },
     ],
     layout: 'single-line',
     pageDurationSeconds: 3,
@@ -26,6 +26,7 @@ function createPageSnapshot(revision = 3) {
     pageCount: 1,
     roundNumber: 1,
     totalRounds: 10,
+    emergencyTone: null,
     revision,
     contentRevision: 2,
   };
@@ -56,18 +57,20 @@ test('Control 接受 blank／emergency discriminated shape', async () => {
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: null,
     revision: 0,
     contentRevision: 0,
   };
   const emergency = {
     mode: 'emergency',
-    messages: [{ message: '555' }],
+    messages: [{ message: '555', alignment: 'center' }],
     layout: 'fill-screen',
     pageDurationSeconds: null,
     pageNumber: null,
     pageCount: null,
     roundNumber: null,
     totalRounds: null,
+    emergencyTone: 'inspection',
     revision: 1,
     contentRevision: 1,
   };
@@ -95,10 +98,18 @@ test('Control 接受完整 active 清單，並拒絕超量、頁數不一致與�
     { ...valid, messages: [] },
     {
       ...valid,
-      messages: Array.from({ length: 501 }, () => ({ message: '超量' })),
+      messages: Array.from({ length: 501 }, () => ({
+        message: '超量',
+        alignment: 'left',
+      })),
       pageCount: 167,
     },
-    { ...valid, messages: [{ message: '合法', title: '禁止欄位' }] },
+    { ...valid, messages: [{ message: '合法', alignment: 'right' }] },
+    {
+      ...valid,
+      messages: [{ message: '合法', alignment: 'left', title: '禁止欄位' }],
+    },
+    { ...valid, emergencyTone: 'release' },
     { ...valid, pageDurationSeconds: null },
     { ...valid, pageCount: 2 },
     { ...valid, pageNumber: 2 },
@@ -122,6 +133,7 @@ test('Control 的七則 active 訊息必須對應三頁，且接受翻頁時不�
   const { acceptPresentationSnapshot } = await loadPresentationState();
   const messages = Array.from({ length: 7 }, (_value, index) => ({
     message: `訊息${index + 1}`,
+    alignment: 'left',
   }));
   const snapshot = {
     ...createPageSnapshot(8),

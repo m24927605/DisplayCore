@@ -1,4 +1,5 @@
 const SNAPSHOT_KEYS = Object.freeze([
+  'emergencyTone',
   'layout',
   'messages',
   'mode',
@@ -9,7 +10,9 @@ const SNAPSHOT_KEYS = Object.freeze([
   'roundNumber',
   'totalRounds',
 ]);
-const MESSAGE_KEYS = Object.freeze(['message']);
+const MESSAGE_KEYS = Object.freeze(['alignment', 'message']);
+const MESSAGE_ALIGNMENTS = new Set(['left', 'center']);
+const EMERGENCY_TONES = new Set(['inspection', 'release']);
 const MAX_PAGE_MESSAGES = 3;
 const MAX_PAGE_COUNT = 167;
 const MAX_CYCLE_COUNT = 999;
@@ -47,7 +50,8 @@ function isValidMessages(messages) {
     if (
       !hasExactKeys(item, MESSAGE_KEYS) ||
       typeof item.message !== 'string' ||
-      item.message.length === 0
+      item.message.length === 0 ||
+      !MESSAGE_ALIGNMENTS.has(item.alignment)
     ) {
       return false;
     }
@@ -97,6 +101,7 @@ function isValidPage(snapshot) {
     snapshot.pageNumber >= 1 &&
     snapshot.pageNumber <= snapshot.pageCount &&
     (continuous || finite)
+    && snapshot.emergencyTone === null
   );
 }
 
@@ -114,6 +119,7 @@ function isValidSnapshot(snapshot) {
     return (
       snapshot.layout === 'single-line' &&
       snapshot.messages.length === 0 &&
+      snapshot.emergencyTone === null &&
       hasNullMetadata(snapshot)
     );
   }
@@ -122,6 +128,8 @@ function isValidSnapshot(snapshot) {
     return (
       snapshot.layout === 'fill-screen' &&
       snapshot.messages.length === 1 &&
+      snapshot.messages[0].alignment === 'center' &&
+      EMERGENCY_TONES.has(snapshot.emergencyTone) &&
       hasNullMetadata(snapshot)
     );
   }
@@ -144,13 +152,17 @@ export function acceptDisplaySnapshot(currentRevision, candidate) {
     accepted: true,
     snapshot: {
       mode: candidate.mode,
-      messages: candidate.messages.map(({ message }) => ({ message })),
+      messages: candidate.messages.map(({ message, alignment }) => ({
+        message,
+        alignment,
+      })),
       layout: candidate.layout,
       pageDurationSeconds: candidate.pageDurationSeconds,
       pageNumber: candidate.pageNumber,
       pageCount: candidate.pageCount,
       roundNumber: candidate.roundNumber,
       totalRounds: candidate.totalRounds,
+      emergencyTone: candidate.emergencyTone,
       revision: candidate.revision,
     },
   };
