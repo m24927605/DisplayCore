@@ -568,7 +568,9 @@ function openEmergencyDialog(triggerButton) {
     ? '確認顯示臨檢代碼 555？'
     : '確認顯示解除代碼 888？';
   elements.dialogDescription.textContent =
-    '此操作會立即覆蓋目前訊息，並切換為不受單行限制的滿屏模式。';
+    inspection
+      ? '不受顯示時間限制；會持續滿屏顯示，直到顯示 888、清除或送出新的訊息。'
+      : '不受顯示時間限制；會持續滿屏顯示，直到清除或送出新的訊息。';
   elements.dialogCode.textContent = code;
   elements.dialogError.textContent = '';
   elements.dialogError.hidden = true;

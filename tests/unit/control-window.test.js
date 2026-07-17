@@ -23,7 +23,8 @@ test('Control 採一鍵立即顯示流程，不再建立待播清單', async () 
     appSource,
     /displayMessage\(\s*\{ message, alignment: 'center' \}/,
   );
-  assert.match(html, /待機顯示：歡迎光臨與時間/);
+  assert.match(html, /待機顯示：時間/);
+  assert.doesNotMatch(html, /待機顯示：歡迎光臨與時間/);
   assert.match(appSource, /livePageSummary\.textContent = '待機畫面'/);
   assert.match(html, /<form[^>]+id="message-form"/);
   assert.match(html, /<input[^>]+id="recipient-input"/);
@@ -102,8 +103,11 @@ test('右側分離唯讀即時狀態與可獨立分頁、逐筆刪除的顯示�
   );
 });
 
-test('555 與 888 保留獨立按鈕及確認對話框', async () => {
-  const html = await readControlFile('index.html');
+test('555 與 888 保留獨立按鈕、確認對話框與無限期顯示提示', async () => {
+  const [html, appSource] = await Promise.all([
+    readControlFile('index.html'),
+    readControlFile('app.mjs'),
+  ]);
 
   assert.ok(
     html.indexOf('id="inspection-555-button"') <
@@ -115,6 +119,9 @@ test('555 與 888 保留獨立按鈕及確認對話框', async () => {
   assert.match(html, /id="inspection-code-preview"/);
   assert.match(html, /id="inspection-confirm-button"/);
   assert.match(html, /id="inspection-cancel-button"[^>]+autofocus/);
+  assert.match(appSource, /顯示 888、清除或送出新的訊息/);
+  assert.match(appSource, /直到清除或送出新的訊息/);
+  assert.match(appSource, /不受顯示時間限制/);
 });
 
 test('HDMI 與實際輸出只讀顯示，完全沒有手動螢幕或全螢幕控制', async () => {
@@ -224,9 +231,10 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.doesNotMatch(html, /id="standby-background-enabled-input"/);
   assert.doesNotMatch(html, /id="hour12-input"|12 小時制/);
   assert.match(html, /訊息播放時顯示時間/);
-  assert.match(html, /待機歡迎畫面固定顯示時間/);
+  assert.match(html, /待機畫面固定顯示時間/);
+  assert.doesNotMatch(html, /待機歡迎畫面/);
   assert.match(html, /時間固定顯示為 24 小時 HH:mm:ss/);
-  assert.match(html, /套用於一般訊息、待機「歡迎光臨」與時間，以及 555／888/);
+  assert.match(html, /套用於一般訊息、待機時間，以及 555／888/);
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
   for (const resolution of [
     'auto',

@@ -32,8 +32,11 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
     html,
     /<img[^>]+id="standby-background-image-buffer"[^>]+alt=""[^>]+aria-hidden="true"[^>]+hidden/,
   );
-  assert.match(html, /id="standby-layer"[^>]+aria-hidden="true"/);
-  assert.match(html, /id="standby-message"[^>]*>\s*歡迎光臨\s*</);
+  assert.match(
+    html,
+    /<canvas[^>]+id="standby-sand-transition"[^>]+aria-hidden="true"[^>]+hidden/,
+  );
+  assert.doesNotMatch(html, /id="standby-layer"|id="standby-message"|歡迎光臨/);
   assert.match(html, /id="display-chrome"[^>]+aria-hidden="true"/);
   assert.match(
     html,
@@ -78,6 +81,10 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(
     css,
     /\.standby-background-image\s*{[^}]*position:\s*absolute[^}]*inset:\s*0[^}]*inline-size:\s*100%[^}]*block-size:\s*100%[^}]*object-fit:\s*cover/s,
+  );
+  assert.match(
+    css,
+    /\.standby-sand-transition\s*{[^}]*position:\s*absolute[^}]*inset:\s*0[^}]*inline-size:\s*100%[^}]*block-size:\s*100%/s,
   );
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /--logo-size-scale:\s*1/);
@@ -129,17 +136,21 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
     css,
     /\.display-stage\[data-mode="blank"\]\s+\.logo-frame\s*{[^}]*justify-self:\s*center/s,
   );
+  assert.doesNotMatch(css, /\.standby-message\s*{/);
   assert.match(
     css,
-    /\.standby-message\s*{[^}]*calc\(14cqmin \* var\(--message-font-scale\)\)/s,
+    /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*calc\(14cqmin \* var\(--message-font-scale\)\)[^}]*font-weight:\s*800/s,
   );
   assert.match(
     css,
-    /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*calc\(7cqmin \* var\(--message-font-scale\)\)/s,
+    /\.page-layer\[data-layout="messages"\]\s*{[^}]*grid-template-rows:\s*repeat\(3,\s*minmax\(0,\s*1fr\)\)/s,
   );
   assert.match(css, /\.message-row\s*{[^}]*white-space:\s*nowrap/s);
-  assert.match(css, /\.message-row\s*{[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/s);
-  assert.match(css, /\.message-row\[data-alignment="center"\]/);
+  assert.match(css, /\.message-row\s*{[^}]*align-items:\s*flex-start[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/s);
+  assert.match(
+    css,
+    /\.message-row\[data-alignment="center"\]\s*{[^}]*align-items:\s*center[^}]*justify-content:\s*center/s,
+  );
   assert.match(css, /\.fill-layer\s*{[^}]*display:\s*grid/s);
   assert.match(css, /\.fill-layer\s*{[^}]*position:\s*absolute[^}]*inset:\s*0/s);
   assert.match(css, /--display-font-family/);
@@ -165,6 +176,7 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /resolveRenderResolution/);
   assert.match(source, /createPageProgressReporter/);
   assert.match(source, /createStandbyBackgroundPlayer/);
+  assert.match(source, /createSandTransition/);
   assert.match(source, /SAFE_DISPLAY_SETTINGS/);
   assert.match(source, /findLargestFittingFontSize/);
   assert.match(source, /classifyLogoAlpha/);
@@ -201,6 +213,10 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /standbyBackgroundPlayer\.handleLoad/);
   assert.match(source, /standbyBackgroundPlayer\.handleError/);
   assert.match(source, /standbyBackgroundPlayer\.dispose/);
+  assert.match(source, /sandTransition\.start/);
+  assert.match(source, /sandTransition\.cancel/);
+  assert.match(source, /sandTransition\.dispose/);
+  assert.match(source, /drawImage/);
   assert.match(source, /getImageData/);
   assert.match(source, /dataset\.logoTreatment/);
   assert.match(source, /image\.addEventListener\('load',\s*handleStandbyBackgroundLoad\)/);
@@ -209,8 +225,11 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
     source,
     /function updateAnnouncement\([^)]*\)\s*{[\s\S]*?setAttribute\('aria-live', priority\);[\s\S]*?\.textContent\s*=\s*message;/,
   );
-  assert.match(source, /updateAnnouncement\([^;]+,\s*'polite'\);/s);
+  assert.match(source, /updateAnnouncement\([^;]+,\s*'polite',?\s*\);/s);
+  assert.match(source, /updateAnnouncement\('',\s*'off'\);/);
   assert.match(source, /updateAnnouncement\(message,\s*'assertive'\);/s);
+  assert.match(source, /pageLayer\.dataset\.layout\s*=/);
+  assert.doesNotMatch(source, /standbyLayer|歡迎光臨/);
   assert.doesNotMatch(source, /\.innerHTML\s*=/);
   assert.doesNotMatch(source, /\brequire\s*\(|\bprocess\.|\bipcRenderer\b/);
   assert.doesNotMatch(source, /555|888/);

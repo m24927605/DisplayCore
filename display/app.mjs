@@ -11,6 +11,7 @@ import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
 import {
   createStandbyBackgroundPlayer,
 } from './standby-background-player.mjs';
+import { createSandTransition } from './sand-transition.mjs';
 import { resolveRenderResolution } from './render-resolution.mjs';
 import {
   calculateResponsiveFontBounds,
@@ -21,6 +22,7 @@ const FILL_CELL_COUNT = 24;
 const FIT_PRECISION_PX = 0.25;
 const MESSAGE_LINE_HEIGHT = 1.08;
 const LOGO_ALPHA_SAMPLE_EDGE = 64;
+const SAND_TRANSITION_DURATION_MS = 1_600;
 const LAYOUT_GENERATION_STORAGE_KEY = 'displaycore-layout-generation';
 
 const elements = Object.freeze({
@@ -33,12 +35,12 @@ const elements = Object.freeze({
     document.getElementById('standby-background-image'),
     document.getElementById('standby-background-image-buffer'),
   ]),
+  sandCanvas: document.getElementById('standby-sand-transition'),
   chrome: document.getElementById('display-chrome'),
   logoFrame: document.getElementById('logo-frame'),
   logo: document.getElementById('display-logo'),
   clock: document.getElementById('display-clock'),
   pageLayer: document.getElementById('page-layer'),
-  standbyLayer: document.getElementById('standby-layer'),
   fillLayer: document.getElementById('fill-layer'),
 });
 
@@ -57,6 +59,8 @@ let expectedStandbyBackgroundUrl = null;
 let activeStandbyBackgroundImage = null;
 let pendingStandbyBackgroundImage = null;
 let standbyBackgroundReady = false;
+let sandOutgoingImage = null;
+let sandCoverCrop = null;
 let clockHasValue = false;
 let clockSignature = null;
 
@@ -129,6 +133,10 @@ const clock = createDisplayClock({
 const standbyBackgroundPlayer = createStandbyBackgroundPlayer({
   onSourceChange: applyStandbyBackgroundSource,
 });
+const sandContext = elements.sandCanvas.getContext('2d', { alpha: true });
+const sandTransition = createSandTransition({
+  onFrame: drawStandbySandFrame,
+});
 
 function cancelPendingFit() {
   renderGeneration += 1;
@@ -142,9 +150,9 @@ function cancelPendingFit() {
 
 function clearVisualLayers() {
   cancelPendingFit();
+  cancelStandbySandTransition();
   elements.pageLayer.textContent = '';
   elements.fillLayer.textContent = '';
-  elements.standbyLayer.hidden = true;
   elements.standbyBackgroundLayer.hidden = true;
   for (const image of elements.standbyBackgroundImages) {
     image.hidden = true;
@@ -242,6 +250,45 @@ function compressOverflowingRows(rows) {
   }
 }
 
+/** 一般訊息固定字級後，僅針對真正水平溢位的列套用完整文字保護。 */
+function protectOverflowingRows(rows) {
+  const overflowingRows = rows.filter((row) => {
+    const message = row.querySelector('.message-text');
+    return message &&
+      message.getBoundingClientRect().width >
+        row.getBoundingClientRect().width + 0.5;
+  });
+
+  if (currentSettings.marquee.enabled) {
+    for (const row of overflowingRows) {
+      activateMarquee(row, row.dataset.message || '');
+    }
+    return;
+  }
+
+  // 操作者停用跑馬燈時只水平壓縮，不改變該列的固定字級。
+  compressOverflowingRows(overflowingRows);
+}
+
+function reportPageReady(
+  presentationRevision,
+  settingsRevision,
+  layoutToken,
+) {
+  elements.stage.dataset.marqueeCount = String(
+    elements.pageLayer.querySelectorAll('.is-marquee').length,
+  );
+  elements.stage.dataset.fittedRevision = String(presentationRevision);
+  elements.stage.dataset.fittedSettingsRevision = String(settingsRevision);
+  elements.stage.dataset.layoutGeneration = String(
+    layoutToken.layoutGeneration,
+  );
+  pageProgressReporter.ready(
+    layoutToken,
+    [...elements.pageLayer.querySelectorAll('.marquee-track')],
+  );
+}
+
 function fitCurrentPage(
   presentationRevision,
   settingsRevision,
@@ -265,6 +312,45 @@ function fitCurrentPage(
 
   for (const row of rows) {
     createStaticMessage(row, row.dataset.message || '');
+  }
+
+  /*
+   * 一般訊息固定使用 CSS 的響應式字級，與當頁有 1、2 或 3 則、文字長短
+   * 完全無關。只有實際列高不足時才做垂直安全下修。
+   */
+  if (elements.pageLayer.dataset.layout === 'messages') {
+    elements.pageLayer.style.removeProperty('font-size');
+    const responsiveFontSize = Number.parseFloat(
+      getComputedStyle(elements.pageLayer).fontSize,
+    );
+    const smallestRowHeight = Math.min(
+      ...rows.map((row) => row.clientHeight),
+    );
+
+    if (
+      !Number.isFinite(responsiveFontSize) ||
+      responsiveFontSize <= 0 ||
+      smallestRowHeight <= 0
+    ) {
+      return;
+    }
+
+    const fixedFontSize = Math.min(
+      responsiveFontSize,
+      smallestRowHeight / MESSAGE_LINE_HEIGHT,
+    );
+    elements.pageLayer.style.fontSize = `${fixedFontSize}px`;
+    elements.stage.dataset.minimumFontClamped = 'false';
+    elements.stage.dataset.fixedFontClamped = String(
+      fixedFontSize < responsiveFontSize,
+    );
+    protectOverflowingRows(rows);
+    reportPageReady(
+      presentationRevision,
+      settingsRevision,
+      layoutToken,
+    );
+    return;
   }
 
   const rootFontSize = Number.parseFloat(
@@ -301,35 +387,13 @@ function fitCurrentPage(
   );
 
   if (!fit.fitsAtMinimum) {
-    if (currentSettings.marquee.enabled) {
-      for (const row of rows) {
-        const message = row.querySelector('.message-text');
-        const overflowsHorizontally =
-          message &&
-          message.getBoundingClientRect().width >
-            row.getBoundingClientRect().width + 0.5;
-
-        if (overflowsHorizontally) {
-          activateMarquee(row, row.dataset.message || '');
-        }
-      }
-    } else {
-      // 操作者停用跑馬燈時守住最小字級，並水平縮放以保留完整文字。
-      compressOverflowingRows(rows);
-    }
+    protectOverflowingRows(rows);
   }
 
-  elements.stage.dataset.marqueeCount = String(
-    elements.pageLayer.querySelectorAll('.is-marquee').length,
-  );
-  elements.stage.dataset.fittedRevision = String(presentationRevision);
-  elements.stage.dataset.fittedSettingsRevision = String(settingsRevision);
-  elements.stage.dataset.layoutGeneration = String(
-    layoutToken.layoutGeneration,
-  );
-  pageProgressReporter.ready(
+  reportPageReady(
+    presentationRevision,
+    settingsRevision,
     layoutToken,
-    [...elements.pageLayer.querySelectorAll('.marquee-track')],
   );
 }
 
@@ -390,6 +454,8 @@ function updateChromeVisibility() {
     image.hidden = !showStandbyBackground ||
       image !== activeStandbyBackgroundImage;
   }
+  elements.sandCanvas.hidden = !showStandbyBackground ||
+    !sandTransition.isRunning();
   elements.clock.hidden = !showClock;
   elements.normalLayer.classList.toggle('has-logo', showLogo);
   elements.normalLayer.classList.toggle('has-clock', showClock);
@@ -537,16 +603,173 @@ function applyLogoTreatment() {
   elements.logoFrame.dataset.logoTreatment = treatment;
 }
 
+/** 計算與 object-fit: cover 相同的置中裁切，供 Canvas 精準複製舊背景。 */
+function calculateCoverCrop(image, width, height) {
+  const scale = Math.max(
+    width / image.naturalWidth,
+    height / image.naturalHeight,
+  );
+  const sourceWidth = width / scale;
+  const sourceHeight = height / scale;
+
+  return Object.freeze({
+    scale,
+    sourceX: (image.naturalWidth - sourceWidth) / 2,
+    sourceY: (image.naturalHeight - sourceHeight) / 2,
+    sourceWidth,
+    sourceHeight,
+  });
+}
+
+function clearStandbySandCanvas() {
+  sandOutgoingImage = null;
+  sandCoverCrop = null;
+  elements.sandCanvas.hidden = true;
+  elements.sandCanvas.width = 1;
+  elements.sandCanvas.height = 1;
+}
+
+function cancelStandbySandTransition() {
+  sandTransition.cancel();
+  clearStandbySandCanvas();
+  delete elements.stage.dataset.standbyTransition;
+}
+
+function drawCoverTail(context, image, crop, startX, width, height) {
+  if (startX >= width) {
+    return;
+  }
+
+  const destinationWidth = width - startX;
+  context.drawImage(
+    image,
+    crop.sourceX + startX / crop.scale,
+    crop.sourceY,
+    destinationWidth / crop.scale,
+    crop.sourceHeight,
+    startX,
+    0,
+    destinationWidth,
+    height,
+  );
+}
+
+/** 每幀保留舊圖右側完整區，並把溶解邊緣畫成可辨識、向右飄散的圖像顆粒。 */
+function drawStandbySandFrame(frame) {
+  if (!sandContext || !sandOutgoingImage || !sandCoverCrop) {
+    return;
+  }
+
+  sandContext.clearRect(0, 0, frame.width, frame.height);
+  sandContext.imageSmoothingEnabled = true;
+  const dissolveBand = frame.progress > 0 && frame.progress < 1
+    ? Math.max(12, frame.width * 0.025)
+    : 0;
+  drawCoverTail(
+    sandContext,
+    sandOutgoingImage,
+    sandCoverCrop,
+    Math.min(frame.width, frame.dissolveFrontX + dissolveBand),
+    frame.width,
+    frame.height,
+  );
+
+  sandContext.imageSmoothingEnabled = false;
+  for (const particle of frame.particles) {
+    const sourceSize = particle.size / sandCoverCrop.scale;
+    sandContext.globalAlpha = particle.opacity;
+    sandContext.drawImage(
+      sandOutgoingImage,
+      sandCoverCrop.sourceX +
+        (particle.sourceX - particle.size / 2) / sandCoverCrop.scale,
+      sandCoverCrop.sourceY +
+        (particle.sourceY - particle.size / 2) / sandCoverCrop.scale,
+      sourceSize,
+      sourceSize,
+      particle.x - particle.size / 2,
+      particle.y - particle.size / 2,
+      particle.size,
+      particle.size,
+    );
+  }
+  sandContext.globalAlpha = 1;
+}
+
+/**
+ * 將新圖先放到 Canvas 下層，再以舊圖粒子由左向右揭露；第一張圖片不播放。
+ * 若 Canvas 無法使用則立即切換，絕不讓待機輪播停住。
+ */
+function startStandbySandTransition(image, url) {
+  const outgoingImage = activeStandbyBackgroundImage;
+  const width = elements.standbyBackgroundLayer.clientWidth;
+  const height = elements.standbyBackgroundLayer.clientHeight;
+
+  if (
+    !sandContext ||
+    !outgoingImage ||
+    width <= 0 ||
+    height <= 0 ||
+    outgoingImage.naturalWidth <= 0 ||
+    outgoingImage.naturalHeight <= 0
+  ) {
+    return false;
+  }
+
+  cancelStandbySandTransition();
+  elements.sandCanvas.width = width;
+  elements.sandCanvas.height = height;
+  sandOutgoingImage = outgoingImage;
+  sandCoverCrop = calculateCoverCrop(outgoingImage, width, height);
+  sandContext.clearRect(0, 0, width, height);
+  sandContext.imageSmoothingEnabled = true;
+  drawCoverTail(sandContext, outgoingImage, sandCoverCrop, 0, width, height);
+
+  activeStandbyBackgroundImage = image;
+  pendingStandbyBackgroundImage = null;
+  expectedStandbyBackgroundUrl = null;
+  standbyBackgroundReady = true;
+  elements.stage.dataset.standbyBackgroundState = 'ready';
+  elements.stage.dataset.standbyTransition = 'sand';
+
+  const started = sandTransition.start({
+    width,
+    height,
+    durationMs: SAND_TRANSITION_DURATION_MS,
+    onComplete() {
+      clearStandbySandCanvas();
+      delete elements.stage.dataset.standbyTransition;
+      updateChromeVisibility();
+      standbyBackgroundPlayer.handleLoad(url);
+    },
+  });
+
+  if (!started) {
+    clearStandbySandCanvas();
+    delete elements.stage.dataset.standbyTransition;
+    return false;
+  }
+
+  updateChromeVisibility();
+  return true;
+}
+
 function isExpectedStandbyBackground(image) {
   return image === pendingStandbyBackgroundImage &&
     expectedStandbyBackgroundUrl !== null &&
     image.getAttribute('src') === expectedStandbyBackgroundUrl;
 }
 
-/** 只有 pending 圖成功解碼後才原子替換目前健康背景。 */
+/** 第一張立即顯示；後續健康圖片以風吹沙轉場原子替換。 */
 function commitStandbyBackgroundImage(image, url) {
   if (!isExpectedStandbyBackground(image) || url !== expectedStandbyBackgroundUrl) {
     return false;
+  }
+
+  if (
+    activeStandbyBackgroundImage !== null &&
+    startStandbySandTransition(image, url)
+  ) {
+    return true;
   }
 
   activeStandbyBackgroundImage = image;
@@ -602,6 +825,7 @@ function handleStandbyBackgroundError(event) {
 }
 
 function clearStandbyBackgroundImages() {
+  cancelStandbySandTransition();
   expectedStandbyBackgroundUrl = null;
   activeStandbyBackgroundImage = null;
   pendingStandbyBackgroundImage = null;
@@ -617,6 +841,9 @@ function clearStandbyBackgroundImages() {
  * 將下一張載入隱藏的緩衝槽；解碼完成前保留目前健康背景，不做過場動畫。
  */
 function applyStandbyBackgroundSource(nextUrl) {
+  // 設定更新可能在轉場中途重設來源；舊世代動畫必須立即失效。
+  cancelStandbySandTransition();
+
   if (nextUrl === null) {
     clearStandbyBackgroundImages();
     elements.stage.dataset.standbyBackgroundState = 'disabled';
@@ -791,10 +1018,9 @@ function applyDisplaySettings(snapshot) {
 function renderBlank(snapshot) {
   clearVisualLayers();
   applyEmergencyBackground(null);
-  updateAnnouncement('歡迎光臨', 'polite');
+  updateAnnouncement('', 'off');
   elements.normalLayer.hidden = false;
   elements.pageLayer.hidden = true;
-  elements.standbyLayer.hidden = false;
   elements.fillLayer.hidden = true;
   elements.stage.dataset.mode = 'blank';
   delete elements.stage.dataset.emergencyTone;
@@ -812,12 +1038,16 @@ function renderPage(snapshot) {
   );
   elements.fillLayer.hidden = true;
   elements.normalLayer.hidden = false;
-  elements.standbyLayer.hidden = true;
   elements.pageLayer.hidden = false;
   elements.pageLayer.style.setProperty(
     '--row-count',
     String(snapshot.messages.length),
   );
+  elements.pageLayer.dataset.layout = snapshot.messages.every(
+    ({ alignment }) => alignment === 'center',
+  )
+    ? 'operation'
+    : 'messages';
 
   const fragment = document.createDocumentFragment();
 
@@ -845,7 +1075,6 @@ function renderEmergency(snapshot) {
   updateAnnouncement(message, 'assertive');
   elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
-  elements.standbyLayer.hidden = true;
   elements.fillLayer.hidden = false;
   applyEmergencyBackground(snapshot.emergencyTone);
   elements.stage.dataset.emergencyTone = snapshot.emergencyTone;
@@ -973,6 +1202,7 @@ window.addEventListener(
     unsubscribeRefitRequested = null;
     clock.dispose();
     standbyBackgroundPlayer.dispose();
+    sandTransition.dispose();
     resizeObserver.disconnect();
     elements.logo.removeEventListener('load', handleLogoLoad);
     elements.logo.removeEventListener('error', handleLogoError);

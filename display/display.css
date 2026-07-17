@@ -140,6 +140,7 @@ body {
 .standby-background-layer::after {
   position: absolute;
   inset: 0;
+  z-index: 2;
   content: "";
   background: var(--standby-scrim);
 }
@@ -154,9 +155,17 @@ body {
   object-position: center;
 }
 
+/* 舊圖在 Canvas 中由左向右碎裂；新圖保持在下層，逐步被揭露。 */
+.standby-sand-transition {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  inline-size: 100%;
+  block-size: 100%;
+}
+
 .display-chrome,
 .page-layer,
-.standby-layer,
 .display-clock {
   z-index: 2;
 }
@@ -167,16 +176,16 @@ body {
   gap: 0;
 }
 
-/* 待機時只呈現置中的歡迎文字與時間，不建立假的播放訊息。 */
+/* 待機時只呈現置中的時間；啟用 Logo 時排列於時間上方。 */
 .display-stage[data-mode="blank"] .normal-layer {
-  grid-template-rows: auto auto;
+  grid-template-rows: auto;
   gap: clamp(1rem, 3.5cqh, 8rem);
   place-content: center;
   place-items: center;
 }
 
 .display-stage[data-mode="blank"] .normal-layer.has-logo {
-  grid-template-rows: auto auto auto;
+  grid-template-rows: auto auto;
 }
 
 .display-stage[data-mode="blank"] .display-chrome {
@@ -188,27 +197,6 @@ body {
   --logo-mode-size-scale: var(--logo-standby-size-scale);
   justify-self: center;
   place-items: center;
-}
-
-.standby-layer {
-  display: grid;
-  max-inline-size: 100%;
-  place-items: center;
-}
-
-.standby-message {
-  margin: 0;
-  color: inherit;
-  font-size: clamp(
-    4rem,
-    calc(14cqmin * var(--message-font-scale)),
-    24rem
-  );
-  font-weight: 800;
-  letter-spacing: 0.04em;
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
 }
 
 .display-chrome {
@@ -303,10 +291,12 @@ body {
 .display-stage[data-mode="blank"] .display-clock {
   position: static;
   font-size: clamp(
-    2.5rem,
-    calc(7cqmin * var(--message-font-scale)),
-    14rem
+    4rem,
+    calc(14cqmin * var(--message-font-scale)),
+    24rem
   );
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-align: center;
 }
 
@@ -330,9 +320,14 @@ body {
   );
 }
 
+/* 一般訊息永遠占用固定三槽，數量少時不放大、也不垂直置中。 */
+.page-layer[data-layout="messages"] {
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+}
+
 .message-row {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: flex-start;
   min-inline-size: 0;
   min-block-size: 0;
@@ -347,6 +342,7 @@ body {
 }
 
 .message-row[data-alignment="center"] {
+  align-items: center;
   justify-content: center;
   text-align: center;
 }
