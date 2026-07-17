@@ -70,7 +70,7 @@ test('有效使用者設定支援 UTF-8 BOM，載入時不擅自重寫檔案', a
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 v1 使用者設定在記憶體升級為 v3且不擅自覆寫原檔', async (t) => {
+test('既有 v1 使用者設定在記憶體升級為 v4且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 1,
@@ -94,7 +94,7 @@ test('既有 v1 使用者設定在記憶體升級為 v3且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 3);
+  assert.equal(snapshot.config.configVersion, 4);
   assert.equal(snapshot.config.appearance.backgroundColor, '#123ABC');
   assert.equal(snapshot.config.appearance.fontColor, '#FEDCBA');
   assert.equal(snapshot.config.appearance.fontSizePercent, 100);
@@ -104,6 +104,7 @@ test('既有 v1 使用者設定在記憶體升級為 v3且不擅自覆寫原檔'
     offsetSeconds: 0,
   });
   assert.deepEqual(snapshot.config.emergency, snapshot.defaults.emergency);
+  assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
   assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -114,12 +115,12 @@ test('既有 v1 使用者設定在記憶體升級為 v3且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    3,
+    4,
   );
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v2 使用者設定在記憶體升級為 v3且不擅自覆寫原檔', async (t) => {
+test('既有 v2 使用者設定在記憶體升級為 v4且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 2,
@@ -149,13 +150,14 @@ test('既有 v2 使用者設定在記憶體升級為 v3且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 3);
+  assert.equal(snapshot.config.configVersion, 4);
   assert.equal(snapshot.config.appearance.backgroundColor, '#234BCD');
   assert.equal(snapshot.config.appearance.fontColor, '#EDCB98');
   assert.deepEqual(snapshot.config.dateTime, {
     enabled: false,
     offsetSeconds: 0,
   });
+  assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
   assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
@@ -166,8 +168,57 @@ test('既有 v2 使用者設定在記憶體升級為 v3且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    3,
+    4,
   );
+  assert.equal(saved.revision, 1);
+});
+
+test('既有 v3 使用者設定在記憶體升級為 v4且只補播放設定', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const legacy = {
+    configVersion: 3,
+    logo: { enabled: false, path: null },
+    appearance: {
+      backgroundColor: '#345cde',
+      fontFamily: 'Noto Sans TC, sans-serif',
+      fontColor: '#dcba87',
+      minimumFontSizeRem: 3.75,
+      fontSizePercent: 130,
+      lineSpacingPercent: 155,
+    },
+    dateTime: { enabled: true, offsetSeconds: 3_661 },
+    emergency: {
+      inspectionBackgroundColor: '#6f1c1c',
+      releaseBackgroundColor: '#13522c',
+    },
+    marquee: { enabled: false },
+    display: {
+      selectionMode: 'manual',
+      defaultDisplayId: 42,
+      fullscreen: false,
+      renderResolution: '2560x1440',
+    },
+  };
+  const originalText = `\uFEFF${JSON.stringify(legacy)}`;
+  await fileSystem.writeFile(configPath, originalText, 'utf8');
+
+  const snapshot = await manager.initialize();
+
+  assert.equal(snapshot.config.configVersion, 4);
+  assert.equal(snapshot.config.appearance.backgroundColor, '#345CDE');
+  assert.equal(snapshot.config.appearance.fontColor, '#DCBA87');
+  assert.deepEqual(snapshot.config.playback, snapshot.defaults.playback);
+  assert.deepEqual(snapshot.config.display, legacy.display);
+  assert.equal(snapshot.notice, null);
+  assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
+
+  const saved = await manager.saveConfig(
+    structuredClone(snapshot.config),
+    snapshot.revision,
+  );
+  const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
+  assert.equal(persisted.configVersion, 4);
+  assert.deepEqual(persisted.playback, snapshot.defaults.playback);
   assert.equal(saved.revision, 1);
 });
 

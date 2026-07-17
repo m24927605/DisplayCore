@@ -17,10 +17,10 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV3Config() {
+function createV4Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 3,
+    configVersion: 4,
     dateTime: { enabled: false, offsetSeconds: 0 },
     display: {
       ...defaultConfig.display,
@@ -30,7 +30,7 @@ function createV3Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV3Config();
+  const config = createV4Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
@@ -49,6 +49,11 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
     releaseBackgroundColor: '#14532D',
   };
   config.marquee = { enabled: false };
+  config.playback = {
+    pageDurationSeconds: 8,
+    repeatMode: 'continuous',
+    roundCount: 7,
+  };
   config.display = {
     selectionMode: 'manual',
     defaultDisplayId: 42,
@@ -61,7 +66,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 3,
+    configVersion: 4,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -92,6 +97,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.isFrozen(projected.display), true);
   assert.equal(Object.hasOwn(projected, 'defaults'), false);
   assert.equal(Object.hasOwn(projected, 'notice'), false);
+  assert.equal(Object.hasOwn(projected, 'playback'), false);
   assert.deepEqual(Object.keys(projected.display), ['renderResolution']);
   assert.equal(Object.hasOwn(projected.display, 'selectionMode'), false);
   assert.equal(Object.hasOwn(projected.display, 'defaultDisplayId'), false);
@@ -101,7 +107,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
 });
 
 test('停用 Logo 時只發布 null URL，即使設定仍保留受管理識別', () => {
-  const config = createV3Config();
+  const config = createV4Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
@@ -113,22 +119,32 @@ test('停用 Logo 時只發布 null URL，即使設定仍保留受管理識別',
 
 test('投影拒絕不合法 revision、設定內容與非雜湊 Logo 識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV3Config(), -1),
-    createManagerSnapshot(createV3Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV3Config(), unknown: true }, 0),
+    createManagerSnapshot(createV4Config(), -1),
+    createManagerSnapshot(createV4Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV4Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV3Config(),
+        ...createV4Config(),
         logo: { enabled: true, path: 'logos/operator-logo.png' },
       },
       0,
     ),
     createManagerSnapshot(
       {
-        ...createV3Config(),
+        ...createV4Config(),
         display: {
-          ...createV3Config().display,
+          ...createV4Config().display,
           renderResolution: '1280x720',
+        },
+      },
+      0,
+    ),
+    createManagerSnapshot(
+      {
+        ...createV4Config(),
+        playback: {
+          ...createV4Config().playback,
+          pageDurationSeconds: 0,
         },
       },
       0,

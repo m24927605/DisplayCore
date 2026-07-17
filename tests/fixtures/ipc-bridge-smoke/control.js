@@ -83,13 +83,28 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV3(config, offsetSeconds, renderResolution) {
+function hasExpectedConfigV4(
+  config,
+  offsetSeconds,
+  renderResolution,
+  pageDurationSeconds,
+  repeatMode,
+  roundCount,
+) {
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 3 &&
+    config.configVersion === 4 &&
     config.dateTime?.enabled === true &&
     config.dateTime?.offsetSeconds === offsetSeconds &&
+    hasExactKeys(config.playback, [
+      'pageDurationSeconds',
+      'repeatMode',
+      'roundCount',
+    ]) &&
+    config.playback.pageDurationSeconds === pageDurationSeconds &&
+    config.playback.repeatMode === repeatMode &&
+    config.playback.roundCount === roundCount &&
     config.display?.renderResolution === renderResolution
   );
 }
@@ -99,13 +114,23 @@ function isExpectedSettingsSnapshot(
   revision,
   offsetSeconds,
   renderResolution,
+  pageDurationSeconds,
+  repeatMode,
+  roundCount,
 ) {
   return (
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV3(snapshot.config, offsetSeconds, renderResolution) &&
-    hasExpectedConfigV3(snapshot.defaults, 0, 'auto')
+    hasExpectedConfigV4(
+      snapshot.config,
+      offsetSeconds,
+      renderResolution,
+      pageDurationSeconds,
+      repeatMode,
+      roundCount,
+    ) &&
+    hasExpectedConfigV4(snapshot.defaults, 0, 'auto', 3, 'finite', 1)
   );
 }
 
@@ -115,7 +140,15 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     if (
       !loadedSettings.ok ||
-      !isExpectedSettingsSnapshot(loadedSettings.data, 0, 0, 'auto')
+      !isExpectedSettingsSnapshot(
+        loadedSettings.data,
+        0,
+        0,
+        'auto',
+        3,
+        'finite',
+        1,
+      )
     ) {
       document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';
       return;
@@ -123,6 +156,9 @@ window.addEventListener('DOMContentLoaded', async () => {
 
     const nextConfig = structuredClone(loadedSettings.data.config);
     nextConfig.dateTime.offsetSeconds = 3_661;
+    nextConfig.playback.pageDurationSeconds = 8;
+    nextConfig.playback.repeatMode = 'continuous';
+    nextConfig.playback.roundCount = 7;
     nextConfig.display.renderResolution = '2560x1440';
     const savedSettings = await window.displayCoreControl.saveSettings(
       nextConfig,
@@ -136,6 +172,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         1,
         3_661,
         '2560x1440',
+        8,
+        'continuous',
+        7,
       )
     ) {
       document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';

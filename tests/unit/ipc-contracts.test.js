@@ -339,15 +339,53 @@ test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推
   }
 });
 
-test('設定儲存只接受完整 config 與目前 revision', () => {
+test('設定儲存接受完整 v4 config、有限／持續播放偏好與目前 revision', () => {
+  const finiteConfig = structuredClone(defaultConfig);
+  finiteConfig.playback = {
+    pageDurationSeconds: 8,
+    repeatMode: 'finite',
+    roundCount: 7,
+  };
+  const continuousConfig = structuredClone(defaultConfig);
+  continuousConfig.playback = {
+    pageDurationSeconds: 12,
+    repeatMode: 'continuous',
+    roundCount: 9,
+  };
   const valid = validateSaveSettingsPayload({
-    config: defaultConfig,
+    config: finiteConfig,
     expectedRevision: 0,
+  });
+  const continuous = validateSaveSettingsPayload({
+    config: continuousConfig,
+    expectedRevision: 1,
   });
 
   assert.equal(valid.ok, true);
-  assert.notEqual(valid.value.config, defaultConfig);
+  assert.notEqual(valid.value.config, finiteConfig);
+  assert.deepEqual(valid.value.config.playback, finiteConfig.playback);
   assert.equal(valid.value.expectedRevision, 0);
+  assert.equal(continuous.ok, true);
+  assert.deepEqual(continuous.value.config.playback, continuousConfig.playback);
+  assert.equal(continuous.value.expectedRevision, 1);
+
+  const { playback: _playback, ...missingPlayback } = defaultConfig;
+  const invalidPlaybackConfigs = [
+    missingPlayback,
+    { ...defaultConfig, playback: { ...defaultConfig.playback, extra: true } },
+    {
+      ...defaultConfig,
+      playback: { ...defaultConfig.playback, pageDurationSeconds: 0 },
+    },
+    {
+      ...defaultConfig,
+      playback: { ...defaultConfig.playback, repeatMode: 'unknown' },
+    },
+    {
+      ...defaultConfig,
+      playback: { ...defaultConfig.playback, roundCount: 1_000 },
+    },
+  ];
 
   for (const payload of [
     null,
@@ -359,6 +397,10 @@ test('設定儲存只接受完整 config 與目前 revision', () => {
       config: { ...defaultConfig, unknown: true },
       expectedRevision: 0,
     },
+    ...invalidPlaybackConfigs.map((config) => ({
+      config,
+      expectedRevision: 0,
+    })),
   ]) {
     const result = validateSaveSettingsPayload(payload);
     assert.equal(result.ok, false);

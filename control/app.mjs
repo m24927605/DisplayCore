@@ -81,7 +81,6 @@ const uiState = {
   activeMessages: Object.freeze([]),
   listPageNumber: 1,
   lastListContentRevision: -1,
-  lastPlaybackContentRevision: -1,
   pendingEmergency: null,
   inspectionClosing: false,
   inspectionReopenButton: null,
@@ -365,33 +364,6 @@ function renderLiveStatus(snapshot) {
   elements.liveEmpty.hidden = visibleMessages.length > 0;
 }
 
-/**
- * 只在內容版本改變時同步 Main 正在使用的播放參數。
- * 單純翻頁不可覆蓋操作員尚未用於下一次顯示的新草稿。
- */
-function synchronizePlayback(snapshot) {
-  if (
-    snapshot.mode !== 'page' ||
-    snapshot.contentRevision === uiState.lastPlaybackContentRevision
-  ) {
-    return;
-  }
-
-  uiState.lastPlaybackContentRevision = snapshot.contentRevision;
-  elements.pageDurationInput.value = String(snapshot.pageDurationSeconds);
-  const mode = snapshot.totalRounds === null
-    ? PLAYBACK_MODES.CONTINUOUS
-    : PLAYBACK_MODES.FINITE;
-  const input = getRepeatModeInputs().find(({ value }) => value === mode);
-  if (input) {
-    input.checked = true;
-  }
-  if (snapshot.totalRounds !== null) {
-    elements.roundCountInput.value = String(snapshot.totalRounds);
-  }
-  updateRepeatControls();
-}
-
 /** 將 Control 專用的完整 active snapshot 投影為「電視當前頁」最多三則。 */
 function renderPresentation(snapshot) {
   const previousMessageCount = uiState.activeMessages.length;
@@ -402,7 +374,6 @@ function renderPresentation(snapshot) {
     ? Object.freeze(snapshot.messages.map(({ message, alignment }) =>
       Object.freeze({ message, alignment })))
     : Object.freeze([]);
-  synchronizePlayback(snapshot);
   renderLiveStatus(snapshot);
 
   if (contentChanged) {
@@ -797,7 +768,11 @@ async function boot() {
   void outputController.start();
 
   uiState.controller = createControlController({ api, view: createView() });
-  uiState.ready = await uiState.controller.start();
+  const [settingsReady, presentationReady] = await Promise.all([
+    settingsController.loadSettings(),
+    uiState.controller.start(),
+  ]);
+  uiState.ready = settingsReady && presentationReady;
   setMutationControls();
 
   window.addEventListener('beforeunload', () => {

@@ -6,6 +6,7 @@ const CONFIG_KEYS = Object.freeze([
   'emergency',
   'logo',
   'marquee',
+  'playback',
 ]);
 const SNAPSHOT_KEYS = Object.freeze([
   'config',
@@ -37,7 +38,13 @@ export const SETTINGS_LIMITS = Object.freeze({
   PERCENTAGE_STEP: 5,
   MINIMUM_CLOCK_OFFSET_SECONDS: -43_199,
   MAXIMUM_CLOCK_OFFSET_SECONDS: 43_200,
+  MINIMUM_PAGE_DURATION_SECONDS: 1,
+  MAXIMUM_PAGE_DURATION_SECONDS: 3_600,
+  MINIMUM_ROUND_COUNT: 1,
+  MAXIMUM_ROUND_COUNT: 999,
 });
+
+const PLAYBACK_MODES = Object.freeze(['finite', 'continuous']);
 
 const RENDER_RESOLUTIONS = Object.freeze([
   'auto',
@@ -80,6 +87,7 @@ function freezeConfig(config) {
     'dateTime',
     'emergency',
     'marquee',
+    'playback',
     'display',
   ]) {
     Object.freeze(config[section]);
@@ -90,7 +98,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 3) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 4) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -239,6 +247,44 @@ function normalizeConfig(candidate) {
     return failure('marquee.enabled', '跑馬燈設定格式不正確。');
   }
 
+  const playback = candidate.playback;
+
+  if (
+    !hasExactKeys(playback, [
+      'pageDurationSeconds',
+      'repeatMode',
+      'roundCount',
+    ])
+  ) {
+    return failure('playback', '訊息播放設定格式不正確。');
+  }
+
+  if (
+    !Number.isSafeInteger(playback.pageDurationSeconds) ||
+    playback.pageDurationSeconds < SETTINGS_LIMITS.MINIMUM_PAGE_DURATION_SECONDS ||
+    playback.pageDurationSeconds > SETTINGS_LIMITS.MAXIMUM_PAGE_DURATION_SECONDS
+  ) {
+    return failure(
+      'playback.pageDurationSeconds',
+      '每頁顯示秒數必須是 1 至 3600 的整數。',
+    );
+  }
+
+  if (!PLAYBACK_MODES.includes(playback.repeatMode)) {
+    return failure('playback.repeatMode', '請選擇有效的播放方式。');
+  }
+
+  if (
+    !Number.isSafeInteger(playback.roundCount) ||
+    playback.roundCount < SETTINGS_LIMITS.MINIMUM_ROUND_COUNT ||
+    playback.roundCount > SETTINGS_LIMITS.MAXIMUM_ROUND_COUNT
+  ) {
+    return failure(
+      'playback.roundCount',
+      '整輪顯示次數必須是 1 至 999 的整數。',
+    );
+  }
+
   const display = candidate.display;
   const isAuto = display?.selectionMode === 'auto';
   const isManual = display?.selectionMode === 'manual';
@@ -264,7 +310,7 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 3,
+      configVersion: 4,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -288,6 +334,11 @@ function normalizeConfig(candidate) {
           emergency.releaseBackgroundColor.toUpperCase(),
       },
       marquee: { enabled: candidate.marquee.enabled },
+      playback: {
+        pageDurationSeconds: playback.pageDurationSeconds,
+        repeatMode: playback.repeatMode,
+        roundCount: playback.roundCount,
+      },
       display: {
         selectionMode: display.selectionMode,
         defaultDisplayId: display.defaultDisplayId,
@@ -354,6 +405,9 @@ export function buildSettingsDraft({
   dateTimeEnabled,
   dateTimeOffsetSeconds,
   marqueeEnabled,
+  pageDurationSeconds,
+  repeatMode,
+  roundCount,
   renderResolution,
 }) {
   const baselineResult = normalizeConfig(baseline);
@@ -375,6 +429,8 @@ export function buildSettingsDraft({
   for (const [value, field, label] of [
     [fontSizePercent, 'appearance.fontSizePercent', '字體大小'],
     [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
+    [pageDurationSeconds, 'playback.pageDurationSeconds', '每頁顯示秒數'],
+    [roundCount, 'playback.roundCount', '整輪顯示次數'],
   ]) {
     if (typeof value !== 'string' || !INTEGER_NUMBER.test(value)) {
       return failure(field, `${label}必須是一般十進位整數。`);
@@ -382,7 +438,7 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 3,
+    configVersion: 4,
     logo: { enabled: logoEnabled, path: logoPath },
     appearance: {
       backgroundColor,
@@ -401,6 +457,11 @@ export function buildSettingsDraft({
       releaseBackgroundColor,
     },
     marquee: { enabled: marqueeEnabled },
+    playback: {
+      pageDurationSeconds: Number(pageDurationSeconds),
+      repeatMode,
+      roundCount: Number(roundCount),
+    },
     // 輸出螢幕仍自動管理；Control 只可修改邏輯排版解析度。
     display: {
       ...baselineResult.value.display,

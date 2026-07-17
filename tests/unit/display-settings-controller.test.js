@@ -9,7 +9,7 @@ async function loadModule() {
 
 function createSnapshot(revision = 0, backgroundColor = '#000000') {
   return {
-    configVersion: 3,
+    configVersion: 4,
     logo: { enabled: false, url: null },
     appearance: {
       backgroundColor,
@@ -104,6 +104,14 @@ test('快速設定事件只套用最高 revision，畸形資料保留最後有�
   harness.emit(createSnapshot(3, '#333333'));
   harness.emit(createSnapshot(2, '#222222'));
   harness.emit({ ...createSnapshot(4), unknown: true });
+  harness.emit({
+    ...createSnapshot(4),
+    playback: {
+      pageDurationSeconds: 3,
+      repeatMode: 'finite',
+      roundCount: 1,
+    },
+  });
   harness.emit(createSnapshot(5, '#555555'));
   harness.emit(createSnapshot(5, '#FFFFFF'));
 

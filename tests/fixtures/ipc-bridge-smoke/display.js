@@ -80,7 +80,8 @@ function isExpectedSettingsSnapshot(snapshot) {
       'marquee',
       'revision',
     ]) &&
-    snapshot.configVersion === 3 &&
+    snapshot.configVersion === 4 &&
+    !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'url']) &&
     snapshot.logo.enabled === false &&

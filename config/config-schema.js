@@ -1,6 +1,11 @@
 'use strict';
 
-const CONFIG_VERSION = 3;
+const CONFIG_VERSION = 4;
+
+const PLAYBACK_MODES = Object.freeze({
+  FINITE: 'finite',
+  CONTINUOUS: 'continuous',
+});
 
 const DISPLAY_SELECTION_MODES = Object.freeze({
   AUTO: 'auto',
@@ -21,6 +26,10 @@ const CONFIG_LIMITS = Object.freeze({
   PERCENTAGE_STEP: 5,
   MINIMUM_CLOCK_OFFSET_SECONDS: -43_199,
   MAXIMUM_CLOCK_OFFSET_SECONDS: 43_200,
+  MINIMUM_PAGE_DURATION_SECONDS: 1,
+  MAXIMUM_PAGE_DURATION_SECONDS: 3_600,
+  MINIMUM_ROUND_COUNT: 1,
+  MAXIMUM_ROUND_COUNT: 999,
 });
 
 const RENDER_RESOLUTIONS = Object.freeze([
@@ -40,6 +49,7 @@ const CONFIG_KEYS = Object.freeze([
   'emergency',
   'logo',
   'marquee',
+  'playback',
 ]);
 const LOGO_KEYS = Object.freeze(['enabled', 'path']);
 const APPEARANCE_KEYS = Object.freeze([
@@ -56,6 +66,11 @@ const EMERGENCY_KEYS = Object.freeze([
   'releaseBackgroundColor',
 ]);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
+const PLAYBACK_KEYS = Object.freeze([
+  'pageDurationSeconds',
+  'repeatMode',
+  'roundCount',
+]);
 const DISPLAY_KEYS = Object.freeze([
   'defaultDisplayId',
   'fullscreen',
@@ -265,6 +280,30 @@ function validateMarquee(marquee) {
   return { ok: true, value: { enabled: marquee.enabled } };
 }
 
+function validatePlayback(playback) {
+  if (
+    !hasExactKeys(playback, PLAYBACK_KEYS) ||
+    !Number.isSafeInteger(playback.pageDurationSeconds) ||
+    playback.pageDurationSeconds < CONFIG_LIMITS.MINIMUM_PAGE_DURATION_SECONDS ||
+    playback.pageDurationSeconds > CONFIG_LIMITS.MAXIMUM_PAGE_DURATION_SECONDS ||
+    !Object.values(PLAYBACK_MODES).includes(playback.repeatMode) ||
+    !Number.isSafeInteger(playback.roundCount) ||
+    playback.roundCount < CONFIG_LIMITS.MINIMUM_ROUND_COUNT ||
+    playback.roundCount > CONFIG_LIMITS.MAXIMUM_ROUND_COUNT
+  ) {
+    return validationFailure('訊息播放設定格式不正確。', 'playback');
+  }
+
+  return {
+    ok: true,
+    value: {
+      pageDurationSeconds: playback.pageDurationSeconds,
+      repeatMode: playback.repeatMode,
+      roundCount: playback.roundCount,
+    },
+  };
+}
+
 function validateDisplay(display) {
   if (
     !hasExactKeys(display, DISPLAY_KEYS) ||
@@ -314,6 +353,7 @@ function freezeConfig(config) {
     'dateTime',
     'emergency',
     'marquee',
+    'playback',
     'display',
   ]) {
     Object.freeze(config[section]);
@@ -322,7 +362,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v3。 */
+/** 驗證、正規化並深層複製完整的 canonical config v4。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -340,6 +380,7 @@ function validateConfig(candidate) {
   const dateTime = validateDateTime(candidate.dateTime);
   const emergency = validateEmergency(candidate.emergency);
   const marquee = validateMarquee(candidate.marquee);
+  const playback = validatePlayback(candidate.playback);
   const display = validateDisplay(candidate.display);
 
   for (const result of [
@@ -348,6 +389,7 @@ function validateConfig(candidate) {
     dateTime,
     emergency,
     marquee,
+    playback,
     display,
   ]) {
     if (!result.ok) {
@@ -364,6 +406,7 @@ function validateConfig(candidate) {
       dateTime: dateTime.value,
       emergency: emergency.value,
       marquee: marquee.value,
+      playback: playback.value,
       display: display.value,
     }),
   };
@@ -373,6 +416,7 @@ module.exports = {
   CONFIG_LIMITS,
   CONFIG_VERSION,
   DISPLAY_SELECTION_MODES,
+  PLAYBACK_MODES,
   RENDER_RESOLUTIONS,
   validateConfig,
 };

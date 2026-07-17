@@ -78,6 +78,15 @@ test('載入設定時驗證 snapshot，再交給 view 建立基準與預設值',
   assert.equal(loaded, true);
   assert.equal(harness.calls.snapshots.length, 1);
   assert.equal(harness.calls.snapshots[0].revision, 0);
+  assert.equal(harness.calls.snapshots[0].config.configVersion, 4);
+  assert.deepEqual(
+    harness.calls.snapshots[0].config.playback,
+    defaultConfig.playback,
+  );
+  assert.equal(
+    Object.isFrozen(harness.calls.snapshots[0].config.playback),
+    true,
+  );
   assert.deepEqual(harness.calls.busy, [
     { value: true, operation: 'load' },
     { value: false, operation: 'load' },
@@ -101,18 +110,61 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   const controller = createSettingsController(harness);
   const config = structuredClone(defaultConfig);
   config.marquee.enabled = false;
+  config.playback = {
+    pageDurationSeconds: 9,
+    repeatMode: 'continuous',
+    roundCount: 12,
+  };
 
   const first = controller.saveSettings(config, 4);
   const second = controller.saveSettings(config, 4);
 
   assert.equal(await second, false);
   assert.equal(saveCalls.length, 1);
+  assert.deepEqual(saveCalls[0], { config, expectedRevision: 4 });
   resolveSave({ ok: true, data: createSnapshot(5, config) });
   assert.equal(await first, true);
   assert.equal(harness.calls.snapshots.at(-1).revision, 5);
+  assert.deepEqual(
+    harness.calls.snapshots.at(-1).config.playback,
+    config.playback,
+  );
+  assert.notEqual(harness.calls.snapshots.at(-1).config.playback, config.playback);
+  assert.equal(
+    Object.isFrozen(harness.calls.snapshots.at(-1).config.playback),
+    true,
+  );
   assert.deepEqual(harness.calls.statuses, [
     '設定已儲存並即時套用到顯示畫面。',
   ]);
+});
+
+test('儲存成功 envelope 仍必須是完整 playback v4 snapshot', async () => {
+  const { createSettingsController } = await loadModule();
+  const invalidConfigs = [
+    { ...defaultConfig, configVersion: 3 },
+    { ...defaultConfig, playback: { ...defaultConfig.playback, roundCount: 0 } },
+    { ...defaultConfig, playback: { ...defaultConfig.playback, extra: true } },
+  ];
+
+  for (const invalidConfig of invalidConfigs) {
+    const harness = createHarness({
+      async saveSettings() {
+        return {
+          ok: true,
+          data: createSnapshot(1, invalidConfig),
+        };
+      },
+    });
+    const controller = createSettingsController(harness);
+
+    assert.equal(await controller.saveSettings(defaultConfig, 0), false);
+    assert.deepEqual(harness.calls.errors, [{
+      message: '主程序回傳無效設定資料，請重新啟動 DisplayCore。',
+      field: undefined,
+    }]);
+    assert.equal(harness.calls.snapshots.length, 0);
+  }
 });
 
 test('設定驗證與 revision 衝突保留 Main 的安全欄位錯誤', async () => {

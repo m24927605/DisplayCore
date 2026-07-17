@@ -9,6 +9,7 @@ const {
   CONFIG_LIMITS,
   CONFIG_VERSION,
   DISPLAY_SELECTION_MODES,
+  PLAYBACK_MODES,
   validateConfig,
 } = require('../../config/config-schema');
 
@@ -28,11 +29,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v3 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v4 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 3);
+  assert.equal(CONFIG_VERSION, 4);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
@@ -43,6 +44,7 @@ test('根目錄 config.json 通過 v3 schema，回傳深層凍結副本', async 
   assert.equal(Object.isFrozen(result.value.emergency), true);
   assert.equal(Object.isFrozen(result.value.dateTime), true);
   assert.equal(Object.isFrozen(result.value.marquee), true);
+  assert.equal(Object.isFrozen(result.value.playback), true);
   assert.equal(Object.isFrozen(result.value.display), true);
 });
 
@@ -74,12 +76,65 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, unexpected: true },
     { ...source, configVersion: 1 },
     { ...source, configVersion: 2 },
-    { ...source, configVersion: 4 },
+    { ...source, configVersion: 3 },
+    { ...source, configVersion: 5 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
     assert.equal(result.ok, false);
     assert.equal(result.error.code, 'VALIDATION_FAILED');
+  }
+});
+
+test('播放設定接受有限／持續模式及邊界值，並保留有限輪播偏好', async () => {
+  const source = await readDefaultConfig();
+
+  for (const playback of [
+    {
+      pageDurationSeconds: CONFIG_LIMITS.MINIMUM_PAGE_DURATION_SECONDS,
+      repeatMode: PLAYBACK_MODES.FINITE,
+      roundCount: CONFIG_LIMITS.MINIMUM_ROUND_COUNT,
+    },
+    {
+      pageDurationSeconds: CONFIG_LIMITS.MAXIMUM_PAGE_DURATION_SECONDS,
+      repeatMode: PLAYBACK_MODES.CONTINUOUS,
+      roundCount: CONFIG_LIMITS.MAXIMUM_ROUND_COUNT,
+    },
+  ]) {
+    const result = validateConfig({ ...source, playback });
+
+    assert.equal(result.ok, true, JSON.stringify(playback));
+    assert.deepEqual(result.value.playback, playback);
+  }
+});
+
+test('播放設定拒絕缺少／多餘欄位、錯誤型別與超出資源上限', async () => {
+  const source = await readDefaultConfig();
+  const valid = source.playback;
+  const { pageDurationSeconds: _duration, ...missingDuration } = valid;
+  const { repeatMode: _repeatMode, ...missingMode } = valid;
+  const { roundCount: _roundCount, ...missingRoundCount } = valid;
+  const invalidPlaybackValues = [
+    missingDuration,
+    missingMode,
+    missingRoundCount,
+    { ...valid, unexpected: true },
+    { ...valid, pageDurationSeconds: 0 },
+    { ...valid, pageDurationSeconds: 3_601 },
+    { ...valid, pageDurationSeconds: 1.5 },
+    { ...valid, pageDurationSeconds: '3' },
+    { ...valid, repeatMode: 'unknown' },
+    { ...valid, roundCount: 0 },
+    { ...valid, roundCount: 1_000 },
+    { ...valid, roundCount: 1.5 },
+    { ...valid, roundCount: '1' },
+  ];
+
+  for (const playback of invalidPlaybackValues) {
+    const result = validateConfig({ ...source, playback });
+
+    assert.equal(result.ok, false, JSON.stringify(playback));
+    assert.equal(result.error.field, 'playback');
   }
 });
 

@@ -28,6 +28,7 @@ export function createSettingsView({
     form: document.getElementById('settings-form'),
     body: document.querySelector('.settings-dialog-body'),
     fieldsets: Object.freeze([
+      document.getElementById('playback-settings-fieldset'),
       document.getElementById('logo-settings-fieldset'),
       document.getElementById('appearance-settings-fieldset'),
       document.getElementById('behavior-settings-fieldset'),
@@ -84,6 +85,19 @@ export function createSettingsView({
     loadDefaultsButton: document.getElementById('load-defaults-button'),
     closeButton: document.getElementById('settings-close-button'),
     saveButton: document.getElementById('save-settings-button'),
+    pageDuration: document.getElementById('page-duration-input'),
+    pageDurationError: document.getElementById('page-duration-error'),
+    repeatModeFieldset: document.getElementById('repeat-mode-fieldset'),
+    repeatModeError: document.getElementById('repeat-error'),
+    repeatModeFinite: document.querySelector(
+      'input[name="repeat-mode"][value="finite"]',
+    ),
+    repeatModeContinuous: document.querySelector(
+      'input[name="repeat-mode"][value="continuous"]',
+    ),
+    roundCountField: document.getElementById('round-count-field'),
+    roundCount: document.getElementById('round-count-input'),
+    roundCountError: document.getElementById('round-count-error'),
   });
 
   const required = [
@@ -150,6 +164,19 @@ export function createSettingsView({
     'display.renderResolution': [
       elements.renderResolution,
       elements.renderResolutionError,
+    ],
+    playback: [elements.pageDuration, elements.pageDurationError],
+    'playback.pageDurationSeconds': [
+      elements.pageDuration,
+      elements.pageDurationError,
+    ],
+    'playback.repeatMode': [
+      elements.repeatModeFieldset,
+      elements.repeatModeError,
+    ],
+    'playback.roundCount': [
+      elements.roundCount,
+      elements.roundCountError,
     ],
   });
 
@@ -228,6 +255,11 @@ export function createSettingsView({
       dateTimeEnabled: elements.dateTimeEnabled.checked,
       dateTimeOffsetSeconds: clockOffsetSeconds,
       marqueeEnabled: elements.marqueeEnabled.checked,
+      pageDurationSeconds: elements.pageDuration.value,
+      repeatMode: elements.repeatModeContinuous.checked
+        ? 'continuous'
+        : 'finite',
+      roundCount: elements.roundCount.value,
       renderResolution: elements.renderResolution.value,
     });
   }
@@ -321,6 +353,21 @@ export function createSettingsView({
     elements.dateTimeEnabled.checked = config.dateTime.enabled;
     elements.renderResolution.value = config.display.renderResolution;
     elements.marqueeEnabled.checked = config.marquee.enabled;
+    elements.pageDuration.value = String(
+      config.playback.pageDurationSeconds,
+    );
+    elements.repeatModeFinite.checked =
+      config.playback.repeatMode === 'finite';
+    elements.repeatModeContinuous.checked =
+      config.playback.repeatMode === 'continuous';
+    elements.roundCount.value = String(config.playback.roundCount);
+    renderPlaybackMode();
+  }
+
+  function renderPlaybackMode() {
+    const finite = elements.repeatModeFinite.checked;
+    elements.roundCountField.hidden = !finite;
+    elements.roundCount.disabled = !finite;
   }
 
   function handleDraftInput() {
@@ -336,6 +383,12 @@ export function createSettingsView({
   function closeDialog() {
     if (!elements.dialog.open || state.busy) {
       return;
+    }
+
+    if (state.dirty && state.baseline) {
+      clearSettingsErrors();
+      renderConfig(state.baseline);
+      setDirty(false);
     }
 
     state.closing = true;
@@ -474,6 +527,8 @@ export function createSettingsView({
       elements.dateTimeEnabled,
       elements.renderResolution,
       elements.marqueeEnabled,
+      elements.pageDuration,
+      elements.roundCount,
     ]) {
       control.addEventListener('input', handleDraftInput, { signal });
       control.addEventListener('change', handleDraftInput, { signal });
@@ -481,6 +536,15 @@ export function createSettingsView({
 
     elements.clockTime.addEventListener('input', handleClockInput, { signal });
     elements.clockTime.addEventListener('change', handleClockInput, { signal });
+    for (const control of [
+      elements.repeatModeFinite,
+      elements.repeatModeContinuous,
+    ]) {
+      control.addEventListener('change', () => {
+        renderPlaybackMode();
+        handleDraftInput();
+      }, { signal });
+    }
 
     elements.dialog.addEventListener('cancel', (event) => {
       event.preventDefault();
@@ -534,9 +598,12 @@ export function createSettingsView({
         control.setAttribute('aria-invalid', 'true');
         errorElement.textContent = message;
         errorElement.hidden = false;
-        focusWhenUnlocked(field === 'logo' || field === 'logo.path'
+        const focusTarget = field === 'logo' || field === 'logo.path'
           ? elements.chooseLogoButton
-          : control);
+          : field === 'playback.repeatMode'
+            ? elements.repeatModeFinite
+            : control;
+        focusWhenUnlocked(focusTarget);
       } else {
         focusWhenUnlocked(elements.error);
       }

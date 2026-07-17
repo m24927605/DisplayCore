@@ -430,6 +430,18 @@ async function openPlaybackSettings(settingsManager) {
   await setInput('page-duration-input', '4');
   await setInput('round-count-input', '2');
 
+  // Regression: ISSUE-001 — 播放設定變更未被納入系統設定 dirty state。
+  // Found by /qa on 2026-07-17
+  // Report: .gstack/qa-reports/qa-report-displaycore-electron-2026-07-17.md
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('save-settings-button').disabled === false &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '有未儲存變更'
+    )()`),
+    '播放設定變更啟用儲存按鈕',
+  );
+
   // 在播放數字欄按 Enter 不應誤存系統設定或關閉對話框。
   await execute(`document.getElementById('settings-form').requestSubmit()`);
   await new Promise((resolve) => setTimeout(resolve, 50));
@@ -484,6 +496,11 @@ async function openPlaybackSettings(settingsManager) {
     settingsManager.getSnapshot().config.display.renderResolution,
     'auto',
   );
+  assert.deepEqual(settingsManager.getSnapshot().config.playback, {
+    pageDurationSeconds: 4,
+    repeatMode: 'finite',
+    roundCount: 2,
+  });
 
   // 第二次開啟測試離線時間校正與邏輯排版解析度，避免與外觀草稿混淆。
   await click('open-settings-button');
@@ -494,6 +511,23 @@ async function openPlaybackSettings(settingsManager) {
     )()`),
     '重新載入時間與解析度設定',
   );
+  assert.deepEqual(await execute(`(() => ({
+    pageDuration: document.getElementById('page-duration-input').value,
+    rounds: document.getElementById('round-count-input').value,
+    finiteChecked: document.querySelector(
+      'input[name="repeat-mode"][value="finite"]'
+    ).checked,
+    saveDisabled:
+      document.getElementById('save-settings-button').disabled,
+    dirtyStatus:
+      document.getElementById('settings-dirty-status').textContent,
+  }))()`), {
+    pageDuration: '4',
+    rounds: '2',
+    finiteChecked: true,
+    saveDisabled: true,
+    dirtyStatus: '所有變更皆已儲存',
+  });
 
   await setInput('clock-time-input', '24:00:00');
   await click('save-settings-button');
@@ -564,6 +598,11 @@ async function openPlaybackSettings(settingsManager) {
     elapsedSeconds <= 5,
     `校正後時間應貼近輸入值，實際相差 ${elapsedSeconds} 秒`,
   );
+  assert.deepEqual(calibratedConfig.playback, {
+    pageDurationSeconds: 4,
+    repeatMode: 'finite',
+    roundCount: 2,
+  });
 }
 
 async function submitNormalMessage(recipient, action, expectedMessage) {
@@ -631,7 +670,7 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
 
   await openPlaybackSettings(settingsManager);
 
-  // 罐頭訊息直接顯示，沒有先加入本機待播清單的中間狀態。
+  // 儲存並重新開啟確認後，下一次顯示必須採用偏好的 4 秒／2 輪。
   await execute(`(() => {
     const button = document.getElementById('operation-quiet-button');
     button.focus();
@@ -658,6 +697,11 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     emergencyTone: null,
     revision: 1,
     contentRevision: 1,
+  });
+  assert.deepEqual(settingsManager.getSnapshot().config.playback, {
+    pageDurationSeconds: 4,
+    repeatMode: 'finite',
+    roundCount: 2,
   });
 
   await click('operation-quiet-button');
@@ -766,24 +810,75 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     '顯示清單獨立瀏覽第二頁',
   );
 
-  // 防護：無效播放秒數時按移除，只顯示欄位錯誤，不得送出或改變內容。
+  // 播放中的頁面不得回寫設定偏好；捨棄有效草稿後必須立刻回復 baseline。
   const beforeInvalidRemoval = structuredClone(store.getControlSnapshot());
   const startCallsBeforeInvalidRemoval = metrics.startProgramCalls;
-  await setInput('page-duration-input', '0');
-  await execute(`document.querySelector(
-    '#display-message-list .current-remove-button[data-message-index="3"]'
-  ).click()`);
+  await click('open-settings-button');
   await waitFor(
     () => execute(`(() =>
       document.getElementById('settings-dialog').open === true &&
       document.getElementById('settings-status').textContent === '設定已載入。' &&
+      document.getElementById('page-duration-input').value === '4' &&
+      document.getElementById('round-count-input').value === '2'
+    )()`),
+    '播放中重新載入已儲存的播放偏好',
+  );
+
+  await setInput('page-duration-input', '6');
+  await setInput('round-count-input', '3');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('save-settings-button').disabled === false &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '有未儲存變更' &&
+      document.getElementById('settings-close-button').textContent ===
+        '捨棄變更'
+    )()`),
+    '有效播放草稿標示為未儲存',
+  );
+  await click('settings-close-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open === false &&
+      document.getElementById('page-duration-input').value === '4' &&
+      document.getElementById('round-count-input').value === '2' &&
+      document.getElementById('settings-dirty-status').textContent ===
+        '所有變更皆已儲存'
+    )()`),
+    '捨棄播放草稿並回復 baseline',
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 2);
+  assert.deepEqual(settingsManager.getSnapshot().config.playback, {
+    pageDurationSeconds: 4,
+    repeatMode: 'finite',
+    roundCount: 2,
+  });
+  assert.deepEqual(store.getControlSnapshot(), beforeInvalidRemoval);
+  assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval);
+
+  // 防護：無效播放秒數只能在設定內顯示錯誤，不得送出或改變目前內容。
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open === true &&
+      document.getElementById('settings-status').textContent === '設定已載入。' &&
+      document.getElementById('page-duration-input').value === '4' &&
+      document.getElementById('round-count-input').value === '2'
+    )()`),
+    '捨棄後重新載入播放 baseline',
+  );
+  await setInput('page-duration-input', '0');
+  await click('save-settings-button');
+  await waitFor(
+    () => execute(`(() =>
       document.getElementById('page-duration-error').hidden === false &&
       document.getElementById('page-duration-error').textContent.length > 0 &&
       document.activeElement?.id === 'page-duration-input'
     )()`),
-    '移除時開啟設定並聚焦播放秒數錯誤',
+    '無效播放秒數顯示欄位錯誤並聚焦',
   );
   await new Promise((resolve) => setTimeout(resolve, 100));
+  assert.equal(settingsManager.getSnapshot().revision, 2);
   assert.deepEqual(store.getControlSnapshot(), beforeInvalidRemoval);
   assert.equal(metrics.startProgramCalls, startCallsBeforeInvalidRemoval);
   assert.deepEqual(await execute(`(() => ({
@@ -806,16 +901,22 @@ async function runWorkflow(store, timers, settingsManager, metrics) {
     displaySummary: '瀏覽第 2 / 2 頁 · 共 4 則',
   });
 
-  await setInput('page-duration-input', '4');
-  assert.equal(
-    await execute(`document.getElementById('page-duration-error').hidden`),
-    true,
-  );
+  // 關閉設定會捨棄無效草稿並重繪已儲存偏好，不再保留隱藏的無效 DOM。
   await click('settings-close-button');
   await waitFor(
-    () => execute(`document.getElementById('settings-dialog').open === false`),
-    '修正播放秒數後關閉設定',
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open === false &&
+      document.getElementById('page-duration-input').value === '4' &&
+      document.getElementById('round-count-input').value === '2' &&
+      document.getElementById('page-duration-error').hidden === true
+    )()`),
+    '捨棄無效播放草稿並重繪已儲存偏好',
   );
+  assert.deepEqual(settingsManager.getSnapshot().config.playback, {
+    pageDurationSeconds: 4,
+    repeatMode: 'finite',
+    roundCount: 2,
+  });
   await execute(`document.querySelector(
     '#display-message-list .current-remove-button[data-message-index="3"]'
   ).click()`);

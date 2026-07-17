@@ -28,9 +28,23 @@ async function runElectronFixture() {
       true,
     );
 
+    const clean = result?.clean;
+    const dirty = result?.dirty;
     if (
-      result?.restoredFocusId !== 'open-settings-button' ||
-      result?.preservedNewFocusId !== 'next-action-input'
+      clean?.restoredFocusId !== 'open-settings-button' ||
+      clean?.preservedNewFocusId !== 'next-action-input' ||
+      dirty?.restoredFocusId !== 'open-settings-button' ||
+      dirty?.preservedNewFocusId !== 'next-action-input' ||
+      dirty?.beforeClose?.dirtyStatus !== '有未儲存變更' ||
+      dirty?.beforeClose?.closeButtonText !== '捨棄變更' ||
+      dirty?.beforeClose?.saveDisabled !== false ||
+      dirty?.afterClose?.dirtyStatus !== '所有變更皆已儲存' ||
+      dirty?.afterClose?.closeButtonText !== '關閉' ||
+      dirty?.afterClose?.saveDisabled !== true ||
+      dirty?.afterClose?.pageDuration !== '3' ||
+      dirty?.afterClose?.finiteChecked !== true ||
+      dirty?.afterClose?.continuousChecked !== false ||
+      dirty?.afterClose?.roundCount !== '1'
     ) {
       console.error(
         `[DisplayCore] 設定焦點結果不正確：${JSON.stringify(result)}。`,
@@ -61,7 +75,7 @@ if (process.versions.electron) {
   // Regression: ISSUE-001 — 設定對話框偶爾恢復到錯誤的入口按鈕
   // Found by /qa on 2026-07-17
   // Report: .gstack/qa-reports/qa-report-displaycore-2026-07-17.md
-  test('設定對話框恢復單一齒輪入口且不延遲搶走後續焦點', () => {
+  test('設定對話框恢復單一齒輪入口，且捨棄 playback dirty 草稿', () => {
     const electronBinary = require('electron');
     const result = spawnSync(electronBinary, [__filename], {
       encoding: 'utf8',

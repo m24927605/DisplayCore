@@ -1,5 +1,5 @@
 {
-  "configVersion": 3,
+  "configVersion": 4,
   "logo": {
     "enabled": false,
     "path": null
@@ -22,6 +22,11 @@
   },
   "marquee": {
     "enabled": true
+  },
+  "playback": {
+    "pageDurationSeconds": 3,
+    "repeatMode": "finite",
+    "roundCount": 1
   },
   "display": {
     "selectionMode": "auto",

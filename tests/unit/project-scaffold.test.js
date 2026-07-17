@@ -153,7 +153,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 3);
+  assert.equal(config.configVersion, 4);
   assert.equal(typeof config.appearance.backgroundColor, 'string');
   assert.equal(typeof config.appearance.fontFamily, 'string');
   assert.equal(typeof config.appearance.fontColor, 'string');
@@ -166,6 +166,18 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
   assert.ok(config.dateTime.offsetSeconds >= -43_199);
   assert.ok(config.dateTime.offsetSeconds <= 43_200);
   assert.equal(typeof config.marquee.enabled, 'boolean');
+  assert.deepEqual(Object.keys(config.playback).sort(), [
+    'pageDurationSeconds',
+    'repeatMode',
+    'roundCount',
+  ]);
+  assert.equal(Number.isSafeInteger(config.playback.pageDurationSeconds), true);
+  assert.ok(config.playback.pageDurationSeconds >= 1);
+  assert.ok(config.playback.pageDurationSeconds <= 3_600);
+  assert.ok(['finite', 'continuous'].includes(config.playback.repeatMode));
+  assert.equal(Number.isSafeInteger(config.playback.roundCount), true);
+  assert.ok(config.playback.roundCount >= 1);
+  assert.ok(config.playback.roundCount <= 999);
   assert.deepEqual(Object.keys(config.display).sort(), [
     'defaultDisplayId',
     'fullscreen',

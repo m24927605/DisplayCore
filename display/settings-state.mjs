@@ -146,7 +146,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 3 &&
+    candidate.configVersion === 4 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -199,7 +199,7 @@ function cloneSettings(candidate) {
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 3,
+  configVersion: 4,
   logo: { enabled: false, url: null },
   appearance: {
     backgroundColor: '#000000',

@@ -9,7 +9,7 @@ async function loadModule() {
 
 function createSnapshot(revision = 0) {
   return {
-    configVersion: 3,
+    configVersion: 4,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -49,6 +49,7 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
   assert.equal(Object.isFrozen(result.snapshot.emergency), true);
   assert.equal(Object.isFrozen(result.snapshot.marquee), true);
   assert.equal(Object.isFrozen(result.snapshot.display), true);
+  assert.equal(Object.hasOwn(result.snapshot, 'playback'), false);
 
   source.appearance.backgroundColor = '#000000';
   assert.equal(result.snapshot.appearance.backgroundColor, '#102030');
@@ -67,6 +68,17 @@ test('Display 設定 revision 單調遞增且 exact schema 拒絕未知欄位', 
   assert.equal(
     acceptDisplaySettingsSnapshot(4, {
       ...createSnapshot(5),
+      playback: {
+        pageDurationSeconds: 3,
+        repeatMode: 'finite',
+        roundCount: 1,
+      },
+    }).accepted,
+    false,
+  );
+  assert.equal(
+    acceptDisplaySettingsSnapshot(4, {
+      ...createSnapshot(5),
       logo: { ...createSnapshot(5).logo, path: 'logos/private.png' },
     }).accepted,
     false,
@@ -77,7 +89,7 @@ test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定
   const { acceptDisplaySettingsSnapshot } = await loadModule();
   const valid = createSnapshot(1);
   const invalidCandidates = [
-    { ...valid, configVersion: 2 },
+    { ...valid, configVersion: 3 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { enabled: true, url: null } },
@@ -149,7 +161,7 @@ test('安全預設值為黑底白字且不顯示 Logo 與日期', async () => {
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 3,
+    configVersion: 4,
     logo: { enabled: false, url: null },
     appearance: {
       backgroundColor: '#000000',
@@ -171,4 +183,5 @@ test('安全預設值為黑底白字且不顯示 Logo 與日期', async () => {
   });
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS), true);
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS.appearance), true);
+  assert.equal(Object.hasOwn(SAFE_DISPLAY_SETTINGS, 'playback'), false);
 });

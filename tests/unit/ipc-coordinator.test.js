@@ -400,6 +400,9 @@ test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作',
   const displayEvent = createEvent(windows.display);
   const config = structuredClone(defaultConfig);
   config.appearance.backgroundColor = '#102030';
+  config.playback.pageDurationSeconds = 8;
+  config.playback.repeatMode = 'continuous';
+  config.playback.roundCount = 7;
 
   const loaded = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_GET_SETTINGS,
@@ -417,10 +420,13 @@ test('Control 可讀寫設定與匯入 Logo，Display 無法呼叫特權操作',
 
   assert.equal(loaded.ok, true);
   assert.equal(loaded.data.revision, 0);
+  assert.deepEqual(loaded.data.config.playback, defaultConfig.playback);
   assert.equal(saved.ok, true);
   assert.equal(saved.data.revision, 1);
   assert.equal(saved.data.config.appearance.backgroundColor, '#102030');
+  assert.deepEqual(saved.data.config.playback, config.playback);
   assert.equal(settingsManager.saved.length, 1);
+  assert.deepEqual(settingsManager.saved[0].config.playback, config.playback);
   assert.deepEqual(logo, {
     ok: true,
     data: { canceled: false, assetPath: 'logos/abc123.png' },
@@ -453,7 +459,7 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 3,
+      configVersion: 4,
       logo: { enabled: false, url: null },
       appearance: defaultConfig.appearance,
       dateTime: defaultConfig.dateTime,
@@ -467,6 +473,7 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   });
   assert.equal(Object.hasOwn(result.data, 'defaults'), false);
   assert.equal(Object.hasOwn(result.data, 'notice'), false);
+  assert.equal(Object.hasOwn(result.data, 'playback'), false);
   assert.deepEqual(Object.keys(result.data.display), ['renderResolution']);
 
   const forbiddenResult = await ipcMain.invoke(
@@ -483,6 +490,9 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   config.appearance.backgroundColor = '#123456';
   config.dateTime.enabled = true;
   config.dateTime.offsetSeconds = 3_661;
+  config.playback.pageDurationSeconds = 8;
+  config.playback.repeatMode = 'continuous';
+  config.playback.roundCount = 7;
   config.display.renderResolution = '2560x1440';
 
   const saved = await ipcMain.invoke(
@@ -499,7 +509,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 3,
+    configVersion: 4,
     logo: { enabled: false, url: null },
     appearance: config.appearance,
     dateTime: config.dateTime,
@@ -510,7 +520,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   });
   assert.doesNotMatch(
     JSON.stringify(windows.display.webContents.sent[0].payload),
-    /defaults|notice|defaultDisplayId|selectionMode|fullscreen|userData/i,
+    /defaults|notice|playback|defaultDisplayId|selectionMode|fullscreen|userData/i,
   );
 });
 

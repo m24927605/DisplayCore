@@ -150,6 +150,9 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     assert.match(html, new RegExp(`<fieldset[^>]+id="${fieldsetId}"`));
   }
 
+  assert.match(html, /請按「儲存設定」保存變更/);
+  assert.match(html, /新設定套用於下一次「顯示」或移除操作/);
+  assert.doesNotMatch(html, /調整後可直接關閉|不需儲存/);
   assert.match(html, /id="page-duration-input"[^>]+min="1"[^>]+max="3600"/);
   assert.match(html, /id="page-duration-input"[^>]+aria-describedby="page-duration-error"/);
   assert.match(html, /name="repeat-mode"[^>]+value="finite"/);

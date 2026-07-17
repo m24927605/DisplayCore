@@ -21,6 +21,38 @@
         <p id="settings-status"></p>
 
         <div class="settings-dialog-body">
+          <fieldset id="playback-settings-fieldset">
+            <input
+              id="page-duration-input"
+              type="number"
+              min="1"
+              max="3600"
+              value="3"
+            >
+            <p id="page-duration-error" hidden></p>
+            <fieldset id="repeat-mode-fieldset">
+              <label>
+                <input type="radio" name="repeat-mode" value="finite" checked>
+                指定整輪次數
+              </label>
+              <label>
+                <input type="radio" name="repeat-mode" value="continuous">
+                持續顯示
+              </label>
+              <p id="repeat-error" hidden></p>
+            </fieldset>
+            <div id="round-count-field">
+              <input
+                id="round-count-input"
+                type="number"
+                min="1"
+                max="999"
+                value="1"
+              >
+              <p id="round-count-error" hidden></p>
+            </div>
+          </fieldset>
+
           <fieldset id="logo-settings-fieldset">
             <input id="logo-enabled-input" type="checkbox">
             <input id="logo-path-input" type="text">
@@ -105,7 +137,7 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 3,
+        configVersion: 4,
         logo: Object.freeze({ enabled: false, path: null }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
@@ -121,6 +153,11 @@
           releaseBackgroundColor: '#000000',
         }),
         marquee: Object.freeze({ enabled: true }),
+        playback: Object.freeze({
+          pageDurationSeconds: 3,
+          repeatMode: 'finite',
+          roundCount: 1,
+        }),
         display: Object.freeze({
           selectionMode: 'auto',
           defaultDisplayId: null,
@@ -158,7 +195,7 @@
       });
       view.bind();
 
-      async function openAndCloseSettings() {
+      async function openAndCloseSettings({ dirtyPlayback = false } = {}) {
         const closeSettled = new Promise((resolve) => {
           dialog.addEventListener(
             'close',
@@ -173,6 +210,33 @@
           throw new Error('設定對話框未開啟。');
         }
 
+        const pageDuration = document.getElementById('page-duration-input');
+        const repeatFinite = document.querySelector(
+          'input[name="repeat-mode"][value="finite"]',
+        );
+        const repeatContinuous = document.querySelector(
+          'input[name="repeat-mode"][value="continuous"]',
+        );
+        const roundCount = document.getElementById('round-count-input');
+        const dirtyStatus = document.getElementById('settings-dirty-status');
+        const closeButton = document.getElementById('settings-close-button');
+        const saveButton = document.getElementById('save-settings-button');
+
+        if (dirtyPlayback) {
+          pageDuration.value = '4';
+          pageDuration.dispatchEvent(new Event('input', { bubbles: true }));
+          roundCount.value = '2';
+          roundCount.dispatchEvent(new Event('input', { bubbles: true }));
+          repeatContinuous.checked = true;
+          repeatContinuous.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        const beforeClose = {
+          dirtyStatus: dirtyStatus.textContent,
+          closeButtonText: closeButton.textContent,
+          saveDisabled: saveButton.disabled,
+        };
+
         document.getElementById('settings-close-button').click();
         const restoredFocusId = document.activeElement?.id ?? null;
         // close 事件可能稍後才送達；這段期間下一個操作已可取得焦點。
@@ -181,12 +245,25 @@
         return {
           restoredFocusId,
           preservedNewFocusId: document.activeElement?.id ?? null,
+          beforeClose,
+          afterClose: {
+            dirtyStatus: dirtyStatus.textContent,
+            closeButtonText: closeButton.textContent,
+            saveDisabled: saveButton.disabled,
+            pageDuration: pageDuration.value,
+            finiteChecked: repeatFinite.checked,
+            continuousChecked: repeatContinuous.checked,
+            roundCount: roundCount.value,
+          },
         };
       }
 
       window.runFocusRegression = async () => {
         standardTrigger.focus();
-        return openAndCloseSettings();
+        const clean = await openAndCloseSettings();
+        standardTrigger.focus();
+        const dirty = await openAndCloseSettings({ dirtyPlayback: true });
+        return { clean, dirty };
       };
     </script>
   </body>
