@@ -651,7 +651,7 @@ function drawCoverImage(context, image, crop, width, height) {
   );
 }
 
-/** 舊圖原位依水平風帶挖出孔洞，再把中間偏右的來源圖塊畫成向右上飄散的沙粒。 */
+/** 舊圖原位依連續沙丘表面挖出孔洞，再把中間偏右的來源圖塊畫成右上揚沙。 */
 function drawStandbySandFrame(frame) {
   if (!sandContext || !sandOutgoingImage || !sandCoverCrop) {
     return;
@@ -706,8 +706,8 @@ function drawStandbySandFrame(frame) {
 }
 
 /**
- * 將新圖固定在 Canvas 下層，再以由下往上、持續重疊的水平風帶風蝕舊圖；
- * 每層都由左往右，來源圖粒在中間偏右揚起後向右上飄散。
+ * 將新圖固定在 Canvas 下層，再以單一、不規則的沙丘侵蝕面連續向上風蝕舊圖；
+ * 舊圖粒在中間偏右形成濃密揚沙核心，並隨左至右的風向翻滾飄散。
  * 第一張圖片不播放轉場。
  * 若 Canvas 無法使用則立即切換，絕不讓待機輪播停住。
  */
@@ -772,7 +772,7 @@ function isExpectedStandbyBackground(image) {
     image.getAttribute('src') === expectedStandbyBackgroundUrl;
 }
 
-/** 第一張立即顯示；後續健康圖片以連續上移的水平風吹沙轉場原子替換。 */
+/** 第一張立即顯示；後續健康圖片以連續上移的沙漠風蝕轉場原子替換。 */
 function commitStandbyBackgroundImage(image, url) {
   if (!isExpectedStandbyBackground(image) || url !== expectedStandbyBackgroundUrl) {
     return false;

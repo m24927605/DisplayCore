@@ -1117,8 +1117,8 @@ async function captureSandFrame({
     () => execute(`(() => {
       const stage = document.getElementById('display-stage');
       const progress = Number(stage.dataset.sandProgress);
-      const layer = document.getElementById('standby-background-layer')
-        .getBoundingClientRect();
+      const layerElement = document.getElementById('standby-background-layer');
+      const layer = layerElement.getBoundingClientRect();
       const canvas = document.getElementById('standby-sand-transition');
       const canvasBox = canvas.getBoundingClientRect();
       const images = [...document.querySelectorAll('.standby-background-image')];
@@ -1198,13 +1198,52 @@ async function captureSandFrame({
         particleHorizontalMass[bucket] +=
           particle.opacity * particle.width * particle.height;
       }
-      const activeBandIndex = Math.max(
+      const particleMass = (particle) =>
+        particle.opacity * particle.width * particle.height;
+      const maximumOpacity = particleDraws.reduce(
+        (maximum, particle) => Math.max(maximum, particle.opacity),
         0,
-        Math.min(13, Math.round((progress - 0.082) / 0.052)),
       );
-      const activeBandCenterY = 1 - (activeBandIndex + 0.5) / 14;
-      const activeBandMinimumY = Math.max(0.005, activeBandCenterY - 0.025);
-      const activeBandMaximumY = Math.min(0.995, activeBandCenterY + 0.025);
+      const strongParticles = particleDraws.filter(
+        (particle) => particle.opacity >= maximumOpacity * 0.55,
+      );
+      const weightedMean = (particles, property) => {
+        const totalMass = particles.reduce(
+          (total, particle) => total + particleMass(particle),
+          0,
+        );
+        if (totalMass <= 0) {
+          return 0;
+        }
+        return particles.reduce(
+          (total, particle) =>
+            total + particle[property] * particleMass(particle),
+          0,
+        ) / totalMass;
+      };
+      const weightedSpread = (particles, property, mean) => {
+        const totalMass = particles.reduce(
+          (total, particle) => total + particleMass(particle),
+          0,
+        );
+        if (totalMass <= 0) {
+          return 0;
+        }
+        return Math.sqrt(particles.reduce(
+          (total, particle) => total +
+            (particle[property] - mean) ** 2 * particleMass(particle),
+          0,
+        ) / totalMass);
+      };
+      const strongSourceCenterX = weightedMean(strongParticles, 'sourceCenterX');
+      const strongSourceCenterY = weightedMean(strongParticles, 'sourceCenterY');
+      const sourceCenterX = weightedMean(particleDraws, 'sourceCenterX');
+      const sourceCenterY = weightedMean(particleDraws, 'sourceCenterY');
+      const destinationCenterX = weightedMean(particleDraws, 'centerX');
+      const destinationCenterY = weightedMean(particleDraws, 'centerY');
+      const surfaceCenterY = strongSourceCenterY / canvas.height;
+      const surfaceMinimumY = Math.max(0.005, surfaceCenterY - 0.04);
+      const surfaceMaximumY = Math.min(0.995, surfaceCenterY + 0.04);
       const toBox = (box) => ({
         left: box.left,
         top: box.top,
@@ -1213,6 +1252,7 @@ async function captureSandFrame({
         width: box.width,
         height: box.height,
       });
+      const layerStyle = getComputedStyle(layerElement);
       const coversLayer = (box) =>
         Math.abs(box.left - layer.left) <= 0.5 &&
         Math.abs(box.top - layer.top) <= 0.5 &&
@@ -1228,6 +1268,11 @@ async function captureSandFrame({
         layerBox: toBox(layer),
         canvasBox: toBox(canvasBox),
         visibleImageBox: toBox(visibleBox),
+        layerMotion: {
+          transform: layerStyle.transform,
+          translate: layerStyle.translate || 'none',
+          animationName: layerStyle.animationName,
+        },
         regions: {
           topLeft: sampleRegion(0.04, 0.28, 0.03, 0.11, 18, 12),
           topRight: sampleRegion(0.72, 0.96, 0.03, 0.11, 18, 12),
@@ -1243,23 +1288,39 @@ async function captureSandFrame({
           strongestBucket: particleHorizontalMass.indexOf(
             Math.max(...particleHorizontalMass),
           ),
+          strongSourceCenterX: strongSourceCenterX / canvas.width,
+          strongSourceCenterY: surfaceCenterY,
+          sourceCenterX: sourceCenterX / canvas.width,
+          sourceCenterY: sourceCenterY / canvas.height,
+          destinationCenterX: destinationCenterX / canvas.width,
+          destinationCenterY: destinationCenterY / canvas.height,
+          destinationVerticalSpread:
+            weightedSpread(particleDraws, 'centerY', destinationCenterY) /
+            canvas.height,
         },
-        activeBand: {
-          index: activeBandIndex,
-          centerY: activeBandCenterY,
+        activeSurface: {
+          centerY: surfaceCenterY,
           left: sampleRegion(
             0.04,
             0.28,
-            activeBandMinimumY,
-            activeBandMaximumY,
+            surfaceMinimumY,
+            surfaceMaximumY,
+            18,
+            10,
+          ),
+          center: sampleRegion(
+            0.42,
+            0.66,
+            surfaceMinimumY,
+            surfaceMaximumY,
             18,
             10,
           ),
           right: sampleRegion(
             0.72,
             0.96,
-            activeBandMinimumY,
-            activeBandMaximumY,
+            surfaceMinimumY,
+            surfaceMaximumY,
             18,
             10,
           ),
@@ -1314,9 +1375,26 @@ async function installSandParticleTelemetry() {
           destinationWidth < canvas.width * 0.1 &&
           destinationHeight < canvas.height * 0.1;
         if (isParticle) {
+          const image = args[0];
+          const sourceX = Number(args[1]);
+          const sourceY = Number(args[2]);
+          const sourceWidth = Number(args[3]);
+          const sourceHeight = Number(args[4]);
+          const coverScale = Math.max(
+            canvas.width / image.naturalWidth,
+            canvas.height / image.naturalHeight,
+          );
+          const coverSourceWidth = canvas.width / coverScale;
+          const coverSourceHeight = canvas.height / coverScale;
+          const coverSourceX = (image.naturalWidth - coverSourceWidth) / 2;
+          const coverSourceY = (image.naturalHeight - coverSourceHeight) / 2;
           telemetry.draws.push({
             centerX: destinationX + destinationWidth / 2,
             centerY: destinationY + destinationHeight / 2,
+            sourceCenterX:
+              (sourceX + sourceWidth / 2 - coverSourceX) * coverScale,
+            sourceCenterY:
+              (sourceY + sourceHeight / 2 - coverSourceY) * coverScale,
             width: destinationWidth,
             height: destinationHeight,
             opacity: context.globalAlpha,
@@ -1343,6 +1421,85 @@ function assertImagesRemainStationary(imageMotion, description) {
     assert.equal(image.translate, 'none', `${description} image translate`);
     assert.equal(image.animationName, 'none', `${description} image animation`);
   }
+}
+
+function assertBoxUnchanged(reference, current, description) {
+  for (const property of ['left', 'top', 'width', 'height']) {
+    assert.ok(
+      Math.abs(current[property] - reference[property]) <= 0.5,
+      `${description} ${property} 不得改變：${JSON.stringify({
+        reference,
+        current,
+      })}`,
+    );
+  }
+}
+
+/** 背景父層與圖片在整段轉場都必須原地不動，避免任何隱性 slide／wipe。 */
+function assertSandGeometryStationary(reference, frame, description) {
+  assert.equal(frame.layerMotion.transform, 'none', `${description} layer transform`);
+  assert.equal(frame.layerMotion.translate, 'none', `${description} layer translate`);
+  assert.equal(
+    frame.layerMotion.animationName,
+    'none',
+    `${description} layer animation`,
+  );
+  assertBoxUnchanged(reference.layerBox, frame.layerBox, `${description} 背景層`);
+  assertBoxUnchanged(
+    reference.visibleImageBox,
+    frame.visibleImageBox,
+    `${description} 背景圖片`,
+  );
+}
+
+/** 驗證當下沙丘表面整體受風，沒有退化成同一高度由左掃到右的條帶。 */
+function assertContinuousSandSurface(frame, description) {
+  const regions = [
+    frame.activeSurface.left,
+    frame.activeSurface.center,
+    frame.activeSurface.right,
+  ];
+  const transparentRatios = regions.map(({ transparentRatio }) =>
+    transparentRatio,
+  );
+
+  for (const [index, region] of regions.entries()) {
+    assert.ok(
+      region.transparent > 0,
+      `${description}第 ${index + 1} 區必須同時受到侵蝕：` +
+        JSON.stringify(frame.activeSurface),
+    );
+  }
+
+  assert.ok(
+    Math.max(...transparentRatios) - Math.min(...transparentRatios) <= 0.4,
+    `${description}左中右必須同時受風，不能形成水平掃描線：` +
+      JSON.stringify(frame.activeSurface),
+  );
+}
+
+/** 驗證真實 drawImage 沙粒形成中間偏右、向右上翻滾的立體沙塵雲。 */
+function assertDesertDustCloud(frame, description) {
+  const telemetry = frame.particleTelemetry;
+
+  assert.ok(telemetry.drawCount > 0, `${description}必須繪出舊圖片來源沙粒`);
+  assert.ok(
+    telemetry.strongSourceCenterX >= 0.55 &&
+      telemetry.strongSourceCenterX <= 0.8,
+    `${description}高密度沙塵來源必須位於畫面中間偏右：` +
+      JSON.stringify(telemetry),
+  );
+  assert.ok(
+    telemetry.destinationCenterX > telemetry.sourceCenterX &&
+      telemetry.destinationCenterY < telemetry.sourceCenterY,
+    `${description}沙粒必須由來源位置向右上揚起：` +
+      JSON.stringify(telemetry),
+  );
+  assert.ok(
+    telemetry.destinationVerticalSpread >= 0.03,
+    `${description}沙塵必須有可見厚度，不能退化成細掃描線：` +
+      JSON.stringify(telemetry),
+  );
 }
 
 async function runWorkflow(
@@ -1423,18 +1580,34 @@ async function runWorkflow(
   });
 
   const beforeSandGeometry = await execute(`(() => {
-    const layer = document.getElementById('standby-background-layer')
-      .getBoundingClientRect();
+    const layerElement = document.getElementById('standby-background-layer');
+    const layer = layerElement.getBoundingClientRect();
     const images = [...document.querySelectorAll('.standby-background-image')];
     const visibleImage = images.find((image) => !image.hidden);
     const visibleBox = visibleImage.getBoundingClientRect();
+    const layerStyle = getComputedStyle(layerElement);
+    const toBox = (box) => ({
+      left: box.left,
+      top: box.top,
+      right: box.right,
+      bottom: box.bottom,
+      width: box.width,
+      height: box.height,
+    });
     return {
       visibleSource: visibleImage.getAttribute('src'),
+      layerBox: toBox(layer),
+      visibleImageBox: toBox(visibleBox),
       visibleImageCoversLayer:
         Math.abs(visibleBox.left - layer.left) <= 0.5 &&
         Math.abs(visibleBox.top - layer.top) <= 0.5 &&
         Math.abs(visibleBox.width - layer.width) <= 0.5 &&
         Math.abs(visibleBox.height - layer.height) <= 0.5,
+      layerMotion: {
+        transform: layerStyle.transform,
+        translate: layerStyle.translate || 'none',
+        animationName: layerStyle.animationName,
+      },
       imageMotion: images.map((image) => {
         const style = getComputedStyle(image);
         return {
@@ -1450,72 +1623,61 @@ async function runWorkflow(
   assert.equal(beforeSandGeometry.visibleSource, expectedStandbyBackgroundUrl);
   assert.equal(beforeSandGeometry.visibleImageCoversLayer, true);
   assertImagesRemainStationary(beforeSandGeometry.imageMotion, '轉場前');
+  assertSandGeometryStationary(beforeSandGeometry, beforeSandGeometry, '轉場前');
 
   await installSandParticleTelemetry();
   delayedSecondBackgroundRead.release();
   const earlySandFrame = await captureSandFrame({
-    minimumProgress: 0.15,
-    maximumProgress: 0.34,
+    minimumProgress: 0.22,
+    maximumProgress: 0.3,
     expectedVisibleSource: secondStandbyBackgroundUrl,
-    description: '下層水平風帶 Canvas 幀',
+    description: '下層連續沙丘侵蝕 Canvas 幀',
   });
   assert.equal(earlySandFrame.transition, 'sand');
   assert.equal(earlySandFrame.canvasCoversLayer, true);
   assert.equal(earlySandFrame.visibleImageCoversLayer, true);
   assert.equal(earlySandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(earlySandFrame.imageMotion, '轉場早段');
+  assertSandGeometryStationary(beforeSandGeometry, earlySandFrame, '轉場早段');
   assert.ok(
-    earlySandFrame.activeBand.centerY > 0.6,
-    `早段風帶必須位於畫面下方：${JSON.stringify(earlySandFrame.activeBand)}`,
+    earlySandFrame.activeSurface.centerY > 0.6,
+    `早段沙丘表面必須位於畫面下方：` +
+      JSON.stringify(earlySandFrame.activeSurface),
   );
-  assert.ok(
-    earlySandFrame.activeBand.left.transparentRatio >=
-      earlySandFrame.activeBand.right.transparentRatio + 0.08,
-    `下層作用中的風帶必須由左吹向右：` +
-      JSON.stringify(earlySandFrame.activeBand),
-  );
+  assertContinuousSandSurface(earlySandFrame, '早段沙丘表面');
   assert.ok(
     earlySandFrame.regions.leftColumn.transparent > 0 &&
       earlySandFrame.regions.leftColumn.opaque > 0,
-    `同一左側欄必須同時有透明與不透明點，不可是 vertical wipe：` +
+    `同一左側欄必須同時有透明與不透明點，不能是整齊直線 wipe：` +
       JSON.stringify(earlySandFrame.regions.leftColumn),
   );
-  assert.ok(
-    earlySandFrame.particleTelemetry.drawCount > 0,
-    '下層風帶必須繪出舊圖片來源沙粒',
-  );
+  assertDesertDustCloud(earlySandFrame, '早段沙塵雲');
 
   const middleSandFrame = await captureSandFrame({
-    minimumProgress: 0.35,
-    maximumProgress: 0.62,
+    minimumProgress: 0.47,
+    maximumProgress: 0.55,
     expectedVisibleSource: secondStandbyBackgroundUrl,
-    description: '中層水平風帶 Canvas 幀',
+    description: '中層連續沙丘侵蝕 Canvas 幀',
   });
   assert.equal(middleSandFrame.transition, 'sand');
   assert.equal(middleSandFrame.canvasCoversLayer, true);
   assert.equal(middleSandFrame.visibleImageCoversLayer, true);
   assert.equal(middleSandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(middleSandFrame.imageMotion, '轉場中段');
+  assertSandGeometryStationary(beforeSandGeometry, middleSandFrame, '轉場中段');
   assert.ok(
     middleSandFrame.regions.bottomLeft.transparentRatio >= 0.75 &&
       middleSandFrame.regions.bottomRight.transparentRatio >= 0.75,
-    `風帶上移後下層左右都必須已吹散：${JSON.stringify(middleSandFrame.regions)}`,
+    `侵蝕面上移後下層左右都必須已吹散：${JSON.stringify(middleSandFrame.regions)}`,
   );
   assert.ok(
-    middleSandFrame.activeBand.centerY >= 0.2 &&
-      middleSandFrame.activeBand.centerY <= 0.65,
-    `中段風帶必須位於畫面中層：${JSON.stringify(middleSandFrame.activeBand)}`,
+    middleSandFrame.activeSurface.centerY >= 0.2 &&
+      middleSandFrame.activeSurface.centerY <= 0.65,
+    `中段沙丘表面必須位於畫面中層：` +
+      JSON.stringify(middleSandFrame.activeSurface),
   );
-  assert.ok(
-    middleSandFrame.activeBand.left.transparentRatio >=
-      middleSandFrame.activeBand.right.transparentRatio + 0.08,
-    `中層作用中的風帶仍必須由左吹向右：` +
-      JSON.stringify(middleSandFrame.activeBand),
-  );
-  assert.ok(
-    middleSandFrame.particleTelemetry.drawCount > 0,
-    '中層風帶必須持續繪出舊圖片來源沙粒',
-  );
+  assertContinuousSandSurface(middleSandFrame, '中段沙丘表面');
+  assertDesertDustCloud(middleSandFrame, '中段沙塵雲');
   assert.equal(
     middleSandFrame.particleTelemetry.strongestBucket,
     3,
@@ -1527,55 +1689,40 @@ async function runWorkflow(
       earlySandFrame.regions.bottomLeft.transparentRatio,
     '下層侵蝕量不得隨進度倒退',
   );
-  assert.ok(
-    Math.abs(
-      middleSandFrame.visibleImageBox.left -
-        earlySandFrame.visibleImageBox.left,
-    ) <= 0.5 &&
-      Math.abs(
-        middleSandFrame.visibleImageBox.top -
-          earlySandFrame.visibleImageBox.top,
-      ) <= 0.5 &&
-      Math.abs(
-        middleSandFrame.visibleImageBox.width -
-          earlySandFrame.visibleImageBox.width,
-      ) <= 0.5 &&
-      Math.abs(
-        middleSandFrame.visibleImageBox.height -
-          earlySandFrame.visibleImageBox.height,
-      ) <= 0.5,
-    '新圖不得在轉場期間平移或縮放',
-  );
-
   const lateSandFrame = await captureSandFrame({
-    minimumProgress: 0.63,
-    maximumProgress: 0.82,
+    minimumProgress: 0.72,
+    maximumProgress: 0.8,
     expectedVisibleSource: secondStandbyBackgroundUrl,
-    description: '上層水平風帶 Canvas 幀',
+    description: '上層連續沙丘侵蝕 Canvas 幀',
   });
   assert.equal(lateSandFrame.transition, 'sand');
   assert.equal(lateSandFrame.canvasCoversLayer, true);
   assert.equal(lateSandFrame.visibleImageCoversLayer, true);
   assert.equal(lateSandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(lateSandFrame.imageMotion, '轉場晚段');
+  assertSandGeometryStationary(beforeSandGeometry, lateSandFrame, '轉場晚段');
   assert.ok(
     lateSandFrame.regions.middleLeft.transparentRatio >= 0.75 &&
       lateSandFrame.regions.middleRight.transparentRatio >= 0.75,
-    `風帶到達上層時中層必須已吹散：${JSON.stringify(lateSandFrame.regions)}`,
+    `侵蝕面到達上層時中層必須已吹散：${JSON.stringify(lateSandFrame.regions)}`,
   );
   assert.ok(
-    lateSandFrame.activeBand.centerY < 0.25,
-    `晚段風帶必須位於畫面上方：${JSON.stringify(lateSandFrame.activeBand)}`,
+    lateSandFrame.activeSurface.centerY < 0.35,
+    `晚段沙丘表面必須位於畫面上方：` +
+      JSON.stringify(lateSandFrame.activeSurface),
   );
+  assertContinuousSandSurface(lateSandFrame, '晚段沙丘表面');
+  assertDesertDustCloud(lateSandFrame, '晚段沙塵雲');
   assert.ok(
-    lateSandFrame.activeBand.left.transparentRatio >=
-      lateSandFrame.activeBand.right.transparentRatio + 0.08,
-    `上層作用中的風帶仍必須由左吹向右：` +
-      JSON.stringify(lateSandFrame.activeBand),
-  );
-  assert.ok(
-    lateSandFrame.particleTelemetry.drawCount > 0,
-    '上層風帶必須延續舊圖片來源沙粒，不能在結尾前中斷',
+    earlySandFrame.activeSurface.centerY >
+        middleSandFrame.activeSurface.centerY + 0.12 &&
+      middleSandFrame.activeSurface.centerY >
+        lateSandFrame.activeSurface.centerY + 0.12,
+    `單一侵蝕面必須由下往上連續移動：${JSON.stringify([
+      earlySandFrame.activeSurface.centerY,
+      middleSandFrame.activeSurface.centerY,
+      lateSandFrame.activeSurface.centerY,
+    ])}`,
   );
   await waitFor(
     () => execute(`(() => {

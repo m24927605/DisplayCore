@@ -155,7 +155,7 @@ body {
   object-position: center;
 }
 
-/* 舊圖由下往上的水平風帶吹成來源圖粒；新圖固定在下層逐步顯露。 */
+/* 舊圖由單一連續沙丘面風蝕成來源圖粒；新圖固定在下層逐步顯露。 */
 .standby-sand-transition {
   position: absolute;
   inset: 0;

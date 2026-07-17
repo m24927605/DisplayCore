@@ -2,13 +2,12 @@
 const HARD_MAXIMUM_PARTICLE_COUNT = 2_400;
 const DEFAULT_PARTICLE_COUNT = 1_600;
 const EROSION_GROWTH_PROGRESS = 0.1;
-const WIND_BAND_COUNT = 14;
-const WIND_START_PROGRESS = 0.01;
-// 間距約為單層作用時間的一半，讓相鄰風帶持續重疊而不會吹吹停停。
-const WIND_BAND_STRIDE_PROGRESS = 0.052;
-const WIND_SWEEP_PROGRESS = 0.095;
-const WIND_VERTICAL_STAGGER_PROGRESS = 0.015;
+const WIND_START_PROGRESS = 0.025;
+const WIND_VERTICAL_TRAVEL_PROGRESS = 0.75;
+const DUST_CORE_HORIZONTAL_POSITION = 0.66;
+const DUST_CORE_HORIZONTAL_SPREAD = 0.11;
 const PARTICLE_FINAL_FADE_START_PROGRESS = 0.88;
+const TAU = Math.PI * 2;
 
 export const SAND_TRANSITION_LIMITS = Object.freeze({
   maximumParticleCount: HARD_MAXIMUM_PARTICLE_COUNT,
@@ -36,7 +35,7 @@ function validateStartOptions({ width, height, durationMs, onComplete }) {
 /**
  * 以固定數量的完整網格建立舊圖片碎片與侵蝕孔資料。
  *
- * 每個取樣點只保存來源座標、水平風帶啟動時間及運動參數，不讀取圖片像素，
+ * 每個取樣點只保存來源座標、連續侵蝕面的啟動時間及運動參數，不讀取圖片像素，
  * 因此解析度提高到 4K 時，此引擎的取樣計算與粒子資料量仍固定且有界。
  * 呼叫端可用 sourceX、sourceY 從舊圖片裁出粒粒分明的方形沙粒。
  */
@@ -69,17 +68,30 @@ function createSamples({ width, height, sampleCount, random }) {
     ) * cellHeight);
     const normalizedX = sourceX / width;
     const distanceFromBottom = (height - sourceY) / height;
-    const bandPosition = Math.min(
-      WIND_BAND_COUNT - Number.EPSILON,
-      distanceFromBottom * WIND_BAND_COUNT,
-    );
-    const bandIndex = Math.floor(bandPosition);
-    const heightWithinBand = bandPosition - bandIndex;
     const phase = (
       index * 2.399963 + sourceX * 0.013 + sourceY * 0.009
-    ) % (Math.PI * 2);
+    ) % TAU;
     const plumeStrength = Math.exp(
-      -0.5 * ((normalizedX - 0.68) / 0.16) ** 2,
+      -0.5 * (
+        (normalizedX - DUST_CORE_HORIZONTAL_POSITION) /
+        DUST_CORE_HORIZONTAL_SPREAD
+      ) ** 2,
+    );
+    // 兩個不同頻率的緩慢起伏形成沙丘表面；不使用 floor 或分帶索引，
+    // 因此侵蝕面只會連續向上，不會在每一列重新做左到右掃描。
+    const surfaceRoughness =
+      Math.sin(TAU * (normalizedX * 1.15 + distanceFromBottom * 0.12) + 0.4) *
+        0.012 +
+      Math.sin(TAU * (normalizedX * 3.7 + distanceFromBottom * 0.35)) * 0.007 +
+      (liftRandom - 0.5) * 0.012;
+    const activation = clamp(
+      WIND_START_PROGRESS +
+        distanceFromBottom * WIND_VERTICAL_TRAVEL_PROGRESS +
+        normalizedX * 0.006 +
+        surfaceRoughness -
+        plumeStrength * 0.012,
+      0.005,
+      0.82,
     );
     const sourceSize = Math.max(
       2,
@@ -93,30 +105,28 @@ function createSamples({ width, height, sampleCount, random }) {
       erosionRadius: Math.hypot(cellWidth, cellHeight) *
         (0.58 + sizeRandom * 0.12),
       driftDistance: width * (
-        0.03 + driftRandom * 0.07 + plumeStrength * 0.035
+        0.025 + driftRandom * 0.05 + plumeStrength * 0.02
       ),
       liftDistance: height * (
-        0.035 + liftRandom * 0.055 + plumeStrength * 0.08
+        0.025 + liftRandom * 0.035 + plumeStrength * 0.085
       ),
       turbulenceDistance: width * (0.004 + sizeRandom * 0.008),
-      phase,
-      activation: clamp(
-        WIND_START_PROGRESS +
-          bandIndex * WIND_BAND_STRIDE_PROGRESS +
-          normalizedX * WIND_SWEEP_PROGRESS +
-          heightWithinBand * WIND_VERTICAL_STAGGER_PROGRESS,
+      suspensionStrength: clamp(
+        (1 - sizeRandom) * 0.32 + plumeStrength * 0.68,
         0,
-        0.85,
+        1,
       ),
-      lifeProgress: 0.22 + sizeRandom * 0.04 + plumeStrength * 0.04,
-      opacityScale: 0.28 + plumeStrength * 0.72,
+      phase,
+      activation,
+      lifeProgress: 0.23 + sizeRandom * 0.04 + plumeStrength * 0.09,
+      opacityScale: 0.14 + plumeStrength * 0.86,
     };
   }
 
   return samples;
 }
 
-/** 侵蝕孔隨水平風帶逐層上移，圓孔大小漸增以保留粒狀邊緣。 */
+/** 侵蝕孔隨單一沙丘表面連續上移，圓孔大小漸增以保留粒狀邊緣。 */
 function createErosionFrame(samples, progress) {
   if (progress <= 0) {
     return [];
@@ -163,8 +173,13 @@ function createParticleFrame(samples, progress) {
       continue;
     }
 
-    const travelProgress = age + age ** 2 * 0.45;
-    const liftProgress = 1 - (1 - age) ** 1.6;
+    const travelProgress = age + age ** 2 * 0.35;
+    // 較大的砂粒貼近表面跳動，細砂則懸浮上升，兩者共同形成翻滾沙塵。
+    const saltationArc = Math.sin(Math.PI * age) ** 0.82;
+    const suspensionRise = 1 - (1 - age) ** 1.4;
+    const liftProgress =
+      saltationArc * (1 - sample.suspensionStrength) * 0.65 +
+      suspensionRise * sample.suspensionStrength;
     const turbulenceEnvelope = Math.sin(Math.PI * age);
     const horizontalTurbulence = Math.sin(
       sample.phase + age * 9,
@@ -180,6 +195,8 @@ function createParticleFrame(samples, progress) {
       0,
       sample.liftDistance * liftProgress + verticalTurbulence,
     );
+    // 沙粒從表面鬆動後快速成形，避免每一批新粒子在同一幀突然閃現。
+    const entranceFade = clamp(age / 0.14, 0, 1);
     particles.push({
       sourceX: sample.sourceX,
       sourceY: sample.sourceY,
@@ -187,7 +204,7 @@ function createParticleFrame(samples, progress) {
       x: sample.sourceX + horizontalTravel,
       y: sample.sourceY - upwardTravel,
       size: Math.max(2, sample.sourceSize * (1 - age * 0.38)),
-      opacity: sample.opacityScale * (1 - age) ** 1.25 * finalFade,
+      opacity: sample.opacityScale * entranceFade * (1 - age) ** 1.18 * finalFade,
     });
   }
 

@@ -74,7 +74,7 @@ test('建立引擎不會自行播放，start 後第一幀仍為未溶解狀態',
   assert.deepEqual(frames[0].particles, []);
 });
 
-test('連續風帶的可見沙塵峰值隨高度上移，且維持在畫面中間偏右', async () => {
+test('單一沙漠陣風的可見沙塵峰值隨高度上移，且維持在畫面中間偏右', async () => {
   const { animationFrames, engine, frames } = await createHarness({
     maxParticleCount: 900,
   });
@@ -169,7 +169,7 @@ test('連續風帶的可見沙塵峰值隨高度上移，且維持在畫面中�
   }
 });
 
-test('各高度的主要侵蝕順序由左到右、由下到上，且容許相鄰風帶自然重疊', async () => {
+test('單一侵蝕面連續上移，同一高度不得重新執行左到右掃描', async () => {
   const { animationFrames, engine, frames } = await createHarness({
     maxParticleCount: 900,
   });
@@ -179,8 +179,8 @@ test('各高度的主要侵蝕順序由左到右、由下到上，且容許相�
 
   const firstErosionBySample = new Map();
 
-  for (let step = 1; step < 100; step += 1) {
-    animationFrames.fire(animationFrames.active()[0], 1_000 + step * 10);
+  for (let step = 1; step <= 850; step += 1) {
+    animationFrames.fire(animationFrames.active()[0], 1_000 + step);
     const frame = frames.at(-1);
     for (const patch of frame.erosionPatches) {
       const key = `${patch.x}:${patch.y}`;
@@ -195,7 +195,7 @@ test('各高度的主要侵蝕順序由左到右、由下到上，且容許相�
   }
 
   const samples = [...firstErosionBySample.values()];
-  assert.ok(samples.length >= 800, '必須取得足夠樣本判斷主要風帶順序');
+  assert.ok(samples.length >= 800, '必須取得足夠樣本判斷連續侵蝕面');
 
   const verticalLayers = [
     { name: '下層', includes: ({ y }) => y >= 400 },
@@ -207,7 +207,7 @@ test('各高度的主要侵蝕順序由左到右、由下到上，且容許相�
     { name: '中央', includes: ({ x }) => x >= 350 && x < 650 },
     { name: '右側', includes: ({ x }) => x >= 700 },
   ];
-  const activationMedians = [];
+  const layerMedians = [];
 
   for (const layer of verticalLayers) {
     const medians = horizontalRegions.map((region) => {
@@ -219,45 +219,94 @@ test('各高度的主要侵蝕順序由左到右、由下到上，且容許相�
     });
 
     assert.ok(
-      medians[0] < medians[1] && medians[1] < medians[2],
-      `${layer.name}主要侵蝕必須由左向右：${JSON.stringify(medians)}`,
+      Math.max(...medians) - Math.min(...medians) <= 0.055,
+      `${layer.name}同一高度必須近乎同時受風，不能再次由左掃到右：` +
+        JSON.stringify(medians),
     );
-    activationMedians.push(medians);
+    layerMedians.push(median(medians));
   }
 
   assert.ok(
-    activationMedians[0][2] < activationMedians[1][0] &&
-      activationMedians[1][2] < activationMedians[2][0],
-    `較低區域的主要風帶必須先於較高區域，不能回到左下放射模型：` +
-      JSON.stringify(activationMedians),
+    layerMedians[0] < layerMedians[1] &&
+      layerMedians[1] < layerMedians[2],
+    `侵蝕面必須從下方連續上移：${JSON.stringify(layerMedians)}`,
   );
 
-  const windBands = Array.from({ length: 14 }, (_, bandIndex) => {
-    const minimumDistanceFromBottom = bandIndex / 14;
-    const maximumDistanceFromBottom = (bandIndex + 1) / 14;
-    return samples
-      .filter(({ y }) => {
-        const distanceFromBottom = (600 - y) / 600;
-        return distanceFromBottom >= minimumDistanceFromBottom &&
-          distanceFromBottom < maximumDistanceFromBottom;
-      })
-      .map(({ progress }) => progress);
-  });
+  const samplesByRow = new Map();
+  for (const sample of samples) {
+    const rowSamples = samplesByRow.get(sample.y) ?? [];
+    rowSamples.push(sample);
+    samplesByRow.set(sample.y, rowSamples);
+  }
 
-  for (let index = 1; index < windBands.length; index += 1) {
-    const previousBand = windBands[index - 1];
-    const currentBand = windBands[index];
-    assert.ok(previousBand.length > 0 && currentBand.length > 0);
+  const rowsFromBottom = [...samplesByRow.values()]
+    .sort((left, right) => right[0].y - left[0].y);
+  assert.ok(rowsFromBottom.length >= 20, '必須有足夠高度取樣檢查連續性');
+
+  for (const [index, row] of rowsFromBottom.entries()) {
+    const rowProgresses = row.map(({ progress }) => progress);
     assert.ok(
-      Math.max(...previousBand) - Math.min(...currentBand) >= 0.035,
-      `第 ${index + 1} 層必須與前一層有足夠重疊，不能只有瞬間銜接`,
+      Math.max(...rowProgresses) - Math.min(...rowProgresses) <= 0.06,
+      `第 ${index + 1} 個高度不可形成水平掃描線：` +
+        JSON.stringify({
+          earliest: Math.min(...rowProgresses),
+          latest: Math.max(...rowProgresses),
+        }),
     );
+  }
+
+  const coreColumnActivations = rowsFromBottom.map((row) => {
+    const coreSample = row.reduce((closest, sample) =>
+      Math.abs(sample.x - 680) < Math.abs(closest.x - 680)
+        ? sample
+        : closest,
+    );
+    return coreSample.progress;
+  });
+  const verticalGaps = coreColumnActivations
+    .slice(1)
+    .map((progress, index) => progress - coreColumnActivations[index]);
+  assert.ok(
+    verticalGaps.every((gap) => gap > 0),
+    `侵蝕核心必須持續向上，不能向下重設：${JSON.stringify(verticalGaps)}`,
+  );
+  const averageGap = verticalGaps.reduce((total, gap) => total + gap, 0) /
+    verticalGaps.length;
+  const standardDeviation = Math.sqrt(
+    verticalGaps.reduce(
+      (total, gap) => total + (gap - averageGap) ** 2,
+      0,
+    ) / verticalGaps.length,
+  );
+  assert.ok(
+    standardDeviation / averageGap < 0.4,
+    `侵蝕面向上移動不可出現固定週期的條帶重啟：${JSON.stringify({
+      averageGap,
+      coefficientOfVariation: standardDeviation / averageGap,
+      verticalGaps,
+    })}`,
+  );
+
+  const representativeRows = [0.25, 0.5, 0.75].map((position) =>
+    rowsFromBottom[Math.floor((rowsFromBottom.length - 1) * position)]
+      .sort((left, right) => left.x - right.x),
+  );
+  for (const [index, row] of representativeRows.entries()) {
+    const directions = row.slice(1)
+      .map((sample, sampleIndex) =>
+        Math.sign(sample.progress - row[sampleIndex].progress),
+      )
+      .filter((direction) => direction !== 0);
+    const directionChanges = directions.slice(1).filter(
+      (direction, directionIndex) => direction !== directions[directionIndex],
+    ).length;
     assert.ok(
-      median(currentBand) - median(previousBand) <= 0.065,
-      `相鄰風帶啟動間距不可過長：${JSON.stringify([
-        median(previousBand),
-        median(currentBand),
-      ])}`,
+      directionChanges >= 4,
+      `第 ${index + 1} 個代表高度的沙丘邊緣必須自然起伏，` +
+        `不能是單調直線或階梯：${JSON.stringify({
+          directions,
+          directionChanges,
+        })}`,
     );
   }
 });
