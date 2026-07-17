@@ -633,6 +633,7 @@ function cancelStandbySandTransition() {
   sandTransition.cancel();
   clearStandbySandCanvas();
   delete elements.stage.dataset.standbyTransition;
+  delete elements.stage.dataset.sandProgress;
 }
 
 function drawCoverTail(context, image, crop, startX, width, height) {
@@ -660,6 +661,7 @@ function drawStandbySandFrame(frame) {
     return;
   }
 
+  elements.stage.dataset.sandProgress = frame.progress.toFixed(3);
   sandContext.clearRect(0, 0, frame.width, frame.height);
   sandContext.imageSmoothingEnabled = true;
   const dissolveBand = frame.progress > 0 && frame.progress < 1
@@ -738,6 +740,7 @@ function startStandbySandTransition(image, url) {
     onComplete() {
       clearStandbySandCanvas();
       delete elements.stage.dataset.standbyTransition;
+      delete elements.stage.dataset.sandProgress;
       updateChromeVisibility();
       standbyBackgroundPlayer.handleLoad(url);
     },

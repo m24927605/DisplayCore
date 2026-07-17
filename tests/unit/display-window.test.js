@@ -216,6 +216,8 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /sandTransition\.start/);
   assert.match(source, /sandTransition\.cancel/);
   assert.match(source, /sandTransition\.dispose/);
+  assert.match(source, /dataset\.sandProgress\s*=/);
+  assert.match(source, /delete elements\.stage\.dataset\.sandProgress/);
   assert.match(source, /drawImage/);
   assert.match(source, /getImageData/);
   assert.match(source, /dataset\.logoTreatment/);
