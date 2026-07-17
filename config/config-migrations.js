@@ -2,11 +2,20 @@
 
 const { validateConfig } = require('./config-schema');
 
-const LEGACY_CONFIG_KEYS = Object.freeze([
+const LEGACY_V1_CONFIG_KEYS = Object.freeze([
   'appearance',
   'configVersion',
   'dateTime',
   'display',
+  'logo',
+  'marquee',
+]);
+const LEGACY_V2_CONFIG_KEYS = Object.freeze([
+  'appearance',
+  'configVersion',
+  'dateTime',
+  'display',
+  'emergency',
   'logo',
   'marquee',
 ]);
@@ -60,11 +69,45 @@ function isValidLegacyDateTime(dateTime) {
   }
 }
 
+function hasCommonLegacySections(candidate) {
+  return (
+    hasExactKeys(candidate.logo, ['enabled', 'path']) &&
+    hasExactKeys(candidate.marquee, ['enabled']) &&
+    hasExactKeys(candidate.display, [
+      'defaultDisplayId',
+      'fullscreen',
+      'selectionMode',
+    ])
+  );
+}
+
+function isCanonicalV2Shape(candidate) {
+  return (
+    hasExactKeys(candidate, LEGACY_V2_CONFIG_KEYS) &&
+    candidate.configVersion === 2 &&
+    hasCommonLegacySections(candidate) &&
+    hasExactKeys(candidate.appearance, [
+      'backgroundColor',
+      'fontColor',
+      'fontFamily',
+      'fontSizePercent',
+      'lineSpacingPercent',
+      'minimumFontSizeRem',
+    ]) &&
+    hasExactKeys(candidate.dateTime, ['enabled']) &&
+    typeof candidate.dateTime.enabled === 'boolean' &&
+    hasExactKeys(candidate.emergency, [
+      'inspectionBackgroundColor',
+      'releaseBackgroundColor',
+    ])
+  );
+}
+
 /**
- * 將磁碟上的合法 v1 設定轉成 canonical v2。
+ * 將磁碟上的合法 v1／v2 設定轉成 canonical v3。
  *
- * 只有這個磁碟邊界接受 v1；IPC、Control 與 Display 一律只使用 v2。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v2 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v3。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v3 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -79,18 +122,31 @@ function migrateStoredConfig(candidate, currentDefaults) {
     return { ok: true, value: current.value, migrated: false };
   }
 
+  if (isCanonicalV2Shape(candidate)) {
+    const migratedV2 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      dateTime: {
+        enabled: candidate.dateTime.enabled,
+        offsetSeconds: defaults.value.dateTime.offsetSeconds,
+      },
+      display: {
+        ...candidate.display,
+        renderResolution: defaults.value.display.renderResolution,
+      },
+    });
+
+    return migratedV2.ok
+      ? { ok: true, value: migratedV2.value, migrated: true }
+      : migratedV2;
+  }
+
   if (
-    !hasExactKeys(candidate, LEGACY_CONFIG_KEYS) ||
+    !hasExactKeys(candidate, LEGACY_V1_CONFIG_KEYS) ||
     candidate.configVersion !== 1 ||
-    !hasExactKeys(candidate.logo, ['enabled', 'path']) ||
+    !hasCommonLegacySections(candidate) ||
     !hasExactKeys(candidate.appearance, LEGACY_APPEARANCE_KEYS) ||
-    !isValidLegacyDateTime(candidate.dateTime) ||
-    !hasExactKeys(candidate.marquee, ['enabled']) ||
-    !hasExactKeys(candidate.display, [
-      'defaultDisplayId',
-      'fullscreen',
-      'selectionMode',
-    ])
+    !isValidLegacyDateTime(candidate.dateTime)
   ) {
     return failure();
   }
@@ -102,10 +158,16 @@ function migrateStoredConfig(candidate, currentDefaults) {
       ...defaults.value.appearance,
       ...candidate.appearance,
     },
-    dateTime: { enabled: candidate.dateTime.enabled },
+    dateTime: {
+      enabled: candidate.dateTime.enabled,
+      offsetSeconds: defaults.value.dateTime.offsetSeconds,
+    },
     emergency: { ...defaults.value.emergency },
     marquee: { ...candidate.marquee },
-    display: { ...candidate.display },
+    display: {
+      ...candidate.display,
+      renderResolution: defaults.value.display.renderResolution,
+    },
   });
 
   return migrated.ok

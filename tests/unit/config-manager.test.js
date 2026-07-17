@@ -70,7 +70,7 @@ test('有效使用者設定支援 UTF-8 BOM，載入時不擅自重寫檔案', a
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 v1 使用者設定在記憶體升級為 v2且不擅自覆寫原檔', async (t) => {
+test('既有 v1 使用者設定在記憶體升級為 v3且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 1,
@@ -94,13 +94,17 @@ test('既有 v1 使用者設定在記憶體升級為 v2且不擅自覆寫原檔'
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 2);
+  assert.equal(snapshot.config.configVersion, 3);
   assert.equal(snapshot.config.appearance.backgroundColor, '#123ABC');
   assert.equal(snapshot.config.appearance.fontColor, '#FEDCBA');
   assert.equal(snapshot.config.appearance.fontSizePercent, 100);
   assert.equal(snapshot.config.appearance.lineSpacingPercent, 100);
-  assert.deepEqual(snapshot.config.dateTime, { enabled: true });
+  assert.deepEqual(snapshot.config.dateTime, {
+    enabled: true,
+    offsetSeconds: 0,
+  });
   assert.deepEqual(snapshot.config.emergency, snapshot.defaults.emergency);
+  assert.equal(snapshot.config.display.renderResolution, 'auto');
   assert.equal(snapshot.notice, null);
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 
@@ -110,7 +114,59 @@ test('既有 v1 使用者設定在記憶體升級為 v2且不擅自覆寫原檔'
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    2,
+    3,
+  );
+  assert.equal(saved.revision, 1);
+});
+
+test('既有 v2 使用者設定在記憶體升級為 v3且不擅自覆寫原檔', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const legacy = {
+    configVersion: 2,
+    logo: { enabled: false, path: null },
+    appearance: {
+      backgroundColor: '#234bcd',
+      fontFamily: 'Arial, sans-serif',
+      fontColor: '#edcb98',
+      minimumFontSizeRem: 3.5,
+      fontSizePercent: 125,
+      lineSpacingPercent: 150,
+    },
+    dateTime: { enabled: false },
+    emergency: {
+      inspectionBackgroundColor: '#7f1d1d',
+      releaseBackgroundColor: '#14532d',
+    },
+    marquee: { enabled: true },
+    display: {
+      selectionMode: 'auto',
+      defaultDisplayId: null,
+      fullscreen: true,
+    },
+  };
+  const originalText = `\uFEFF${JSON.stringify(legacy)}`;
+  await fileSystem.writeFile(configPath, originalText, 'utf8');
+
+  const snapshot = await manager.initialize();
+
+  assert.equal(snapshot.config.configVersion, 3);
+  assert.equal(snapshot.config.appearance.backgroundColor, '#234BCD');
+  assert.equal(snapshot.config.appearance.fontColor, '#EDCB98');
+  assert.deepEqual(snapshot.config.dateTime, {
+    enabled: false,
+    offsetSeconds: 0,
+  });
+  assert.equal(snapshot.config.display.renderResolution, 'auto');
+  assert.equal(snapshot.notice, null);
+  assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
+
+  const saved = await manager.saveConfig(
+    structuredClone(snapshot.config),
+    snapshot.revision,
+  );
+  assert.equal(
+    JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
+    3,
   );
   assert.equal(saved.revision, 1);
 });

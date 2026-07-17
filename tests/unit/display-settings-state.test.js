@@ -9,7 +9,7 @@ async function loadModule() {
 
 function createSnapshot(revision = 0) {
   return {
-    configVersion: 2,
+    configVersion: 3,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -22,12 +22,13 @@ function createSnapshot(revision = 0) {
       fontSizePercent: 125,
       lineSpacingPercent: 150,
     },
-    dateTime: { enabled: true },
+    dateTime: { enabled: true, offsetSeconds: -3661 },
     emergency: {
       inspectionBackgroundColor: '#7F1D1D',
       releaseBackgroundColor: '#14532D',
     },
     marquee: { enabled: false },
+    display: { renderResolution: '2560x1440' },
     revision,
   };
 }
@@ -47,6 +48,7 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
   assert.equal(Object.isFrozen(result.snapshot.dateTime), true);
   assert.equal(Object.isFrozen(result.snapshot.emergency), true);
   assert.equal(Object.isFrozen(result.snapshot.marquee), true);
+  assert.equal(Object.isFrozen(result.snapshot.display), true);
 
   source.appearance.backgroundColor = '#000000';
   assert.equal(result.snapshot.appearance.backgroundColor, '#102030');
@@ -58,7 +60,7 @@ test('Display 設定 revision 單調遞增且 exact schema 拒絕未知欄位', 
   assert.equal(acceptDisplaySettingsSnapshot(4, createSnapshot(4)).accepted, false);
   assert.equal(acceptDisplaySettingsSnapshot(4, createSnapshot(3)).accepted, false);
   assert.equal(
-    acceptDisplaySettingsSnapshot(4, { ...createSnapshot(5), display: {} })
+    acceptDisplaySettingsSnapshot(4, { ...createSnapshot(5), unknown: true })
       .accepted,
     false,
   );
@@ -75,7 +77,7 @@ test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定
   const { acceptDisplaySettingsSnapshot } = await loadModule();
   const valid = createSnapshot(1);
   const invalidCandidates = [
-    { ...valid, configVersion: 1 },
+    { ...valid, configVersion: 2 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { enabled: true, url: null } },
@@ -117,6 +119,7 @@ test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定
       appearance: { ...valid.appearance, lineSpacingPercent: 305 },
     },
     { ...valid, dateTime: { ...valid.dateTime, enabled: 1 } },
+    { ...valid, dateTime: { ...valid.dateTime, offsetSeconds: 1.5 } },
     {
       ...valid,
       emergency: { ...valid.emergency, inspectionBackgroundColor: 'black' },
@@ -126,6 +129,11 @@ test('Display 拒絕不安全 Logo URL、顏色、字型、字級與日期設定
       emergency: { ...valid.emergency, releaseBackgroundColor: '#00000080' },
     },
     { ...valid, marquee: { enabled: 1 } },
+    { ...valid, display: { renderResolution: '1280x720' } },
+    {
+      ...valid,
+      display: { renderResolution: '1920x1080', selectionMode: 'auto' },
+    },
   ];
 
   for (const candidate of invalidCandidates) {
@@ -141,7 +149,7 @@ test('安全預設值為黑底白字且不顯示 Logo 與日期', async () => {
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 2,
+    configVersion: 3,
     logo: { enabled: false, url: null },
     appearance: {
       backgroundColor: '#000000',
@@ -152,12 +160,13 @@ test('安全預設值為黑底白字且不顯示 Logo 與日期', async () => {
       fontSizePercent: 100,
       lineSpacingPercent: 100,
     },
-    dateTime: { enabled: false },
+    dateTime: { enabled: false, offsetSeconds: 0 },
     emergency: {
       inspectionBackgroundColor: '#000000',
       releaseBackgroundColor: '#000000',
     },
     marquee: { enabled: true },
+    display: { renderResolution: 'auto' },
     revision: -1,
   });
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS), true);

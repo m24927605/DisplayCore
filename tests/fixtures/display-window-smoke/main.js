@@ -206,6 +206,42 @@ function createSettingsManager(initialConfig) {
   };
 }
 
+async function verifyDisplayedClockOffset(expectedOffsetSeconds, description) {
+  const measurement = await waitFor(
+    () => execute(`(() => {
+      const text = document.getElementById('display-clock').textContent;
+      const match = /^(\\d{2}):(\\d{2}):(\\d{2})$/.exec(text);
+      if (!match) {
+        return false;
+      }
+
+      const displayedSeconds =
+        Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+      const now = new Date();
+      const localSeconds =
+        now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+      const expectedSeconds =
+        (localSeconds + ${expectedOffsetSeconds} + 86400) % 86400;
+      const absoluteDifference = Math.abs(displayedSeconds - expectedSeconds);
+      const circularDifference = Math.min(
+        absoluteDifference,
+        86400 - absoluteDifference,
+      );
+
+      return circularDifference <= 1 ? {
+        text,
+        dateTime: document.getElementById('display-clock').getAttribute('datetime'),
+        circularDifference,
+      } : false;
+    })()`),
+    description,
+  );
+
+  assert.match(measurement.text, /^\d{2}:\d{2}:\d{2}$/);
+  assert.equal(measurement.dateTime, measurement.text);
+  assert.ok(measurement.circularDifference <= 1);
+}
+
 async function verifyResponsiveResolutions() {
   const resolutions = [
     [1366, 768],
@@ -238,6 +274,9 @@ async function verifyResponsiveResolutions() {
 
     const inspection = await execute(`(() => {
       const viewport = { width: window.innerWidth, height: window.innerHeight };
+      const stageElement = document.getElementById('display-stage');
+      const surface = document.getElementById('display-render-surface')
+        .getBoundingClientRect();
       const normal = document.getElementById('normal-layer').getBoundingClientRect();
       const chrome = document.getElementById('display-chrome').getBoundingClientRect();
       const logo = document.getElementById('display-logo').getBoundingClientRect();
@@ -246,6 +285,15 @@ async function verifyResponsiveResolutions() {
       const rows = [...document.querySelectorAll('.message-row')];
       return {
         viewport,
+        renderResolution: stageElement.dataset.renderResolution,
+        logicalWidth: Number(stageElement.dataset.logicalWidth),
+        logicalHeight: Number(stageElement.dataset.logicalHeight),
+        surfaceInside:
+          surface.left >= -0.5 && surface.top >= -0.5 &&
+          surface.right <= viewport.width + 0.5 &&
+          surface.bottom <= viewport.height + 0.5,
+        surfaceWidth: surface.width,
+        surfaceHeight: surface.height,
         rootOverflow:
           document.documentElement.scrollWidth > document.documentElement.clientWidth ||
           document.documentElement.scrollHeight > document.documentElement.clientHeight,
@@ -282,6 +330,12 @@ async function verifyResponsiveResolutions() {
     })()`);
 
     assert.deepEqual(inspection.viewport, { width, height });
+    assert.equal(inspection.renderResolution, 'auto');
+    assert.equal(inspection.logicalWidth, width);
+    assert.equal(inspection.logicalHeight, height);
+    assert.equal(inspection.surfaceInside, true, `${width}×${height} surface bounds`);
+    assert.ok(Math.abs(inspection.surfaceWidth - width) <= 0.5);
+    assert.ok(Math.abs(inspection.surfaceHeight - height) <= 0.5);
     assert.equal(inspection.rootOverflow, false, `${width}×${height} overflow`);
     assert.equal(inspection.normalInside, true, `${width}×${height} normal bounds`);
     assert.equal(
@@ -315,6 +369,92 @@ async function verifyResponsiveResolutions() {
       measuredFontSizes[index] >= measuredFontSizes[index - 1],
       `字級未隨解析度成長：${measuredFontSizes.join(', ')}`,
     );
+  }
+}
+
+async function verifyConfiguredRenderResolutions() {
+  const viewport = { width: 1600, height: 900 };
+  const profiles = [
+    ['1366x768', 1366, 768],
+    ['1600x900', 1600, 900],
+    ['1920x1080', 1920, 1080],
+    ['2560x1440', 2560, 1440],
+    ['3840x2160', 3840, 2160],
+  ];
+
+  displayWindow.setContentSize(viewport.width, viewport.height, false);
+  await waitFor(
+    () => execute(
+      `window.innerWidth === ${viewport.width} && window.innerHeight === ${viewport.height}`,
+    ),
+    '邏輯解析度驗證 viewport',
+  );
+
+  for (const [profile, logicalWidth, logicalHeight] of profiles) {
+    const nextConfig = structuredClone(settingsManager.getSnapshot().config);
+    nextConfig.display.renderResolution = profile;
+    const revision = settingsManager.publish(nextConfig).revision;
+
+    await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        return stage.dataset.settingsRevision === '${revision}' &&
+          stage.dataset.renderResolution === '${profile}' &&
+          stage.dataset.logicalWidth === '${logicalWidth}' &&
+          stage.dataset.logicalHeight === '${logicalHeight}';
+      })()`),
+      `${profile} 邏輯解析度套用`,
+    );
+
+    const inspection = await execute(`(() => {
+      const surfaceElement = document.getElementById('display-render-surface');
+      const surface = surfaceElement.getBoundingClientRect();
+      const stage = document.getElementById('display-stage').getBoundingClientRect();
+      return {
+        inlineSize: surfaceElement.style.inlineSize,
+        blockSize: surfaceElement.style.blockSize,
+        containerType: getComputedStyle(surfaceElement).containerType,
+        surface: {
+          left: surface.left,
+          top: surface.top,
+          right: surface.right,
+          bottom: surface.bottom,
+          width: surface.width,
+          height: surface.height,
+        },
+        stage: {
+          left: stage.left,
+          top: stage.top,
+          right: stage.right,
+          bottom: stage.bottom,
+          width: stage.width,
+          height: stage.height,
+        },
+        hasOverflow:
+          document.documentElement.scrollWidth > document.documentElement.clientWidth ||
+          document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      };
+    })()`);
+    const expectedScale = Math.min(
+      viewport.width / logicalWidth,
+      viewport.height / logicalHeight,
+    );
+    const expectedWidth = logicalWidth * expectedScale;
+    const expectedHeight = logicalHeight * expectedScale;
+    const expectedLeft = (viewport.width - expectedWidth) / 2;
+    const expectedTop = (viewport.height - expectedHeight) / 2;
+
+    assert.equal(inspection.inlineSize, `${logicalWidth}px`);
+    assert.equal(inspection.blockSize, `${logicalHeight}px`);
+    assert.equal(inspection.containerType, 'size');
+    assert.equal(inspection.hasOverflow, false, `${profile} viewport overflow`);
+    assert.ok(Math.abs(inspection.surface.width - expectedWidth) <= 0.75);
+    assert.ok(Math.abs(inspection.surface.height - expectedHeight) <= 0.75);
+    assert.ok(Math.abs(inspection.surface.left - expectedLeft) <= 0.75);
+    assert.ok(Math.abs(inspection.surface.top - expectedTop) <= 0.75);
+    assert.ok(inspection.surface.right <= viewport.width + 0.75);
+    assert.ok(inspection.surface.bottom <= viewport.height + 0.75);
+    assert.deepEqual(inspection.stage, inspection.surface);
   }
 }
 
@@ -456,7 +596,8 @@ async function runWorkflow(timers, expectedLogoUrl) {
   });
   assert.ok(firstPage.fontSize > 0);
   assert.match(firstPage.clockText, /^\d{2}:\d{2}:\d{2}$/);
-  assert.match(firstPage.clockDateTime, /^\d{4}-\d{2}-\d{2}T/);
+  assert.equal(firstPage.clockDateTime, firstPage.clockText);
+  await verifyDisplayedClockOffset(3_661, 'Display 套用離線時間偏移');
   assert.match(firstPage.fontFamily, /^Arial/i);
   assert.doesNotMatch(firstPage.logoSource, /file:|Users|userData/i);
   assert.equal(
@@ -598,6 +739,29 @@ async function runWorkflow(timers, expectedLogoUrl) {
   await waitForRevision(4, false);
   assert.equal(presentationService.getSnapshot().mode, 'blank');
 
+  // 非 16:9 viewport 會在 contain 畫布外留下邊帶；緊急背景仍須覆蓋滿屏。
+  const letterboxConfig = structuredClone(
+    settingsManager.getSnapshot().config,
+  );
+  letterboxConfig.display.renderResolution = '1920x1080';
+  const letterboxSettingsRevision = settingsManager.publish(
+    letterboxConfig,
+  ).revision;
+  displayWindow.setContentSize(1600, 1000, false);
+  await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const surface = document.getElementById('display-render-surface')
+        .getBoundingClientRect();
+      return stage.dataset.settingsRevision ===
+          '${letterboxSettingsRevision}' &&
+        stage.dataset.renderResolution === '1920x1080' &&
+        window.innerWidth === 1600 && window.innerHeight === 1000 &&
+        surface.top > 1;
+    })()`),
+    '建立非 16:9 緊急滿屏驗證環境',
+  );
+
   presentationService.showEmergency('555');
   await waitForRevision(5, false);
   const inspection = await execute(`(() => ({
@@ -613,6 +777,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
     announcement: document.getElementById('display-announcement').textContent,
     ariaLive: document.getElementById('display-announcement').getAttribute('aria-live'),
     backgroundColor: getComputedStyle(document.getElementById('display-stage')).backgroundColor,
+    viewportBackgroundColor: getComputedStyle(document.body).backgroundColor,
     fontColor: getComputedStyle(document.getElementById('display-stage')).color,
   }))()`);
   assert.equal(inspection.mode, 'emergency');
@@ -634,6 +799,7 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(inspection.announcement, '555');
   assert.equal(inspection.ariaLive, 'assertive');
   assert.equal(inspection.backgroundColor, 'rgb(127, 29, 29)');
+  assert.equal(inspection.viewportBackgroundColor, 'rgb(127, 29, 29)');
   assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
 
   presentationService.showEmergency('888');
@@ -644,6 +810,10 @@ async function runWorkflow(timers, expectedLogoUrl) {
   );
   assert.equal(
     await execute(`getComputedStyle(document.getElementById('display-stage')).backgroundColor`),
+    'rgb(20, 83, 45)',
+  );
+  assert.equal(
+    await execute(`getComputedStyle(document.body).backgroundColor`),
     'rgb(20, 83, 45)',
   );
 
@@ -676,9 +846,15 @@ async function runWorkflow(timers, expectedLogoUrl) {
   assert.equal(standby.chromeHidden, true);
   assert.equal(standby.standbyHidden, false);
   assert.equal(standby.standbyText, '歡迎光臨');
+  assert.equal(
+    await execute(`getComputedStyle(document.body).backgroundColor`),
+    'rgb(32, 64, 96)',
+  );
   assert.match(standby.clockText, /^\d{2}:\d{2}:\d{2}$/);
   assert.ok(Math.abs(standby.messageCenter - standby.stageCenter) < 1);
   assert.ok(Math.abs(standby.clockCenter - standby.stageCenter) < 1);
+  await verifyDisplayedClockOffset(3_661, '待機時保留離線時間偏移');
+  await verifyConfiguredRenderResolutions();
 }
 
 async function run() {
@@ -714,12 +890,14 @@ async function run() {
   };
   initialConfig.dateTime = {
     enabled: true,
+    offsetSeconds: 3_661,
   };
   initialConfig.emergency = {
     inspectionBackgroundColor: '#7F1D1D',
     releaseBackgroundColor: '#14532D',
   };
   initialConfig.marquee = { enabled: false };
+  initialConfig.display.renderResolution = 'auto';
   settingsManager = createSettingsManager(initialConfig);
 
   const appSession = session.fromPartition(

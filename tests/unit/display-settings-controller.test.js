@@ -9,7 +9,7 @@ async function loadModule() {
 
 function createSnapshot(revision = 0, backgroundColor = '#000000') {
   return {
-    configVersion: 2,
+    configVersion: 3,
     logo: { enabled: false, url: null },
     appearance: {
       backgroundColor,
@@ -19,12 +19,13 @@ function createSnapshot(revision = 0, backgroundColor = '#000000') {
       fontSizePercent: 100,
       lineSpacingPercent: 100,
     },
-    dateTime: { enabled: false },
+    dateTime: { enabled: false, offsetSeconds: 0 },
     emergency: {
       inspectionBackgroundColor: '#000000',
       releaseBackgroundColor: '#000000',
     },
     marquee: { enabled: true },
+    display: { renderResolution: 'auto' },
     revision,
   };
 }

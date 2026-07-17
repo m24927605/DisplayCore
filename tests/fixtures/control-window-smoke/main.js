@@ -375,6 +375,15 @@ async function openPlaybackSettings(settingsManager) {
     releaseBackground:
       document.getElementById('release-background-color-input').value,
     hasHour12: document.getElementById('hour12-input') !== null,
+    clockTimeUses24HourFormat: /^(?:[01]\\d|2[0-3]):[0-5]\\d:[0-5]\\d$/.test(
+      document.getElementById('clock-time-input').value
+    ),
+    clockTimeInputType: document.getElementById('clock-time-input').type,
+    renderResolution:
+      document.getElementById('render-resolution-select').value,
+    renderResolutionOptions: [...document.getElementById(
+      'render-resolution-select'
+    ).options].map(({ value }) => value),
   }))()`);
   assert.deepEqual(settingsShape, {
     pageDuration: '3',
@@ -388,6 +397,17 @@ async function openPlaybackSettings(settingsManager) {
     inspectionBackground: '#000000',
     releaseBackground: '#000000',
     hasHour12: false,
+    clockTimeUses24HourFormat: true,
+    clockTimeInputType: 'text',
+    renderResolution: 'auto',
+    renderResolutionOptions: [
+      'auto',
+      '1366x768',
+      '1600x900',
+      '1920x1080',
+      '2560x1440',
+      '3840x2160',
+    ],
   });
 
   // 原生檔案選擇取消後，焦點必須回到原按鈕，鍵盤操作才不會掉回 body。
@@ -454,6 +474,95 @@ async function openPlaybackSettings(settingsManager) {
   assert.equal(
     settingsManager.getSnapshot().config.appearance.backgroundColor,
     '#123456',
+  );
+  assert.equal(
+    settingsManager.getSnapshot().config.dateTime.offsetSeconds,
+    0,
+    '未碰時間欄位時，儲存其他設定必須保留既有校正值',
+  );
+  assert.equal(
+    settingsManager.getSnapshot().config.display.renderResolution,
+    'auto',
+  );
+
+  // 第二次開啟測試離線時間校正與邏輯排版解析度，避免與外觀草稿混淆。
+  await click('open-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('settings-dialog').open &&
+      document.getElementById('settings-status').textContent === '設定已載入。'
+    )()`),
+    '重新載入時間與解析度設定',
+  );
+
+  await setInput('clock-time-input', '24:00:00');
+  await click('save-settings-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('clock-time-error').hidden === false &&
+      document.getElementById('clock-time-input').getAttribute('aria-invalid') ===
+        'true'
+    )()`),
+    '拒絕無效的 24 小時制時間',
+  );
+  assert.equal(
+    await execute(`document.getElementById('clock-time-error').textContent`),
+    '時間必須使用 24 小時 HH:mm:ss，例如 17:01:09。',
+  );
+  assert.equal(settingsManager.getSnapshot().revision, 1);
+
+  const targetClockSeconds = await execute(`(() => {
+    const now = new Date();
+    const currentSeconds =
+      now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+    const targetSeconds = (currentSeconds + 600) % 86400;
+    const clock = [
+      Math.floor(targetSeconds / 3600),
+      Math.floor((targetSeconds % 3600) / 60),
+      targetSeconds % 60,
+    ].map((part) => String(part).padStart(2, '0')).join(':');
+    const clockInput = document.getElementById('clock-time-input');
+    clockInput.value = clock;
+    clockInput.dispatchEvent(new Event('input', { bubbles: true }));
+
+    const resolution = document.getElementById('render-resolution-select');
+    resolution.value = '2560x1440';
+    resolution.dispatchEvent(new Event('change', { bubbles: true }));
+    return targetSeconds;
+  })()`);
+  await waitFor(
+    () => execute(`document.getElementById('save-settings-button').disabled === false`),
+    '啟用時間與解析度儲存按鈕',
+  );
+  await click('save-settings-button');
+  await waitFor(
+    () => settingsManager.getSnapshot().revision === 2 &&
+      execute(`document.getElementById('settings-dialog').open === false`),
+    '儲存時間校正與解析度並關閉對話框',
+  );
+
+  const calibratedConfig = settingsManager.getSnapshot().config;
+  assert.equal(calibratedConfig.display.renderResolution, '2560x1440');
+  assert.ok(
+    Number.isSafeInteger(calibratedConfig.dateTime.offsetSeconds) &&
+      calibratedConfig.dateTime.offsetSeconds >= -43_199 &&
+      calibratedConfig.dateTime.offsetSeconds <= 43_200,
+    '時間校正值必須是 schema 接受的日內偏移秒數',
+  );
+  const currentDate = new Date();
+  const currentSeconds =
+    currentDate.getHours() * 3_600 +
+    currentDate.getMinutes() * 60 +
+    currentDate.getSeconds();
+  const calibratedSeconds = (
+    currentSeconds + calibratedConfig.dateTime.offsetSeconds + 86_400
+  ) % 86_400;
+  const elapsedSeconds = (
+    calibratedSeconds - targetClockSeconds + 86_400
+  ) % 86_400;
+  assert.ok(
+    elapsedSeconds <= 5,
+    `校正後時間應貼近輸入值，實際相差 ${elapsedSeconds} 秒`,
   );
 }
 

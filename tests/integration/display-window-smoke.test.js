@@ -12,7 +12,7 @@ const fixtureRoot = path.resolve(
   'display-window-smoke',
 );
 
-test('正式 Display 完成分頁、跑馬燈、滿屏與清除流程', () => {
+test('正式 Display 完成播放、離線校時與邏輯解析度流程', () => {
   const electronBinary = require('electron');
   const result = spawnSync(electronBinary, [fixtureRoot], {
     encoding: 'utf8',

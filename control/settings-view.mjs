@@ -2,6 +2,11 @@ import {
   buildSettingsDraft,
   settingsEqual,
 } from './settings-model.mjs';
+import {
+  calculateClockOffsetSeconds,
+  formatClockTime,
+  parseClockTime,
+} from './time-calibration.mjs';
 
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
 
@@ -12,7 +17,11 @@ const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
  * settings-controller 轉交 preload 的固定用途 API。輸出螢幕由 Main
  * 全自動管理，因此此處不提供指定螢幕或全螢幕開關。
  */
-export function createSettingsView({ document, onGlobalStatus = () => {} }) {
+export function createSettingsView({
+  document,
+  onGlobalStatus = () => {},
+  now = () => new Date(),
+}) {
   const elements = Object.freeze({
     trigger: document.getElementById('open-settings-button'),
     dialog: document.getElementById('settings-dialog'),
@@ -64,7 +73,13 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     releaseBackgroundColorError: document.getElementById(
       'release-background-color-error',
     ),
+    clockTime: document.getElementById('clock-time-input'),
+    clockTimeError: document.getElementById('clock-time-error'),
     dateTimeEnabled: document.getElementById('date-time-enabled-input'),
+    renderResolution: document.getElementById('render-resolution-select'),
+    renderResolutionError: document.getElementById(
+      'render-resolution-error',
+    ),
     marqueeEnabled: document.getElementById('marquee-enabled-input'),
     loadDefaultsButton: document.getElementById('load-defaults-button'),
     closeButton: document.getElementById('settings-close-button'),
@@ -91,6 +106,8 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     closing: false,
     reopenAfterClose: false,
     bound: false,
+    clockTimeTouched: false,
+    clockOffsetSeconds: 0,
   };
   const eventController = new AbortController();
   const fieldTargets = Object.freeze({
@@ -127,7 +144,27 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       elements.releaseBackgroundColor,
       elements.releaseBackgroundColorError,
     ],
+    dateTime: [elements.clockTime, elements.clockTimeError],
+    'dateTime.offsetSeconds': [elements.clockTime, elements.clockTimeError],
+    display: [elements.renderResolution, elements.renderResolutionError],
+    'display.renderResolution': [
+      elements.renderResolution,
+      elements.renderResolutionError,
+    ],
   });
+
+  function getCurrentSecondOfDay() {
+    const current = now();
+    if (!(current instanceof Date) || Number.isNaN(current.getTime())) {
+      return null;
+    }
+
+    return (
+      current.getHours() * 3_600 +
+      current.getMinutes() * 60 +
+      current.getSeconds()
+    );
+  }
 
   function focusWhenUnlocked(target) {
     queueMicrotask(() => {
@@ -156,6 +193,26 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       };
     }
 
+    let clockOffsetSeconds = state.clockOffsetSeconds;
+    if (state.clockTimeTouched) {
+      const targetSeconds = parseClockTime(elements.clockTime.value);
+      const currentSeconds = getCurrentSecondOfDay();
+      clockOffsetSeconds = calculateClockOffsetSeconds(
+        targetSeconds,
+        currentSeconds,
+      );
+
+      if (clockOffsetSeconds === null) {
+        return {
+          ok: false,
+          error: {
+            field: 'dateTime.offsetSeconds',
+            message: '時間必須使用 24 小時 HH:mm:ss，例如 17:01:09。',
+          },
+        };
+      }
+    }
+
     return buildSettingsDraft({
       baseline: state.baseline,
       logoEnabled: elements.logoEnabled.checked,
@@ -169,7 +226,9 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       inspectionBackgroundColor: elements.inspectionBackgroundColor.value,
       releaseBackgroundColor: elements.releaseBackgroundColor.value,
       dateTimeEnabled: elements.dateTimeEnabled.checked,
+      dateTimeOffsetSeconds: clockOffsetSeconds,
       marqueeEnabled: elements.marqueeEnabled.checked,
+      renderResolution: elements.renderResolution.value,
     });
   }
 
@@ -222,7 +281,14 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
   }
 
   function renderConfig(config) {
+    const currentSeconds = getCurrentSecondOfDay();
+    if (currentSeconds === null) {
+      throw new TypeError('無法讀取主機目前時間。');
+    }
+
     state.logoPath = config.logo.path;
+    state.clockOffsetSeconds = config.dateTime.offsetSeconds;
+    state.clockTimeTouched = false;
     elements.logoEnabled.checked = config.logo.enabled;
     elements.logoPath.value = config.logo.path ?? '';
     elements.backgroundColor.value = config.appearance.backgroundColor;
@@ -249,13 +315,22 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       config.emergency.releaseBackgroundColor;
     elements.releaseBackgroundColorPicker.value =
       config.emergency.releaseBackgroundColor.toLowerCase();
+    elements.clockTime.value = formatClockTime(
+      (currentSeconds + config.dateTime.offsetSeconds + 86_400) % 86_400,
+    );
     elements.dateTimeEnabled.checked = config.dateTime.enabled;
+    elements.renderResolution.value = config.display.renderResolution;
     elements.marqueeEnabled.checked = config.marquee.enabled;
   }
 
   function handleDraftInput() {
     clearSettingsErrors();
     refreshDirtyState();
+  }
+
+  function handleClockInput() {
+    state.clockTimeTouched = true;
+    handleDraftInput();
   }
 
   function closeDialog() {
@@ -289,6 +364,8 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
     state.defaults = null;
     state.revision = null;
     state.logoPath = null;
+    state.clockTimeTouched = false;
+    state.clockOffsetSeconds = 0;
     clearSettingsErrors();
     elements.notice.textContent = '';
     elements.notice.hidden = true;
@@ -395,11 +472,15 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       elements.fontSizePercent,
       elements.lineSpacingPercent,
       elements.dateTimeEnabled,
+      elements.renderResolution,
       elements.marqueeEnabled,
     ]) {
       control.addEventListener('input', handleDraftInput, { signal });
       control.addEventListener('change', handleDraftInput, { signal });
     }
+
+    elements.clockTime.addEventListener('input', handleClockInput, { signal });
+    elements.clockTime.addEventListener('change', handleClockInput, { signal });
 
     elements.dialog.addEventListener('cancel', (event) => {
       event.preventDefault();
@@ -419,6 +500,8 @@ export function createSettingsView({ document, onGlobalStatus = () => {} }) {
       state.defaults = null;
       state.revision = null;
       state.logoPath = null;
+      state.clockTimeTouched = false;
+      state.clockOffsetSeconds = 0;
       state.closing = false;
       setDirty(false);
 

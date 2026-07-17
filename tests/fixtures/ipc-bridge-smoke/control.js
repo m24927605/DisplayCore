@@ -83,8 +83,65 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
+function hasExpectedConfigV3(config, offsetSeconds, renderResolution) {
+  return (
+    config !== null &&
+    typeof config === 'object' &&
+    config.configVersion === 3 &&
+    config.dateTime?.enabled === true &&
+    config.dateTime?.offsetSeconds === offsetSeconds &&
+    config.display?.renderResolution === renderResolution
+  );
+}
+
+function isExpectedSettingsSnapshot(
+  snapshot,
+  revision,
+  offsetSeconds,
+  renderResolution,
+) {
+  return (
+    hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
+    snapshot.revision === revision &&
+    snapshot.notice === null &&
+    hasExpectedConfigV3(snapshot.config, offsetSeconds, renderResolution) &&
+    hasExpectedConfigV3(snapshot.defaults, 0, 'auto')
+  );
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   try {
+    const loadedSettings = await window.displayCoreControl.getSettings();
+
+    if (
+      !loadedSettings.ok ||
+      !isExpectedSettingsSnapshot(loadedSettings.data, 0, 0, 'auto')
+    ) {
+      document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';
+      return;
+    }
+
+    const nextConfig = structuredClone(loadedSettings.data.config);
+    nextConfig.dateTime.offsetSeconds = 3_661;
+    nextConfig.display.renderResolution = '2560x1440';
+    const savedSettings = await window.displayCoreControl.saveSettings(
+      nextConfig,
+      loadedSettings.data.revision,
+    );
+
+    if (
+      !savedSettings.ok ||
+      !isExpectedSettingsSnapshot(
+        savedSettings.data,
+        1,
+        3_661,
+        '2560x1440',
+      )
+    ) {
+      document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';
+      return;
+    }
+
     const initial = await window.displayCoreControl.getPresentation();
 
     if (!initial.ok || !isExpectedBlankSnapshot(initial.data, 0, 0)) {

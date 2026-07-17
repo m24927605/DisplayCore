@@ -15,6 +15,7 @@ const { PresentationService } = require(
 const { PresentationStore } = require(
   path.join(projectRoot, 'ipc', 'presentation-store'),
 );
+const defaultConfig = require(path.join(projectRoot, 'config.json'));
 
 const CONTROL_URL = pathToFileURL(path.join(__dirname, 'control.html')).toString();
 const DISPLAY_URL = pathToFileURL(path.join(__dirname, 'display.html')).toString();
@@ -24,6 +25,7 @@ let controlWindow = null;
 let displayWindow = null;
 let coordinator = null;
 let presentationService = null;
+let settingsManager = null;
 let completed = false;
 let timeout = null;
 let controlVerified = false;
@@ -73,6 +75,47 @@ function createWindow(preload) {
   });
 }
 
+/** 建立真實 IPC round-trip 使用的記憶體設定管理器。 */
+function createSettingsManager() {
+  let snapshot = Object.freeze({
+    config: structuredClone(defaultConfig),
+    defaults: structuredClone(defaultConfig),
+    revision: 0,
+    notice: null,
+  });
+  const listeners = new Set();
+
+  return {
+    getSnapshot() {
+      return snapshot;
+    },
+    async saveConfig(config, expectedRevision) {
+      if (expectedRevision !== snapshot.revision) {
+        const error = new Error('測試設定版本衝突。');
+        error.code = 'CONFIG_CONFLICT';
+        throw error;
+      }
+
+      snapshot = Object.freeze({
+        config: structuredClone(config),
+        defaults: structuredClone(defaultConfig),
+        revision: snapshot.revision + 1,
+        notice: null,
+      });
+
+      for (const listener of listeners) {
+        listener(snapshot);
+      }
+
+      return snapshot;
+    },
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
 function finishWhenBothRenderersAreVerified() {
   if (controlVerified && displayVerified) {
     finish(0, '[DisplayCore] IPC bridge round-trip succeeded.');
@@ -90,9 +133,11 @@ async function run() {
   presentationService = new PresentationService({
     store: new PresentationStore(),
   });
+  settingsManager = createSettingsManager();
   coordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
+    settingsManager,
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return controlWindow;

@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 2;
+const CONFIG_VERSION = 3;
 
 const DISPLAY_SELECTION_MODES = Object.freeze({
   AUTO: 'auto',
@@ -19,7 +19,18 @@ const CONFIG_LIMITS = Object.freeze({
   MINIMUM_LINE_SPACING_PERCENT: 0,
   MAXIMUM_LINE_SPACING_PERCENT: 300,
   PERCENTAGE_STEP: 5,
+  MINIMUM_CLOCK_OFFSET_SECONDS: -43_199,
+  MAXIMUM_CLOCK_OFFSET_SECONDS: 43_200,
 });
+
+const RENDER_RESOLUTIONS = Object.freeze([
+  'auto',
+  '1366x768',
+  '1600x900',
+  '1920x1080',
+  '2560x1440',
+  '3840x2160',
+]);
 
 const CONFIG_KEYS = Object.freeze([
   'appearance',
@@ -39,7 +50,7 @@ const APPEARANCE_KEYS = Object.freeze([
   'lineSpacingPercent',
   'minimumFontSizeRem',
 ]);
-const DATE_TIME_KEYS = Object.freeze(['enabled']);
+const DATE_TIME_KEYS = Object.freeze(['enabled', 'offsetSeconds']);
 const EMERGENCY_KEYS = Object.freeze([
   'inspectionBackgroundColor',
   'releaseBackgroundColor',
@@ -48,6 +59,7 @@ const MARQUEE_KEYS = Object.freeze(['enabled']);
 const DISPLAY_KEYS = Object.freeze([
   'defaultDisplayId',
   'fullscreen',
+  'renderResolution',
   'selectionMode',
 ]);
 const OPAQUE_HEX_COLOR = /^#[0-9a-f]{6}$/i;
@@ -201,14 +213,20 @@ function validateAppearance(appearance) {
 function validateDateTime(dateTime) {
   if (
     !hasExactKeys(dateTime, DATE_TIME_KEYS) ||
-    typeof dateTime.enabled !== 'boolean'
+    typeof dateTime.enabled !== 'boolean' ||
+    !Number.isSafeInteger(dateTime.offsetSeconds) ||
+    dateTime.offsetSeconds < CONFIG_LIMITS.MINIMUM_CLOCK_OFFSET_SECONDS ||
+    dateTime.offsetSeconds > CONFIG_LIMITS.MAXIMUM_CLOCK_OFFSET_SECONDS
   ) {
     return validationFailure('日期時間設定格式不正確。', 'dateTime');
   }
 
   return {
     ok: true,
-    value: { enabled: dateTime.enabled },
+    value: {
+      enabled: dateTime.enabled,
+      offsetSeconds: dateTime.offsetSeconds,
+    },
   };
 }
 
@@ -251,7 +269,8 @@ function validateDisplay(display) {
   if (
     !hasExactKeys(display, DISPLAY_KEYS) ||
     typeof display.fullscreen !== 'boolean' ||
-    !Object.values(DISPLAY_SELECTION_MODES).includes(display.selectionMode)
+    !Object.values(DISPLAY_SELECTION_MODES).includes(display.selectionMode) ||
+    !RENDER_RESOLUTIONS.includes(display.renderResolution)
   ) {
     return validationFailure('輸出螢幕設定格式不正確。', 'display');
   }
@@ -283,6 +302,7 @@ function validateDisplay(display) {
       selectionMode: display.selectionMode,
       defaultDisplayId: display.defaultDisplayId,
       fullscreen: display.fullscreen,
+      renderResolution: display.renderResolution,
     },
   };
 }
@@ -302,7 +322,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v2。 */
+/** 驗證、正規化並深層複製完整的 canonical config v3。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -353,5 +373,6 @@ module.exports = {
   CONFIG_LIMITS,
   CONFIG_VERSION,
   DISPLAY_SELECTION_MODES,
+  RENDER_RESOLUTIONS,
   validateConfig,
 };

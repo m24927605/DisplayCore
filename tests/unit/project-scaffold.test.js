@@ -153,13 +153,34 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 2);
+  assert.equal(config.configVersion, 3);
   assert.equal(typeof config.appearance.backgroundColor, 'string');
   assert.equal(typeof config.appearance.fontFamily, 'string');
   assert.equal(typeof config.appearance.fontColor, 'string');
+  assert.deepEqual(Object.keys(config.dateTime).sort(), [
+    'enabled',
+    'offsetSeconds',
+  ]);
   assert.equal(typeof config.dateTime.enabled, 'boolean');
+  assert.equal(Number.isSafeInteger(config.dateTime.offsetSeconds), true);
+  assert.ok(config.dateTime.offsetSeconds >= -43_199);
+  assert.ok(config.dateTime.offsetSeconds <= 43_200);
   assert.equal(typeof config.marquee.enabled, 'boolean');
+  assert.deepEqual(Object.keys(config.display).sort(), [
+    'defaultDisplayId',
+    'fullscreen',
+    'renderResolution',
+    'selectionMode',
+  ]);
   assert.equal(typeof config.display.fullscreen, 'boolean');
+  assert.ok([
+    'auto',
+    '1366x768',
+    '1600x900',
+    '1920x1080',
+    '2560x1440',
+    '3840x2160',
+  ].includes(config.display.renderResolution));
 });
 
 test('專案 JavaScript 入口檔通過 Node.js 語法檢查', () => {

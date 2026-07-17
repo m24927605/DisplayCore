@@ -1,12 +1,18 @@
 const SECOND_MILLISECONDS = 1_000;
+const MINIMUM_CLOCK_OFFSET_SECONDS = -43_199;
+const MAXIMUM_CLOCK_OFFSET_SECONDS = 43_200;
+const SECONDS_PER_DAY = 86_400;
 
 function isValidClockSettings(settings) {
   if (
     settings === null ||
     typeof settings !== 'object' ||
     Array.isArray(settings) ||
-    Object.keys(settings).length !== 1 ||
-    typeof settings.enabled !== 'boolean'
+    Object.keys(settings).length !== 2 ||
+    typeof settings.enabled !== 'boolean' ||
+    !Number.isSafeInteger(settings.offsetSeconds) ||
+    settings.offsetSeconds < MINIMUM_CLOCK_OFFSET_SECONDS ||
+    settings.offsetSeconds > MAXIMUM_CLOCK_OFFSET_SECONDS
   ) {
     return false;
   }
@@ -15,15 +21,27 @@ function isValidClockSettings(settings) {
 }
 
 /** 以 Display 所在電腦的本機時區輸出固定 24 小時 HH:mm:ss。 */
-export function formatDisplayDateTime(date) {
+export function formatDisplayDateTime(date, offsetSeconds = 0) {
   if (
     !(date instanceof Date) ||
-    Number.isNaN(date.getTime())
+    Number.isNaN(date.getTime()) ||
+    !Number.isSafeInteger(offsetSeconds) ||
+    offsetSeconds < MINIMUM_CLOCK_OFFSET_SECONDS ||
+    offsetSeconds > MAXIMUM_CLOCK_OFFSET_SECONDS
   ) {
     throw new TypeError('日期時間格式化參數不正確。');
   }
 
-  return [date.getHours(), date.getMinutes(), date.getSeconds()]
+  const localSeconds =
+    date.getHours() * 3_600 + date.getMinutes() * 60 + date.getSeconds();
+  const adjustedSeconds =
+    (localSeconds + offsetSeconds + SECONDS_PER_DAY) % SECONDS_PER_DAY;
+  const parts = [
+    Math.floor(adjustedSeconds / 3_600),
+    Math.floor((adjustedSeconds % 3_600) / 60),
+    adjustedSeconds % 60,
+  ];
+  return parts
     .map((value) => String(value).padStart(2, '0'))
     .join(':');
 }
@@ -51,6 +69,7 @@ export function createDisplayClock({
 
   let timer = null;
   let enabled = false;
+  let offsetSeconds = 0;
   let disposed = false;
   let generation = 0;
 
@@ -80,10 +99,8 @@ export function createDisplayClock({
         return false;
       }
 
-      render(Object.freeze({
-        text: formatDisplayDateTime(date),
-        dateTime: date.toISOString(),
-      }));
+      const text = formatDisplayDateTime(date, offsetSeconds);
+      render(Object.freeze({ text, dateTime: text }));
 
       const elapsedInSecond = date.getTime() % SECOND_MILLISECONDS;
       const delay = Math.max(1, SECOND_MILLISECONDS - elapsedInSecond);
@@ -104,7 +121,6 @@ export function createDisplayClock({
         settings === null ||
         typeof settings !== 'object' ||
         Array.isArray(settings) ||
-        typeof settings.enabled !== 'boolean' ||
         !isValidClockSettings(settings)
       ) {
         return false;
@@ -113,6 +129,7 @@ export function createDisplayClock({
       generation += 1;
       cancelTimer();
       enabled = false;
+      offsetSeconds = settings.offsetSeconds;
 
       if (!settings.enabled) {
         try {
@@ -137,6 +154,7 @@ export function createDisplayClock({
       generation += 1;
       cancelTimer();
       enabled = false;
+      offsetSeconds = 0;
     },
   });
 }

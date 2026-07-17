@@ -15,6 +15,7 @@ test('Display HTML 只有唯讀顯示舞台、互斥視覺層與單一語意狀�
   const html = await readDisplayFile('index.html');
 
   assert.match(html, /<main[^>]+id="display-stage"/);
+  assert.match(html, /id="display-render-surface"/);
   assert.match(html, /id="display-announcement"[^>]+role="status"/);
   assert.match(html, /aria-live="polite"/);
   assert.match(html, /aria-atomic="true"/);
@@ -54,6 +55,9 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /clamp\(/);
   assert.match(css, /(?:vw|vh|vmin|rem|%)/);
   assert.match(css, /\.page-layer\s*{[^}]*display:\s*grid/s);
+  assert.match(css, /\.display-render-surface\s*{[^}]*container-type:\s*size/s);
+  assert.match(css, /\.display-render-surface\s*{[^}]*transform:/s);
+  assert.match(css, /(?:cqw|cqh|cqmin)/);
   assert.match(css, /\.normal-layer\s*{[^}]*position:\s*relative/s);
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /\.display-clock\s*{[^}]*font-variant-numeric:\s*tabular-nums/s);
@@ -71,10 +75,12 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /\.message-row\s*{[^}]*justify-content:\s*flex-start[^}]*text-align:\s*left/s);
   assert.match(css, /\.message-row\[data-alignment="center"\]/);
   assert.match(css, /\.fill-layer\s*{[^}]*display:\s*grid/s);
-  assert.match(css, /\.fill-layer\s*{[^}]*position:\s*fixed[^}]*inset:\s*0/s);
+  assert.match(css, /\.fill-layer\s*{[^}]*position:\s*absolute[^}]*inset:\s*0/s);
   assert.match(css, /--display-font-family/);
   assert.match(css, /--message-line-spacing-scale/);
   assert.match(css, /--emergency-background/);
+  assert.match(css, /--viewport-background/);
+  assert.match(css, /body\s*{[^}]*background:\s*var\(--viewport-background\)/s);
   assert.match(css, /\.is-marquee\s+\.marquee-track\s*{[^}]*will-change:\s*transform/s);
   assert.match(css, /font-smoothing:\s*antialiased/);
   assert.doesNotMatch(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
@@ -90,11 +96,13 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /createDisplayController/);
   assert.match(source, /createDisplaySettingsController/);
   assert.match(source, /createDisplayClock/);
+  assert.match(source, /resolveRenderResolution/);
   assert.match(source, /createPageProgressReporter/);
   assert.match(source, /SAFE_DISPLAY_SETTINGS/);
   assert.match(source, /findLargestFittingFontSize/);
   assert.match(source, /\.textContent\s*=/);
   assert.match(source, /new ResizeObserver/);
+  assert.match(source, /renderResolution/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /document\.fonts\.ready/);
   assert.match(source, /bridge\.getSettings\(\)/);
@@ -111,6 +119,7 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /'--message-line-spacing-scale'/);
   assert.match(source, /'--message-font-scale'/);
   assert.match(source, /'--emergency-background'/);
+  assert.match(source, /'--viewport-background'/);
   assert.match(
     source,
     /function updateAnnouncement\([^)]*\)\s*{[\s\S]*?setAttribute\('aria-live', priority\);[\s\S]*?\.textContent\s*=\s*message;/,

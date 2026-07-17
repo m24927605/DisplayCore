@@ -3,8 +3,18 @@
 const assert = require('node:assert/strict');
 const test = require('node:test');
 
-const defaultConfig = require('../../config.json');
+const currentDefaultConfig = require('../../config.json');
 const { validateConfig } = require('../../config/config-schema');
+
+const defaultConfig = Object.freeze({
+  ...structuredClone(currentDefaultConfig),
+  configVersion: 3,
+  dateTime: Object.freeze({ enabled: false, offsetSeconds: 0 }),
+  display: Object.freeze({
+    ...currentDefaultConfig.display,
+    renderResolution: 'auto',
+  }),
+});
 
 async function loadModule() {
   return import('../../control/settings-model.mjs');
@@ -64,13 +74,14 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含字體、行距及獨立滿屏背景，並保留相容輸出欄位', async () => {
+test('設定草稿包含顯示外觀、校時及解析度，並保留相容輸出欄位', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
     selectionMode: 'manual',
     defaultDisplayId: 42,
     fullscreen: false,
+    renderResolution: '1600x900',
   };
 
   const result = buildSettingsDraft({
@@ -86,12 +97,14 @@ test('設定草稿包含字體、行距及獨立滿屏背景，並保留相容�
     inspectionBackgroundColor: '#7f1d1d',
     releaseBackgroundColor: '#14532d',
     dateTimeEnabled: true,
+    dateTimeOffsetSeconds: 3_661,
     marqueeEnabled: false,
+    renderResolution: '3840x2160',
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 2,
+    configVersion: 3,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
@@ -104,7 +117,7 @@ test('設定草稿包含字體、行距及獨立滿屏背景，並保留相容�
       fontSizePercent: 125,
       lineSpacingPercent: 150,
     },
-    dateTime: { enabled: true },
+    dateTime: { enabled: true, offsetSeconds: 3_661 },
     emergency: {
       inspectionBackgroundColor: '#7F1D1D',
       releaseBackgroundColor: '#14532D',
@@ -114,6 +127,7 @@ test('設定草稿包含字體、行距及獨立滿屏背景，並保留相容�
       selectionMode: 'manual',
       defaultDisplayId: 42,
       fullscreen: false,
+      renderResolution: '3840x2160',
     },
   });
   assert.equal(validateConfig(result.config).ok, true);
@@ -134,7 +148,9 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     inspectionBackgroundColor: '#000000',
     releaseBackgroundColor: '#000000',
     dateTimeEnabled: false,
+    dateTimeOffsetSeconds: 0,
     marqueeEnabled: true,
+    renderResolution: 'auto',
   };
   const invalidPartials = [
     { logoEnabled: true, logoPath: null },
@@ -154,7 +170,13 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { inspectionBackgroundColor: 'red' },
     { releaseBackgroundColor: '#00000080' },
     { dateTimeEnabled: 'true' },
+    { dateTimeOffsetSeconds: -43_200 },
+    { dateTimeOffsetSeconds: 43_201 },
+    { dateTimeOffsetSeconds: 0.5 },
+    { dateTimeOffsetSeconds: '0' },
     { marqueeEnabled: 1 },
+    { renderResolution: '1024x768' },
+    { renderResolution: null },
   ];
 
   for (const partial of invalidPartials) {
@@ -164,7 +186,7 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
   }
 });
 
-test('已移除的輸出草稿參數無法改變 baseline 相容欄位', async () => {
+test('解析度可編輯，但已移除的螢幕選擇參數無法改變相容欄位', async () => {
   const { buildSettingsDraft } = await loadModule();
   const result = buildSettingsDraft({
     baseline: defaultConfig,
@@ -179,7 +201,9 @@ test('已移除的輸出草稿參數無法改變 baseline 相容欄位', async (
     inspectionBackgroundColor: '#000000',
     releaseBackgroundColor: '#000000',
     dateTimeEnabled: false,
+    dateTimeOffsetSeconds: 0,
     marqueeEnabled: true,
+    renderResolution: '2560x1440',
     displaySelectionMode: 'manual',
     defaultDisplayId: '42',
     displayFullscreen: false,
@@ -190,6 +214,7 @@ test('已移除的輸出草稿參數無法改變 baseline 相容欄位', async (
     selectionMode: 'auto',
     defaultDisplayId: null,
     fullscreen: true,
+    renderResolution: '2560x1440',
   });
 });
 
@@ -197,9 +222,15 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   const { settingsEqual } = await loadModule();
   const same = structuredClone(defaultConfig);
   const changed = structuredClone(defaultConfig);
+  const changedTime = structuredClone(defaultConfig);
+  const changedResolution = structuredClone(defaultConfig);
   changed.marquee.enabled = false;
+  changedTime.dateTime.offsetSeconds = 1;
+  changedResolution.display.renderResolution = '1920x1080';
 
   assert.equal(settingsEqual(defaultConfig, same), true);
   assert.equal(settingsEqual(defaultConfig, changed), false);
+  assert.equal(settingsEqual(defaultConfig, changedTime), false);
+  assert.equal(settingsEqual(defaultConfig, changedResolution), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
 });

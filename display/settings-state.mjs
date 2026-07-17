@@ -2,6 +2,7 @@ const SNAPSHOT_KEYS = Object.freeze([
   'appearance',
   'configVersion',
   'dateTime',
+  'display',
   'emergency',
   'logo',
   'marquee',
@@ -15,13 +16,22 @@ const APPEARANCE_KEYS = Object.freeze([
   'lineSpacingPercent',
   'minimumFontSizeRem',
 ]);
-const DATE_TIME_KEYS = Object.freeze(['enabled']);
+const DATE_TIME_KEYS = Object.freeze(['enabled', 'offsetSeconds']);
 const EMERGENCY_KEYS = Object.freeze([
   'inspectionBackgroundColor',
   'releaseBackgroundColor',
 ]);
 const LOGO_KEYS = Object.freeze(['enabled', 'url']);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
+const DISPLAY_KEYS = Object.freeze(['renderResolution']);
+const RENDER_RESOLUTIONS = Object.freeze([
+  'auto',
+  '1366x768',
+  '1600x900',
+  '1920x1080',
+  '2560x1440',
+  '3840x2160',
+]);
 const DISPLAY_LOGO_URL =
   /^displaycore:\/\/app\/managed\/logo\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const OPAQUE_HEX_COLOR = /^#[0-9A-F]{6}$/;
@@ -35,6 +45,8 @@ const MAXIMUM_FONT_SIZE_PERCENT = 200;
 const MINIMUM_LINE_SPACING_PERCENT = 0;
 const MAXIMUM_LINE_SPACING_PERCENT = 300;
 const PERCENTAGE_STEP = 5;
+const MINIMUM_CLOCK_OFFSET_SECONDS = -43_199;
+const MAXIMUM_CLOCK_OFFSET_SECONDS = 43_200;
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -112,7 +124,10 @@ function isValidAppearance(appearance) {
 function isValidDateTime(dateTime) {
   if (
     !hasExactKeys(dateTime, DATE_TIME_KEYS) ||
-    typeof dateTime.enabled !== 'boolean'
+    typeof dateTime.enabled !== 'boolean' ||
+    !Number.isSafeInteger(dateTime.offsetSeconds) ||
+    dateTime.offsetSeconds < MINIMUM_CLOCK_OFFSET_SECONDS ||
+    dateTime.offsetSeconds > MAXIMUM_CLOCK_OFFSET_SECONDS
   ) {
     return false;
   }
@@ -131,7 +146,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 2 &&
+    candidate.configVersion === 3 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -139,7 +154,9 @@ function isValidSnapshot(candidate) {
     isValidDateTime(candidate.dateTime) &&
     isValidEmergency(candidate.emergency) &&
     hasExactKeys(candidate.marquee, MARQUEE_KEYS) &&
-    typeof candidate.marquee.enabled === 'boolean'
+    typeof candidate.marquee.enabled === 'boolean' &&
+    hasExactKeys(candidate.display, DISPLAY_KEYS) &&
+    RENDER_RESOLUTIONS.includes(candidate.display.renderResolution)
   );
 }
 
@@ -149,6 +166,7 @@ function freezeSettings(settings) {
   Object.freeze(settings.dateTime);
   Object.freeze(settings.emergency);
   Object.freeze(settings.marquee);
+  Object.freeze(settings.display);
   return Object.freeze(settings);
 }
 
@@ -164,20 +182,24 @@ function cloneSettings(candidate) {
       fontSizePercent: candidate.appearance.fontSizePercent,
       lineSpacingPercent: candidate.appearance.lineSpacingPercent,
     },
-    dateTime: { enabled: candidate.dateTime.enabled },
+    dateTime: {
+      enabled: candidate.dateTime.enabled,
+      offsetSeconds: candidate.dateTime.offsetSeconds,
+    },
     emergency: {
       inspectionBackgroundColor:
         candidate.emergency.inspectionBackgroundColor,
       releaseBackgroundColor: candidate.emergency.releaseBackgroundColor,
     },
     marquee: { enabled: candidate.marquee.enabled },
+    display: { renderResolution: candidate.display.renderResolution },
     revision: candidate.revision,
   });
 }
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 2,
+  configVersion: 3,
   logo: { enabled: false, url: null },
   appearance: {
     backgroundColor: '#000000',
@@ -187,12 +209,13 @@ export const SAFE_DISPLAY_SETTINGS = freezeSettings({
     fontSizePercent: 100,
     lineSpacingPercent: 100,
   },
-  dateTime: { enabled: false },
+  dateTime: { enabled: false, offsetSeconds: 0 },
   emergency: {
     inspectionBackgroundColor: '#000000',
     releaseBackgroundColor: '#000000',
   },
   marquee: { enabled: true },
+  display: { renderResolution: 'auto' },
   revision: -1,
 });
 

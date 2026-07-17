@@ -453,18 +453,21 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 2,
+      configVersion: 3,
       logo: { enabled: false, url: null },
       appearance: defaultConfig.appearance,
       dateTime: defaultConfig.dateTime,
       emergency: defaultConfig.emergency,
       marquee: defaultConfig.marquee,
+      display: {
+        renderResolution: defaultConfig.display.renderResolution,
+      },
       revision: 0,
     },
   });
   assert.equal(Object.hasOwn(result.data, 'defaults'), false);
   assert.equal(Object.hasOwn(result.data, 'notice'), false);
-  assert.equal(Object.hasOwn(result.data, 'display'), false);
+  assert.deepEqual(Object.keys(result.data.display), ['renderResolution']);
 
   const forbiddenResult = await ipcMain.invoke(
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
@@ -479,6 +482,8 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   const config = structuredClone(defaultConfig);
   config.appearance.backgroundColor = '#123456';
   config.dateTime.enabled = true;
+  config.dateTime.offsetSeconds = 3_661;
+  config.display.renderResolution = '2560x1440';
 
   const saved = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_SAVE_SETTINGS,
@@ -494,12 +499,13 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 2,
+    configVersion: 3,
     logo: { enabled: false, url: null },
     appearance: config.appearance,
     dateTime: config.dateTime,
     emergency: config.emergency,
     marquee: config.marquee,
+    display: { renderResolution: '2560x1440' },
     revision: 1,
   });
   assert.doesNotMatch(

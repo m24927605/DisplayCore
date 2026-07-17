@@ -35,7 +35,18 @@ export const SETTINGS_LIMITS = Object.freeze({
   MINIMUM_LINE_SPACING_PERCENT: 0,
   MAXIMUM_LINE_SPACING_PERCENT: 300,
   PERCENTAGE_STEP: 5,
+  MINIMUM_CLOCK_OFFSET_SECONDS: -43_199,
+  MAXIMUM_CLOCK_OFFSET_SECONDS: 43_200,
 });
+
+const RENDER_RESOLUTIONS = Object.freeze([
+  'auto',
+  '1366x768',
+  '1600x900',
+  '1920x1080',
+  '2560x1440',
+  '3840x2160',
+]);
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -79,7 +90,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 2) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 3) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -212,8 +223,11 @@ function normalizeConfig(candidate) {
   const dateTime = candidate.dateTime;
 
   if (
-    !hasExactKeys(dateTime, ['enabled']) ||
-    typeof dateTime.enabled !== 'boolean'
+    !hasExactKeys(dateTime, ['enabled', 'offsetSeconds']) ||
+    typeof dateTime.enabled !== 'boolean' ||
+    !Number.isSafeInteger(dateTime.offsetSeconds) ||
+    dateTime.offsetSeconds < SETTINGS_LIMITS.MINIMUM_CLOCK_OFFSET_SECONDS ||
+    dateTime.offsetSeconds > SETTINGS_LIMITS.MAXIMUM_CLOCK_OFFSET_SECONDS
   ) {
     return failure('dateTime', '日期時間設定格式不正確。');
   }
@@ -230,8 +244,14 @@ function normalizeConfig(candidate) {
   const isManual = display?.selectionMode === 'manual';
 
   if (
-    !hasExactKeys(display, ['defaultDisplayId', 'fullscreen', 'selectionMode']) ||
+    !hasExactKeys(display, [
+      'defaultDisplayId',
+      'fullscreen',
+      'renderResolution',
+      'selectionMode',
+    ]) ||
     typeof display.fullscreen !== 'boolean' ||
+    !RENDER_RESOLUTIONS.includes(display.renderResolution) ||
     (!isAuto && !isManual) ||
     (isAuto && display.defaultDisplayId !== null) ||
     (isManual &&
@@ -244,7 +264,7 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 2,
+      configVersion: 3,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -257,7 +277,10 @@ function normalizeConfig(candidate) {
         lineSpacingPercent: appearance.lineSpacingPercent,
         minimumFontSizeRem,
       },
-      dateTime: { enabled: dateTime.enabled },
+      dateTime: {
+        enabled: dateTime.enabled,
+        offsetSeconds: dateTime.offsetSeconds,
+      },
       emergency: {
         inspectionBackgroundColor:
           emergency.inspectionBackgroundColor.toUpperCase(),
@@ -269,6 +292,7 @@ function normalizeConfig(candidate) {
         selectionMode: display.selectionMode,
         defaultDisplayId: display.defaultDisplayId,
         fullscreen: display.fullscreen,
+        renderResolution: display.renderResolution,
       },
     }),
   };
@@ -328,7 +352,9 @@ export function buildSettingsDraft({
   inspectionBackgroundColor,
   releaseBackgroundColor,
   dateTimeEnabled,
+  dateTimeOffsetSeconds,
   marqueeEnabled,
+  renderResolution,
 }) {
   const baselineResult = normalizeConfig(baseline);
 
@@ -356,7 +382,7 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 2,
+    configVersion: 3,
     logo: { enabled: logoEnabled, path: logoPath },
     appearance: {
       backgroundColor,
@@ -366,14 +392,20 @@ export function buildSettingsDraft({
       fontSizePercent: Number(fontSizePercent),
       lineSpacingPercent: Number(lineSpacingPercent),
     },
-    dateTime: { enabled: dateTimeEnabled },
+    dateTime: {
+      enabled: dateTimeEnabled,
+      offsetSeconds: dateTimeOffsetSeconds,
+    },
     emergency: {
       inspectionBackgroundColor,
       releaseBackgroundColor,
     },
     marquee: { enabled: marqueeEnabled },
-    // v2 仍保留輸出欄位供既有架構相容；Control 不提供修改入口。
-    display: { ...baselineResult.value.display },
+    // 輸出螢幕仍自動管理；Control 只可修改邏輯排版解析度。
+    display: {
+      ...baselineResult.value.display,
+      renderResolution,
+    },
   });
 
   return result.ok ? { ok: true, config: result.value } : result;

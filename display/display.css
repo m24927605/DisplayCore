@@ -3,6 +3,7 @@
   color: #ffffff;
   background: #000000;
   --display-background: #000000;
+  --viewport-background: #000000;
   --display-ink: #ffffff;
   --display-font-family:
     "Microsoft JhengHei UI",
@@ -10,18 +11,18 @@
     "Noto Sans TC",
     sans-serif;
   --logo-outline: rgb(255 255 255 / 10%);
-  --display-safe-block: clamp(1rem, 3.5vh, 12rem);
-  --display-safe-inline: clamp(1.5rem, 4vw, 16rem);
-  --chrome-gap: clamp(0.5rem, 1.5vh, 3rem);
+  --display-safe-block: clamp(1rem, 3.5cqh, 12rem);
+  --display-safe-inline: clamp(1.5rem, 4cqw, 16rem);
+  --chrome-gap: clamp(0.5rem, 1.5cqh, 3rem);
   --message-font-scale: 1;
   --message-line-spacing-scale: 1;
   --row-gap: clamp(
     0rem,
-    calc(1.25vh * var(--message-line-spacing-scale)),
+    calc(1.25cqh * var(--message-line-spacing-scale)),
     9rem
   );
   --emergency-background: #000000;
-  --marquee-gap: clamp(4rem, 10vw, 24rem);
+  --marquee-gap: clamp(4rem, 10cqw, 24rem);
 }
 
 * {
@@ -43,7 +44,7 @@ html {
 
 body {
   color: var(--display-ink);
-  background: var(--display-background);
+  background: var(--viewport-background);
   font-family:
     var(--display-font-family),
     "Microsoft JhengHei UI",
@@ -53,6 +54,18 @@ body {
   pointer-events: none;
   touch-action: none;
   user-select: none;
+}
+
+.display-render-surface {
+  position: fixed;
+  inset-block-start: 0;
+  inset-inline-start: 0;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  container-type: size;
+  transform: scale(var(--render-scale, 1));
+  transform-origin: left top;
 }
 
 [hidden] {
@@ -115,7 +128,7 @@ body {
 /* 待機時只呈現置中的歡迎文字與時間，不建立假的播放訊息。 */
 .display-stage[data-mode="blank"] .normal-layer {
   grid-template-rows: auto auto;
-  gap: clamp(1rem, 3.5vh, 8rem);
+  gap: clamp(1rem, 3.5cqh, 8rem);
   place-content: center;
   place-items: center;
 }
@@ -131,7 +144,7 @@ body {
   color: inherit;
   font-size: clamp(
     3rem,
-    calc(10vmin * var(--message-font-scale)),
+    calc(10cqmin * var(--message-font-scale)),
     18rem
   );
   font-weight: 800;
@@ -145,28 +158,28 @@ body {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   align-items: center;
-  gap: clamp(1rem, 3vw, 8rem);
+  gap: clamp(1rem, 3cqw, 8rem);
   min-inline-size: 0;
 }
 
 .logo-frame {
   display: grid;
   justify-self: start;
-  block-size: clamp(3rem, 9vh, 16rem);
-  max-inline-size: 30vw;
-  max-block-size: clamp(3rem, 9vh, 16rem);
+  block-size: clamp(3rem, 9cqh, 16rem);
+  max-inline-size: 30cqw;
+  max-block-size: clamp(3rem, 9cqh, 16rem);
   place-items: center start;
 }
 
 .display-logo {
   display: block;
   inline-size: auto;
-  block-size: clamp(3rem, 9vh, 16rem);
-  max-inline-size: 30vw;
-  max-block-size: clamp(3rem, 9vh, 16rem);
+  block-size: clamp(3rem, 9cqh, 16rem);
+  max-inline-size: 30cqw;
+  max-block-size: clamp(3rem, 9cqh, 16rem);
   object-fit: contain;
   border-radius: 0.2rem;
-  box-shadow: 0 0 0 max(0.0625rem, 0.08vmin) var(--logo-outline);
+  box-shadow: 0 0 0 max(0.0625rem, 0.08cqmin) var(--logo-outline);
 }
 
 .display-clock {
@@ -175,7 +188,7 @@ body {
   inset-block-end: var(--display-safe-block);
   z-index: 2;
   color: inherit;
-  font-size: clamp(1.125rem, 2.25vmin, 6rem);
+  font-size: clamp(1.125rem, 2.25cqmin, 6rem);
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.025em;
@@ -186,12 +199,12 @@ body {
 
 .display-stage[data-mode="blank"] .display-clock {
   position: static;
-  font-size: clamp(2rem, 5vmin, 10rem);
+  font-size: clamp(2rem, 5cqmin, 10rem);
   text-align: center;
 }
 
 .normal-layer.has-clock .page-layer {
-  padding-block-end: clamp(2.25rem, 5.5vh, 12rem);
+  padding-block-end: clamp(2.25rem, 5.5cqh, 12rem);
 }
 
 .page-layer {
@@ -205,7 +218,7 @@ body {
   overflow: hidden;
   font-size: clamp(
     2.5rem,
-    calc(10vmin * var(--message-font-scale)),
+    calc(10cqmin * var(--message-font-scale)),
     18rem
   );
 }
@@ -274,12 +287,12 @@ body {
 
 .fill-layer {
   display: grid;
-  position: fixed;
+  position: absolute;
   inset: 0;
   grid-template-columns: repeat(6, minmax(0, 1fr));
   grid-template-rows: repeat(4, minmax(0, 1fr));
-  gap: clamp(0.25rem, 0.8vmin, 2rem);
-  padding: clamp(0.25rem, 0.8vmin, 2rem);
+  gap: clamp(0.25rem, 0.8cqmin, 2rem);
+  padding: clamp(0.25rem, 0.8cqmin, 2rem);
   overflow: hidden;
   background: var(--emergency-background);
   place-items: center;
@@ -296,7 +309,7 @@ body {
   color: #ffffff;
   font-size: clamp(
     2rem,
-    calc(6.5vmin * var(--message-font-scale)),
+    calc(6.5cqmin * var(--message-font-scale)),
     18rem
   );
   font-weight: 900;

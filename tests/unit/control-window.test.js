@@ -165,12 +165,30 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'inspection-background-color-input',
     'release-background-color-input',
     'date-time-enabled-input',
+    'clock-time-input',
+    'clock-time-error',
+    'render-resolution-select',
+    'render-resolution-error',
     'marquee-enabled-input',
   ]) {
     assert.match(html, new RegExp(`id="${inputId}"`));
   }
   assert.doesNotMatch(html, /id="hour12-input"|12 小時制/);
+  assert.match(html, /訊息播放時顯示時間/);
+  assert.match(html, /待機歡迎畫面固定顯示時間/);
   assert.match(html, /時間固定顯示為 24 小時 HH:mm:ss/);
+  assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
+  for (const resolution of [
+    'auto',
+    '1366x768',
+    '1600x900',
+    '1920x1080',
+    '2560x1440',
+    '3840x2160',
+  ]) {
+    assert.match(html, new RegExp(`value="${resolution}"`));
+  }
+  assert.match(html, /HDMI 實際輸出解析度仍由 Windows 顯示設定控制/);
 });
 
 test('Control 只載入本機 module，Renderer 僅使用最小權限 bridge', async () => {

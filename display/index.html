@@ -11,12 +11,13 @@
     <link rel="stylesheet" href="./display.css">
   </head>
   <body>
-    <main
-      id="display-stage"
-      class="display-stage"
-      data-mode="blank"
-      aria-label="DisplayCore 顯示視窗"
-    >
+    <div id="display-render-surface" class="display-render-surface">
+      <main
+        id="display-stage"
+        class="display-stage"
+        data-mode="blank"
+        aria-label="DisplayCore 顯示視窗"
+      >
       <p
         id="display-announcement"
         class="visually-hidden"
@@ -73,7 +74,8 @@
         aria-hidden="true"
         hidden
       ></section>
-    </main>
+      </main>
+    </div>
 
     <script type="module" src="./app.mjs"></script>
   </body>

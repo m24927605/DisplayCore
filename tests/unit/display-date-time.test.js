@@ -7,16 +7,26 @@ async function loadModule() {
   return import('../../display/date-time.mjs');
 }
 
-test('時間固定格式化為本機 24 小時 HH:mm:ss', async () => {
+test('時間加上離線校時偏移後固定格式化為本機 24 小時 HH:mm:ss', async () => {
   const { formatDisplayDateTime } = await loadModule();
   const morning = new Date(2026, 6, 16, 8, 5, 14, 322);
   const midnight = new Date(2026, 6, 17, 0, 0, 0, 7);
 
   assert.equal(formatDisplayDateTime(morning), '08:05:14');
   assert.equal(formatDisplayDateTime(midnight), '00:00:00');
+  assert.equal(formatDisplayDateTime(morning, 3_661), '09:06:15');
+  assert.equal(
+    formatDisplayDateTime(new Date(2026, 6, 17, 23, 59, 59), 1),
+    '00:00:00',
+  );
+  assert.equal(formatDisplayDateTime(midnight, -1), '23:59:59');
 
   assert.throws(
     () => formatDisplayDateTime(new Date('invalid')),
+    { name: 'TypeError', message: '日期時間格式化參數不正確。' },
+  );
+  assert.throws(
+    () => formatDisplayDateTime(morning, -43_200),
     { name: 'TypeError', message: '日期時間格式化參數不正確。' },
   );
 });
@@ -41,10 +51,10 @@ test('Clock 立即顯示並對齊下一個整秒，callback 後重新校時', as
     },
   });
 
-  assert.equal(clock.update({ enabled: true }), true);
+  assert.equal(clock.update({ enabled: true, offsetSeconds: 3_661 }), true);
   assert.equal(renders.length, 1);
-  assert.equal(renders[0].text, '08:05:14');
-  assert.equal(renders[0].dateTime, currentDate.toISOString());
+  assert.equal(renders[0].text, '09:06:15');
+  assert.equal(renders[0].dateTime, '09:06:15');
   assert.equal(timers[0].delay, 678);
 
   currentDate = new Date('2026-07-16T08:05:15.007+08:00');
@@ -73,17 +83,19 @@ test('Clock 停用、重新設定與 dispose 都會精確清除 timer', async ()
     },
   });
 
-  assert.equal(clock.update({ enabled: true }), true);
-  assert.equal(clock.update({ enabled: true }), true);
+  assert.equal(clock.update({ enabled: true, offsetSeconds: 0 }), true);
+  assert.equal(clock.update({ enabled: true, offsetSeconds: 60 }), true);
   assert.equal(timers[0].cleared, true);
   assert.equal(timers[1].cleared, false);
+  assert.equal(renders.at(-1).text, '08:06:30');
 
-  assert.equal(clock.update({ enabled: false }), true);
+  assert.equal(clock.update({ enabled: false, offsetSeconds: 60 }), true);
   assert.equal(timers[1].cleared, true);
   assert.equal(renders.at(-1), null);
 
-  assert.equal(clock.update({ enabled: 'yes' }), false);
+  assert.equal(clock.update({ enabled: 'yes', offsetSeconds: 0 }), false);
+  assert.equal(clock.update({ enabled: true, offsetSeconds: 43_201 }), false);
   clock.dispose();
   clock.dispose();
-  assert.equal(clock.update({ enabled: true }), false);
+  assert.equal(clock.update({ enabled: true, offsetSeconds: 0 }), false);
 });

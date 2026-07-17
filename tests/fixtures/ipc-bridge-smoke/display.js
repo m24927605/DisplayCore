@@ -1,6 +1,9 @@
 'use strict';
 
 let latestRevision = -1;
+let latestSettingsRevision = -1;
+let presentationVerified = false;
+let settingsVerified = false;
 
 const EXPECTED_PAGE_MESSAGES = Object.freeze([
   Object.freeze({
@@ -65,6 +68,50 @@ function isExpectedDisplaySnapshot(snapshot) {
   );
 }
 
+function isExpectedSettingsSnapshot(snapshot) {
+  return (
+    hasExactKeys(snapshot, [
+      'appearance',
+      'configVersion',
+      'dateTime',
+      'display',
+      'emergency',
+      'logo',
+      'marquee',
+      'revision',
+    ]) &&
+    snapshot.configVersion === 3 &&
+    snapshot.revision === 1 &&
+    hasExactKeys(snapshot.logo, ['enabled', 'url']) &&
+    snapshot.logo.enabled === false &&
+    snapshot.logo.url === null &&
+    hasExactKeys(snapshot.appearance, [
+      'backgroundColor',
+      'fontColor',
+      'fontFamily',
+      'fontSizePercent',
+      'lineSpacingPercent',
+      'minimumFontSizeRem',
+    ]) &&
+    hasExactKeys(snapshot.dateTime, ['enabled', 'offsetSeconds']) &&
+    snapshot.dateTime.enabled === true &&
+    snapshot.dateTime.offsetSeconds === 3_661 &&
+    hasExactKeys(snapshot.emergency, [
+      'inspectionBackgroundColor',
+      'releaseBackgroundColor',
+    ]) &&
+    hasExactKeys(snapshot.marquee, ['enabled']) &&
+    hasExactKeys(snapshot.display, ['renderResolution']) &&
+    snapshot.display.renderResolution === '2560x1440'
+  );
+}
+
+function finishWhenEverythingIsVerified() {
+  if (presentationVerified && settingsVerified) {
+    document.title = 'DISPLAYCORE_DISPLAY_IPC_OK';
+  }
+}
+
 async function applySnapshot(snapshot) {
   if (!snapshot || snapshot.revision <= latestRevision) {
     return;
@@ -79,7 +126,27 @@ async function applySnapshot(snapshot) {
   const current = await window.displayCoreDisplay.getPresentation();
 
   if (current.ok && isExpectedDisplaySnapshot(current.data)) {
-    document.title = 'DISPLAYCORE_DISPLAY_IPC_OK';
+    presentationVerified = true;
+    finishWhenEverythingIsVerified();
+  }
+}
+
+async function applySettingsSnapshot(snapshot) {
+  if (!snapshot || snapshot.revision <= latestSettingsRevision) {
+    return;
+  }
+
+  latestSettingsRevision = snapshot.revision;
+
+  if (!isExpectedSettingsSnapshot(snapshot)) {
+    return;
+  }
+
+  const current = await window.displayCoreDisplay.getSettings();
+
+  if (current.ok && isExpectedSettingsSnapshot(current.data)) {
+    settingsVerified = true;
+    finishWhenEverythingIsVerified();
   }
 }
 
@@ -88,8 +155,18 @@ window.displayCoreDisplay.onPresentationChanged((snapshot) => {
   void applySnapshot(snapshot);
 });
 
+window.displayCoreDisplay.onSettingsChanged((snapshot) => {
+  void applySettingsSnapshot(snapshot);
+});
+
 void window.displayCoreDisplay.getPresentation().then((result) => {
   if (result.ok) {
     void applySnapshot(result.data);
+  }
+});
+
+void window.displayCoreDisplay.getSettings().then((result) => {
+  if (result.ok) {
+    void applySettingsSnapshot(result.data);
   }
 });

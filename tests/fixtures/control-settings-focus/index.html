@@ -72,6 +72,24 @@
 
           <fieldset id="behavior-settings-fieldset">
             <input id="date-time-enabled-input" type="checkbox">
+            <input
+              id="clock-time-input"
+              type="text"
+              inputmode="numeric"
+              maxlength="8"
+              autocomplete="off"
+              spellcheck="false"
+            >
+            <p id="clock-time-error" hidden></p>
+            <select id="render-resolution-select">
+              <option value="auto">自動（建議）</option>
+              <option value="1366x768">1366×768</option>
+              <option value="1600x900">1600×900</option>
+              <option value="1920x1080">1920×1080</option>
+              <option value="2560x1440">2560×1440</option>
+              <option value="3840x2160">3840×2160（4K）</option>
+            </select>
+            <p id="render-resolution-error" hidden></p>
             <input id="marquee-enabled-input" type="checkbox">
           </fieldset>
 
@@ -87,7 +105,7 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 2,
+        configVersion: 3,
         logo: Object.freeze({ enabled: false, path: null }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
@@ -97,7 +115,7 @@
           fontSizePercent: 100,
           lineSpacingPercent: 100,
         }),
-        dateTime: Object.freeze({ enabled: false }),
+        dateTime: Object.freeze({ enabled: false, offsetSeconds: 0 }),
         emergency: Object.freeze({
           inspectionBackgroundColor: '#000000',
           releaseBackgroundColor: '#000000',
@@ -107,6 +125,7 @@
           selectionMode: 'auto',
           defaultDisplayId: null,
           fullscreen: true,
+          renderResolution: 'auto',
         }),
       });
       const snapshot = Object.freeze({

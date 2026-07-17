@@ -3,6 +3,7 @@ import { createDisplayController } from './display-controller.mjs';
 import { createPageProgressReporter } from './page-progress.mjs';
 import { createDisplaySettingsController } from './settings-controller.mjs';
 import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
+import { resolveRenderResolution } from './render-resolution.mjs';
 import {
   calculateResponsiveFontBounds,
   findLargestFittingFontSize,
@@ -14,6 +15,7 @@ const MESSAGE_LINE_HEIGHT = 1.08;
 const LAYOUT_GENERATION_STORAGE_KEY = 'displaycore-layout-generation';
 
 const elements = Object.freeze({
+  renderSurface: document.getElementById('display-render-surface'),
   stage: document.getElementById('display-stage'),
   announcement: document.getElementById('display-announcement'),
   normalLayer: document.getElementById('normal-layer'),
@@ -163,9 +165,10 @@ function pageFitsAt(fontSize, rows) {
     }
 
     const textBox = message.getBoundingClientRect();
+    const rowBox = row.getBoundingClientRect();
     return (
-      textBox.width <= row.clientWidth + 0.5 &&
-      textBox.height <= row.clientHeight + 0.5
+      textBox.width <= rowBox.width + 0.5 &&
+      textBox.height <= rowBox.height + 0.5
     );
   });
 }
@@ -188,8 +191,12 @@ function activateMarquee(row, message) {
   row.append(track);
 
   const firstCopy = track.querySelector('.marquee-copy');
-  const distance = firstCopy?.getBoundingClientRect().width || row.clientWidth;
-  const speed = Math.max(48, elements.stage.clientWidth * 0.045);
+  const distance = firstCopy?.getBoundingClientRect().width ||
+    row.getBoundingClientRect().width;
+  const speed = Math.max(
+    48,
+    elements.stage.getBoundingClientRect().width * 0.045,
+  );
   const durationSeconds = Math.max(8, distance / speed);
   track.style.setProperty('--marquee-duration', `${durationSeconds}s`);
 }
@@ -198,12 +205,13 @@ function compressOverflowingRows(rows) {
   for (const row of rows) {
     const message = row.querySelector('.message-text');
     const textWidth = message?.getBoundingClientRect().width || 0;
+    const rowWidth = row.getBoundingClientRect().width;
 
-    if (message && textWidth > row.clientWidth && textWidth > 0) {
+    if (message && textWidth > rowWidth && textWidth > 0) {
       row.classList.add('is-compressed');
       row.style.setProperty(
         '--compression-ratio',
-        String(row.clientWidth / textWidth),
+        String(rowWidth / textWidth),
       );
     }
   }
@@ -273,7 +281,8 @@ function fitCurrentPage(
         const message = row.querySelector('.message-text');
         const overflowsHorizontally =
           message &&
-          message.getBoundingClientRect().width > row.clientWidth + 0.5;
+          message.getBoundingClientRect().width >
+            row.getBoundingClientRect().width + 0.5;
 
         if (overflowsHorizontally) {
           activateMarquee(row, row.dataset.message || '');
@@ -355,7 +364,8 @@ function updateChromeVisibility() {
 function syncClock() {
   const enabled = currentPresentation?.mode === 'blank' ||
     (currentPresentation?.mode === 'page' && currentSettings.dateTime.enabled);
-  const signature = String(enabled);
+  const offsetSeconds = currentSettings.dateTime.offsetSeconds;
+  const signature = `${enabled}:${offsetSeconds}`;
 
   if (signature === clockSignature) {
     updateChromeVisibility();
@@ -363,7 +373,34 @@ function syncClock() {
   }
 
   clockSignature = signature;
-  clock.update({ enabled });
+  clock.update({ enabled, offsetSeconds });
+}
+
+/** 解析邏輯畫布並置中縮放；不變更 Windows 或 HDMI 的實體顯示模式。 */
+function applyRenderResolution() {
+  const viewportWidth = document.documentElement.clientWidth;
+  const viewportHeight = document.documentElement.clientHeight;
+  let resolved;
+
+  try {
+    resolved = resolveRenderResolution({
+      profile: currentSettings.display.renderResolution,
+      viewportWidth,
+      viewportHeight,
+    });
+  } catch {
+    return false;
+  }
+
+  elements.renderSurface.style.inlineSize = `${resolved.logicalWidth}px`;
+  elements.renderSurface.style.blockSize = `${resolved.logicalHeight}px`;
+  elements.renderSurface.style.insetInlineStart = `${resolved.offsetX}px`;
+  elements.renderSurface.style.insetBlockStart = `${resolved.offsetY}px`;
+  elements.renderSurface.style.setProperty('--render-scale', String(resolved.scale));
+  elements.stage.dataset.renderResolution = resolved.profile;
+  elements.stage.dataset.logicalWidth = String(resolved.logicalWidth);
+  elements.stage.dataset.logicalHeight = String(resolved.logicalHeight);
+  return true;
 }
 
 function handleLogoLoad() {
@@ -438,17 +475,22 @@ function calculateLogoOutline(backgroundColor) {
 }
 
 function applyEmergencyBackground(tone) {
-  if (tone !== 'inspection' && tone !== 'release') {
-    return;
+  const isEmergency = tone === 'inspection' || tone === 'release';
+  let background = currentSettings.appearance.backgroundColor;
+
+  if (tone === 'inspection') {
+    background = currentSettings.emergency.inspectionBackgroundColor;
+  } else if (tone === 'release') {
+    background = currentSettings.emergency.releaseBackgroundColor;
   }
 
-  const background = tone === 'inspection'
-    ? currentSettings.emergency.inspectionBackgroundColor
-    : currentSettings.emergency.releaseBackgroundColor;
-  document.documentElement.style.setProperty(
-    '--emergency-background',
-    background,
-  );
+  const rootStyle = document.documentElement.style;
+
+  if (isEmergency) {
+    rootStyle.setProperty('--emergency-background', background);
+  }
+  // contain 排版可能留下邊帶；viewport 必須與緊急畫布同色才是真正滿屏。
+  rootStyle.setProperty('--viewport-background', background);
 }
 
 function applyDisplaySettings(snapshot) {
@@ -477,6 +519,7 @@ function applyDisplaySettings(snapshot) {
     calculateLogoOutline(snapshot.appearance.backgroundColor),
   );
   elements.stage.dataset.settingsRevision = String(snapshot.revision);
+  applyRenderResolution();
   applyEmergencyBackground(currentPresentation?.emergencyTone);
   applyLogo();
   syncClock();
@@ -486,6 +529,7 @@ function applyDisplaySettings(snapshot) {
 
 function renderBlank(snapshot) {
   clearVisualLayers();
+  applyEmergencyBackground(null);
   updateAnnouncement('歡迎光臨', 'polite');
   elements.normalLayer.hidden = false;
   elements.pageLayer.hidden = true;
@@ -500,6 +544,7 @@ function renderBlank(snapshot) {
 
 function renderPage(snapshot) {
   clearVisualLayers();
+  applyEmergencyBackground(null);
   updateAnnouncement(
     snapshot.messages.map(({ message }) => message).join('\n'),
     'polite',
@@ -593,10 +638,12 @@ elements.logo.addEventListener('error', handleLogoError);
 applyDisplaySettings(SAFE_DISPLAY_SETTINGS);
 
 const resizeObserver = new ResizeObserver(() => {
+  applyRenderResolution();
   scheduleFit();
 });
 resizeObserver.observe(elements.stage);
 resizeObserver.observe(elements.pageLayer);
+resizeObserver.observe(document.documentElement);
 
 async function boot() {
   const bridge = window.displayCoreDisplay;

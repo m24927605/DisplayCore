@@ -13,6 +13,14 @@ const {
 } = require('../../config/config-schema');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
+const VALID_RENDER_RESOLUTIONS = Object.freeze([
+  'auto',
+  '1366x768',
+  '1600x900',
+  '1920x1080',
+  '2560x1440',
+  '3840x2160',
+]);
 
 async function readDefaultConfig() {
   return JSON.parse(
@@ -20,10 +28,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v2 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v3 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
+  assert.equal(CONFIG_VERSION, 3);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
@@ -64,6 +73,8 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     [],
     { ...source, unexpected: true },
     { ...source, configVersion: 1 },
+    { ...source, configVersion: 2 },
+    { ...source, configVersion: 4 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -154,6 +165,61 @@ test('555 與 888 背景顏色使用各自獨立且嚴格的設定', async () =>
   }
 });
 
+test('時間偏移只接受 -43199 至 43200 秒的完整數與精確欄位', async () => {
+  const source = await readDefaultConfig();
+
+  for (const offsetSeconds of [-43_199, 0, 43_200]) {
+    const result = validateConfig({
+      ...source,
+      dateTime: { enabled: true, offsetSeconds },
+    });
+
+    assert.equal(result.ok, true, String(offsetSeconds));
+    assert.deepEqual(result.value.dateTime, { enabled: true, offsetSeconds });
+  }
+
+  for (const dateTime of [
+    { enabled: true },
+    { enabled: true, offsetSeconds: -43_200 },
+    { enabled: true, offsetSeconds: 43_201 },
+    { enabled: true, offsetSeconds: 0.5 },
+    { enabled: true, offsetSeconds: '0' },
+    { enabled: true, offsetSeconds: 0, unexpected: true },
+  ]) {
+    const result = validateConfig({ ...source, dateTime });
+    assert.equal(result.ok, false, JSON.stringify(dateTime));
+    assert.match(result.error.field ?? 'dateTime', /^dateTime/);
+  }
+});
+
+test('顯示解析度只接受 auto 與五種固定預設，display 不接受缺少或多餘欄位', async () => {
+  const source = await readDefaultConfig();
+
+  for (const renderResolution of VALID_RENDER_RESOLUTIONS) {
+    const result = validateConfig({
+      ...source,
+      display: { ...source.display, renderResolution },
+    });
+
+    assert.equal(result.ok, true, renderResolution);
+    assert.equal(result.value.display.renderResolution, renderResolution);
+  }
+
+  const { renderResolution: _renderResolution, ...missingResolution } =
+    source.display;
+  for (const display of [
+    missingResolution,
+    { ...source.display, renderResolution: '1280x720' },
+    { ...source.display, renderResolution: '1920×1080' },
+    { ...source.display, renderResolution: 1920 },
+    { ...source.display, unexpected: true },
+  ]) {
+    const result = validateConfig({ ...source, display });
+    assert.equal(result.ok, false, JSON.stringify(display));
+    assert.match(result.error.field ?? 'display', /^display/);
+  }
+});
+
 test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則', async () => {
   const source = await readDefaultConfig();
   const invalidPartials = [
@@ -165,6 +231,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         selectionMode: DISPLAY_SELECTION_MODES.AUTO,
         defaultDisplayId: 7,
         fullscreen: true,
+        renderResolution: 'auto',
       },
     },
     {
@@ -172,6 +239,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
         defaultDisplayId: null,
         fullscreen: true,
+        renderResolution: 'auto',
       },
     },
     {
@@ -179,6 +247,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
         defaultDisplayId: -1,
         fullscreen: true,
+        renderResolution: 'auto',
       },
     },
   ];
@@ -194,6 +263,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
       selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
       defaultDisplayId: 42,
       fullscreen: false,
+      renderResolution: '1920x1080',
     },
   });
   assert.equal(manual.ok, true);
@@ -201,5 +271,6 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     selectionMode: 'manual',
     defaultDisplayId: 42,
     fullscreen: false,
+    renderResolution: '1920x1080',
   });
 });
