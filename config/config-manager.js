@@ -6,6 +6,7 @@ const path = require('node:path');
 const { setTimeout: delay } = require('node:timers/promises');
 
 const { CONFIG_LIMITS, validateConfig } = require('./config-schema');
+const { migrateStoredConfig } = require('./config-migrations');
 
 const INVALID_USER_CONFIG_NOTICE = Object.freeze({
   code: 'INVALID_USER_CONFIG',
@@ -48,7 +49,7 @@ function parseJson(text) {
   return JSON.parse(withoutBom);
 }
 
-async function readValidatedConfig(fileSystem, filePath) {
+async function readParsedConfig(fileSystem, filePath) {
   const stats = await fileSystem.stat(filePath);
 
   if (!stats.isFile()) {
@@ -59,14 +60,30 @@ async function readValidatedConfig(fileSystem, filePath) {
     throw new Error('設定檔超過安全大小上限。');
   }
 
-  const parsed = parseJson(await fileSystem.readFile(filePath, 'utf8'));
-  const validation = validateConfig(parsed);
+  return parseJson(await fileSystem.readFile(filePath, 'utf8'));
+}
+
+async function readValidatedConfig(fileSystem, filePath) {
+  const validation = validateConfig(await readParsedConfig(fileSystem, filePath));
 
   if (!validation.ok) {
     throw new ConfigValidationError(validation.error);
   }
 
   return validation.value;
+}
+
+async function readStoredConfig(fileSystem, filePath, defaults) {
+  const migration = migrateStoredConfig(
+    await readParsedConfig(fileSystem, filePath),
+    defaults,
+  );
+
+  if (!migration.ok) {
+    throw new ConfigValidationError(migration.error);
+  }
+
+  return migration.value;
 }
 
 function serializeConfig(config) {
@@ -198,7 +215,11 @@ class ConfigManager {
     let notice = null;
 
     try {
-      config = await readValidatedConfig(this.fileSystem, this.configPath);
+      config = await readStoredConfig(
+        this.fileSystem,
+        this.configPath,
+        defaults,
+      );
     } catch (error) {
       if (error?.code === 'ENOENT') {
         await writeConfigAtomically({
@@ -308,4 +329,3 @@ module.exports = {
   ConfigManager,
   ConfigValidationError,
 };
-

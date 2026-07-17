@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 1;
+const CONFIG_VERSION = 2;
 
 const DISPLAY_SELECTION_MODES = Object.freeze({
   AUTO: 'auto',
@@ -14,6 +14,11 @@ const CONFIG_LIMITS = Object.freeze({
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
   FONT_SIZE_STEP_REM: 0.25,
+  MINIMUM_FONT_SIZE_PERCENT: 50,
+  MAXIMUM_FONT_SIZE_PERCENT: 200,
+  MINIMUM_LINE_SPACING_PERCENT: 0,
+  MAXIMUM_LINE_SPACING_PERCENT: 300,
+  PERCENTAGE_STEP: 5,
 });
 
 const CONFIG_KEYS = Object.freeze([
@@ -21,6 +26,7 @@ const CONFIG_KEYS = Object.freeze([
   'configVersion',
   'dateTime',
   'display',
+  'emergency',
   'logo',
   'marquee',
 ]);
@@ -29,9 +35,15 @@ const APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
   'fontFamily',
+  'fontSizePercent',
+  'lineSpacingPercent',
   'minimumFontSizeRem',
 ]);
-const DATE_TIME_KEYS = Object.freeze(['enabled', 'hour12', 'locale']);
+const DATE_TIME_KEYS = Object.freeze(['enabled']);
+const EMERGENCY_KEYS = Object.freeze([
+  'inspectionBackgroundColor',
+  'releaseBackgroundColor',
+]);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
 const DISPLAY_KEYS = Object.freeze([
   'defaultDisplayId',
@@ -131,6 +143,33 @@ function validateAppearance(appearance) {
     );
   }
 
+  for (const [field, minimum, maximum] of [
+    [
+      'fontSizePercent',
+      CONFIG_LIMITS.MINIMUM_FONT_SIZE_PERCENT,
+      CONFIG_LIMITS.MAXIMUM_FONT_SIZE_PERCENT,
+    ],
+    [
+      'lineSpacingPercent',
+      CONFIG_LIMITS.MINIMUM_LINE_SPACING_PERCENT,
+      CONFIG_LIMITS.MAXIMUM_LINE_SPACING_PERCENT,
+    ],
+  ]) {
+    const value = appearance[field];
+
+    if (
+      !Number.isSafeInteger(value) ||
+      value < minimum ||
+      value > maximum ||
+      value % CONFIG_LIMITS.PERCENTAGE_STEP !== 0
+    ) {
+      return validationFailure(
+        `${field === 'fontSizePercent' ? '字體大小' : '行距'}必須是 ${minimum}% 至 ${maximum}% 的整數，並以 ${CONFIG_LIMITS.PERCENTAGE_STEP}% 遞增。`,
+        `appearance.${field}`,
+      );
+    }
+  }
+
   const minimumFontSizeRem = appearance.minimumFontSizeRem;
   const stepRatio = minimumFontSizeRem / CONFIG_LIMITS.FONT_SIZE_STEP_REM;
 
@@ -152,6 +191,8 @@ function validateAppearance(appearance) {
       backgroundColor: appearance.backgroundColor.toUpperCase(),
       fontFamily: appearance.fontFamily,
       fontColor: appearance.fontColor.toUpperCase(),
+      fontSizePercent: appearance.fontSizePercent,
+      lineSpacingPercent: appearance.lineSpacingPercent,
       minimumFontSizeRem,
     },
   };
@@ -160,34 +201,40 @@ function validateAppearance(appearance) {
 function validateDateTime(dateTime) {
   if (
     !hasExactKeys(dateTime, DATE_TIME_KEYS) ||
-    typeof dateTime.enabled !== 'boolean' ||
-    typeof dateTime.hour12 !== 'boolean' ||
-    typeof dateTime.locale !== 'string' ||
-    dateTime.locale.length === 0 ||
-    dateTime.locale.length > 35 ||
-    CONTROL_CHARACTERS.test(dateTime.locale)
+    typeof dateTime.enabled !== 'boolean'
   ) {
     return validationFailure('日期時間設定格式不正確。', 'dateTime');
   }
 
-  let canonicalLocales;
+  return {
+    ok: true,
+    value: { enabled: dateTime.enabled },
+  };
+}
 
-  try {
-    canonicalLocales = Intl.getCanonicalLocales(dateTime.locale);
-  } catch {
-    return validationFailure('日期時間語系格式不正確。', 'dateTime.locale');
+function validateEmergency(emergency) {
+  if (!hasExactKeys(emergency, EMERGENCY_KEYS)) {
+    return validationFailure('滿屏代碼設定格式不正確。', 'emergency');
   }
 
-  if (canonicalLocales.length !== 1) {
-    return validationFailure('日期時間語系格式不正確。', 'dateTime.locale');
+  for (const field of EMERGENCY_KEYS) {
+    if (
+      typeof emergency[field] !== 'string' ||
+      !OPAQUE_HEX_COLOR.test(emergency[field])
+    ) {
+      return validationFailure(
+        '滿屏背景顏色必須使用六位十六進位格式，例如 #000000。',
+        `emergency.${field}`,
+      );
+    }
   }
 
   return {
     ok: true,
     value: {
-      enabled: dateTime.enabled,
-      locale: canonicalLocales[0],
-      hour12: dateTime.hour12,
+      inspectionBackgroundColor:
+        emergency.inspectionBackgroundColor.toUpperCase(),
+      releaseBackgroundColor: emergency.releaseBackgroundColor.toUpperCase(),
     },
   };
 }
@@ -241,14 +288,21 @@ function validateDisplay(display) {
 }
 
 function freezeConfig(config) {
-  for (const section of ['logo', 'appearance', 'dateTime', 'marquee', 'display']) {
+  for (const section of [
+    'logo',
+    'appearance',
+    'dateTime',
+    'emergency',
+    'marquee',
+    'display',
+  ]) {
     Object.freeze(config[section]);
   }
 
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 config v1。 */
+/** 驗證、正規化並深層複製完整的 canonical config v2。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -264,10 +318,18 @@ function validateConfig(candidate) {
   const logo = validateLogo(candidate.logo);
   const appearance = validateAppearance(candidate.appearance);
   const dateTime = validateDateTime(candidate.dateTime);
+  const emergency = validateEmergency(candidate.emergency);
   const marquee = validateMarquee(candidate.marquee);
   const display = validateDisplay(candidate.display);
 
-  for (const result of [logo, appearance, dateTime, marquee, display]) {
+  for (const result of [
+    logo,
+    appearance,
+    dateTime,
+    emergency,
+    marquee,
+    display,
+  ]) {
     if (!result.ok) {
       return result;
     }
@@ -280,6 +342,7 @@ function validateConfig(candidate) {
       logo: logo.value,
       appearance: appearance.value,
       dateTime: dateTime.value,
+      emergency: emergency.value,
       marquee: marquee.value,
       display: display.value,
     }),

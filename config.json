@@ -1,5 +1,5 @@
 {
-  "configVersion": 1,
+  "configVersion": 2,
   "logo": {
     "enabled": false,
     "path": null
@@ -8,12 +8,16 @@
     "backgroundColor": "#000000",
     "fontFamily": "Microsoft JhengHei UI, Microsoft JhengHei, sans-serif",
     "fontColor": "#FFFFFF",
-    "minimumFontSizeRem": 2.5
+    "minimumFontSizeRem": 2.5,
+    "fontSizePercent": 100,
+    "lineSpacingPercent": 100
   },
   "dateTime": {
-    "enabled": false,
-    "locale": "zh-TW",
-    "hour12": false
+    "enabled": false
+  },
+  "emergency": {
+    "inspectionBackgroundColor": "#000000",
+    "releaseBackgroundColor": "#000000"
   },
   "marquee": {
     "enabled": true

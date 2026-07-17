@@ -20,7 +20,7 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v1 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v2 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
@@ -31,12 +31,13 @@ test('根目錄 config.json 通過 v1 schema，回傳深層凍結副本', async 
   assert.equal(Object.isFrozen(result.value), true);
   assert.equal(Object.isFrozen(result.value.logo), true);
   assert.equal(Object.isFrozen(result.value.appearance), true);
+  assert.equal(Object.isFrozen(result.value.emergency), true);
   assert.equal(Object.isFrozen(result.value.dateTime), true);
   assert.equal(Object.isFrozen(result.value.marquee), true);
   assert.equal(Object.isFrozen(result.value.display), true);
 });
 
-test('顏色與 locale 正規化，但 Logo 路徑與字型名稱不改寫', async () => {
+test('顏色正規化，但 Logo 路徑與字型名稱不改寫', async () => {
   const source = await readDefaultConfig();
   source.logo = {
     enabled: true,
@@ -45,7 +46,6 @@ test('顏色與 locale 正規化，但 Logo 路徑與字型名稱不改寫', asy
   source.appearance.backgroundColor = '#a1b2c3';
   source.appearance.fontColor = '#d4e5f6';
   source.appearance.fontFamily = 'Microsoft JhengHei UI, sans-serif';
-  source.dateTime.locale = 'zh-tw';
 
   const result = validateConfig(source);
 
@@ -54,7 +54,6 @@ test('顏色與 locale 正規化，但 Logo 路徑與字型名稱不改寫', asy
   assert.equal(result.value.appearance.fontFamily, source.appearance.fontFamily);
   assert.equal(result.value.appearance.backgroundColor, '#A1B2C3');
   assert.equal(result.value.appearance.fontColor, '#D4E5F6');
-  assert.equal(result.value.dateTime.locale, 'zh-TW');
 });
 
 test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () => {
@@ -64,7 +63,7 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     null,
     [],
     { ...source, unexpected: true },
-    { ...source, configVersion: 2 },
+    { ...source, configVersion: 1 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -102,7 +101,7 @@ test('Logo 僅接受受管理的相對點陣圖識別，啟用時不得缺少路
   }
 });
 
-test('外觀設定限制不透明色碼、字型長度及 0.25rem 字級級距', async () => {
+test('外觀設定限制色碼、字型、最小字級、字體比例與行距比例', async () => {
   const source = await readDefaultConfig();
   const invalidAppearanceValues = [
     { backgroundColor: '#FFF' },
@@ -113,6 +112,12 @@ test('外觀設定限制不透明色碼、字型長度及 0.25rem 字級級距',
     { minimumFontSizeRem: CONFIG_LIMITS.MINIMUM_FONT_SIZE_REM - 0.25 },
     { minimumFontSizeRem: CONFIG_LIMITS.MAXIMUM_FONT_SIZE_REM + 0.25 },
     { minimumFontSizeRem: 2.6 },
+    { fontSizePercent: CONFIG_LIMITS.MINIMUM_FONT_SIZE_PERCENT - 5 },
+    { fontSizePercent: CONFIG_LIMITS.MAXIMUM_FONT_SIZE_PERCENT + 5 },
+    { fontSizePercent: 101 },
+    { lineSpacingPercent: CONFIG_LIMITS.MINIMUM_LINE_SPACING_PERCENT - 5 },
+    { lineSpacingPercent: CONFIG_LIMITS.MAXIMUM_LINE_SPACING_PERCENT + 5 },
+    { lineSpacingPercent: 101 },
   ];
 
   for (const partial of invalidAppearanceValues) {
@@ -125,12 +130,35 @@ test('外觀設定限制不透明色碼、字型長度及 0.25rem 字級級距',
   }
 });
 
-test('日期、跑馬燈與顯示設定使用明確型別及交叉欄位規則', async () => {
+test('555 與 888 背景顏色使用各自獨立且嚴格的設定', async () => {
+  const source = await readDefaultConfig();
+  source.emergency.inspectionBackgroundColor = '#a10b0b';
+  source.emergency.releaseBackgroundColor = '#0b5a32';
+
+  const result = validateConfig(source);
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.value.emergency, {
+    inspectionBackgroundColor: '#A10B0B',
+    releaseBackgroundColor: '#0B5A32',
+  });
+
+  for (const emergency of [
+    { ...source.emergency, inspectionBackgroundColor: 'red' },
+    { ...source.emergency, releaseBackgroundColor: '#00000080' },
+    { ...source.emergency, unexpected: '#000000' },
+  ]) {
+    const invalid = validateConfig({ ...source, emergency });
+    assert.equal(invalid.ok, false);
+    assert.match(invalid.error.field ?? 'emergency', /^emergency/);
+  }
+});
+
+test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則', async () => {
   const source = await readDefaultConfig();
   const invalidPartials = [
     { dateTime: { ...source.dateTime, enabled: 'true' } },
-    { dateTime: { ...source.dateTime, locale: '不是 locale' } },
-    { dateTime: { ...source.dateTime, hour12: 0 } },
+    { dateTime: { ...source.dateTime, hour12: false } },
     { marquee: { enabled: 1 } },
     {
       display: {

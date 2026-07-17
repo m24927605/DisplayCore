@@ -1,54 +1,35 @@
-const MINUTE_MILLISECONDS = 60_000;
+const SECOND_MILLISECONDS = 1_000;
 
-function isValidFormattingOptions(options) {
+function isValidClockSettings(settings) {
   if (
-    options === null ||
-    typeof options !== 'object' ||
-    Array.isArray(options) ||
-    typeof options.locale !== 'string' ||
-    options.locale.length === 0 ||
-    typeof options.hour12 !== 'boolean'
+    settings === null ||
+    typeof settings !== 'object' ||
+    Array.isArray(settings) ||
+    Object.keys(settings).length !== 1 ||
+    typeof settings.enabled !== 'boolean'
   ) {
     return false;
   }
 
-  try {
-    return Intl.getCanonicalLocales(options.locale).length === 1;
-  } catch {
-    return false;
-  }
+  return true;
 }
 
-function createFormatter({ locale, hour12 }) {
-  return new Intl.DateTimeFormat(locale, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12,
-  });
-}
-
-/** 以 Display 所在 Windows 的本機時區格式化日期時間。 */
-export function formatDisplayDateTime(date, options) {
+/** 以 Display 所在電腦的本機時區輸出固定 24 小時 HH:mm:ss。 */
+export function formatDisplayDateTime(date) {
   if (
     !(date instanceof Date) ||
-    Number.isNaN(date.getTime()) ||
-    !isValidFormattingOptions(options)
+    Number.isNaN(date.getTime())
   ) {
     throw new TypeError('日期時間格式化參數不正確。');
   }
 
-  try {
-    return createFormatter(options).format(date);
-  } catch {
-    throw new TypeError('日期時間格式化參數不正確。');
-  }
+  return [date.getHours(), date.getMinutes(), date.getSeconds()]
+    .map((value) => String(value).padStart(2, '0'))
+    .join(':');
 }
 
 /**
- * 建立對齊整分鐘的本機 Clock。
+ * 建立對齊整秒的本機 Clock。
  *
  * 使用遞迴 timeout 而非 interval；電腦睡眠喚醒後會以新的現在時間重新校準，
  * 不累積計時漂移。停用或切換 emergency/blank 時可立即停止 timer。
@@ -69,7 +50,7 @@ export function createDisplayClock({
   }
 
   let timer = null;
-  let formatter = null;
+  let enabled = false;
   let disposed = false;
   let generation = 0;
 
@@ -88,7 +69,7 @@ export function createDisplayClock({
   }
 
   function renderAndSchedule(expectedGeneration) {
-    if (disposed || generation !== expectedGeneration || !formatter) {
+    if (disposed || generation !== expectedGeneration || !enabled) {
       return false;
     }
 
@@ -100,12 +81,12 @@ export function createDisplayClock({
       }
 
       render(Object.freeze({
-        text: formatter.format(date),
+        text: formatDisplayDateTime(date),
         dateTime: date.toISOString(),
       }));
 
-      const elapsedInMinute = date.getTime() % MINUTE_MILLISECONDS;
-      const delay = Math.max(1, MINUTE_MILLISECONDS - elapsedInMinute);
+      const elapsedInSecond = date.getTime() % SECOND_MILLISECONDS;
+      const delay = Math.max(1, SECOND_MILLISECONDS - elapsedInSecond);
       timer = setTimer(() => {
         timer = null;
         renderAndSchedule(expectedGeneration);
@@ -124,14 +105,14 @@ export function createDisplayClock({
         typeof settings !== 'object' ||
         Array.isArray(settings) ||
         typeof settings.enabled !== 'boolean' ||
-        !isValidFormattingOptions(settings)
+        !isValidClockSettings(settings)
       ) {
         return false;
       }
 
       generation += 1;
       cancelTimer();
-      formatter = null;
+      enabled = false;
 
       if (!settings.enabled) {
         try {
@@ -142,11 +123,7 @@ export function createDisplayClock({
         }
       }
 
-      try {
-        formatter = createFormatter(settings);
-      } catch {
-        return false;
-      }
+      enabled = true;
 
       return renderAndSchedule(generation);
     },
@@ -159,8 +136,7 @@ export function createDisplayClock({
       disposed = true;
       generation += 1;
       cancelTimer();
-      formatter = null;
+      enabled = false;
     },
   });
 }
-

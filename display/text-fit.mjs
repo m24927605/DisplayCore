@@ -11,6 +11,7 @@ export function calculateResponsiveFontBounds({
   smallestRowHeight,
   rootFontSize,
   minimumFontSizeRem,
+  fontSizePercent,
   lineHeight,
 }) {
   if (
@@ -22,6 +23,8 @@ export function calculateResponsiveFontBounds({
     rootFontSize <= 0 ||
     !Number.isFinite(minimumFontSizeRem) ||
     minimumFontSizeRem <= 0 ||
+    !Number.isFinite(fontSizePercent) ||
+    fontSizePercent <= 0 ||
     !Number.isFinite(lineHeight) ||
     lineHeight <= 0
   ) {
@@ -30,13 +33,15 @@ export function calculateResponsiveFontBounds({
 
   const configuredMinimumFontSize = minimumFontSizeRem * rootFontSize;
   const verticalFontSizeLimit = smallestRowHeight / lineHeight;
+  const configuredResponsiveMaximum =
+    availableWidth * 0.24 * (fontSizePercent / 100);
   const minimumFontSize = Math.min(
     configuredMinimumFontSize,
     verticalFontSizeLimit,
   );
   const maximumFontSize = Math.max(
     minimumFontSize,
-    Math.min(availableWidth * 0.24, verticalFontSizeLimit),
+    Math.min(configuredResponsiveMaximum, verticalFontSizeLimit),
   );
 
   return {

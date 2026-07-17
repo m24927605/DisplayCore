@@ -70,6 +70,51 @@ test('有效使用者設定支援 UTF-8 BOM，載入時不擅自重寫檔案', a
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
+test('既有 v1 使用者設定在記憶體升級為 v2且不擅自覆寫原檔', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const legacy = {
+    configVersion: 1,
+    logo: { enabled: false, path: null },
+    appearance: {
+      backgroundColor: '#123abc',
+      fontFamily: 'Arial, sans-serif',
+      fontColor: '#fedcba',
+      minimumFontSizeRem: 3.25,
+    },
+    dateTime: { enabled: true, locale: 'zh-TW', hour12: true },
+    marquee: { enabled: false },
+    display: {
+      selectionMode: 'auto',
+      defaultDisplayId: null,
+      fullscreen: true,
+    },
+  };
+  const originalText = JSON.stringify(legacy);
+  await fileSystem.writeFile(configPath, originalText, 'utf8');
+
+  const snapshot = await manager.initialize();
+
+  assert.equal(snapshot.config.configVersion, 2);
+  assert.equal(snapshot.config.appearance.backgroundColor, '#123ABC');
+  assert.equal(snapshot.config.appearance.fontColor, '#FEDCBA');
+  assert.equal(snapshot.config.appearance.fontSizePercent, 100);
+  assert.equal(snapshot.config.appearance.lineSpacingPercent, 100);
+  assert.deepEqual(snapshot.config.dateTime, { enabled: true });
+  assert.deepEqual(snapshot.config.emergency, snapshot.defaults.emergency);
+  assert.equal(snapshot.notice, null);
+  assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
+
+  const saved = await manager.saveConfig(
+    structuredClone(snapshot.config),
+    snapshot.revision,
+  );
+  assert.equal(
+    JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
+    2,
+  );
+  assert.equal(saved.revision, 1);
+});
+
 test('損壞或過大的使用者設定保留原檔，記憶體安全降級為預設值', async (t) => {
   const scenarios = [
     '{ invalid json',

@@ -20,6 +20,7 @@ test('響應式字級邊界會在三行空間不足時安全下修設定最小�
     smallestRowHeight: 92,
     rootFontSize: 16,
     minimumFontSizeRem: 12,
+    fontSizePercent: 100,
     lineHeight: 1.08,
   });
 
@@ -37,6 +38,7 @@ test('響應式字級邊界在空間足夠時保留設定最小值與 viewport �
     smallestRowHeight: 800,
     rootFontSize: 16,
     minimumFontSizeRem: 3,
+    fontSizePercent: 100,
     lineHeight: 1.08,
   });
 
@@ -55,6 +57,7 @@ test('響應式字級邊界拒絕零尺寸、非法 rem 與 line-height', async 
     smallestRowHeight: 200,
     rootFontSize: 16,
     minimumFontSizeRem: 2.5,
+    fontSizePercent: 100,
     lineHeight: 1.08,
   };
 
@@ -63,6 +66,7 @@ test('響應式字級邊界拒絕零尺寸、非法 rem 與 line-height', async 
     { smallestRowHeight: 0 },
     { rootFontSize: 0 },
     { minimumFontSizeRem: 0 },
+    { fontSizePercent: 0 },
     { lineHeight: 0 },
   ]) {
     assert.throws(
@@ -70,6 +74,31 @@ test('響應式字級邊界拒絕零尺寸、非法 rem 與 line-height', async 
       { name: 'TypeError', message: '響應式字級邊界參數不正確。' },
     );
   }
+});
+
+test('字體比例只縮放響應式上限並保留最小字級與垂直安全界線', async () => {
+  const { calculateResponsiveFontBounds } = await loadTextFit();
+  const smaller = calculateResponsiveFontBounds({
+    availableWidth: 1920,
+    smallestRowHeight: 800,
+    rootFontSize: 16,
+    minimumFontSizeRem: 3,
+    fontSizePercent: 75,
+    lineHeight: 1.08,
+  });
+  const larger = calculateResponsiveFontBounds({
+    availableWidth: 1920,
+    smallestRowHeight: 300,
+    rootFontSize: 16,
+    minimumFontSizeRem: 3,
+    fontSizePercent: 200,
+    lineHeight: 1.08,
+  });
+
+  assert.equal(smaller.minimumFontSize, 48);
+  assert.equal(smaller.maximumFontSize, 1920 * 0.24 * 0.75);
+  assert.equal(larger.minimumFontSize, 48);
+  assert.equal(larger.maximumFontSize, 300 / 1.08);
 });
 
 test('所有字級都容得下時直接使用 responsive 上限', async () => {
