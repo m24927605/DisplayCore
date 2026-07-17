@@ -6,37 +6,35 @@
     "displaycore://app/display/index.html"
   ],
   "branch": "main",
-  "commit": "495a6df78176fc130f0506204021aab7a81fd565",
-  "healthScore": 97,
-  "initialHealthScore": 93,
+  "commit": "e2cca4a9a723fd4169cd027a444cc1f6a1dff66e",
+  "healthScore": 99,
+  "initialHealthScore": 95,
   "issues": [
-    {
-      "id": "ISSUE-003",
-      "title": "超長跑馬燈無法在固定翻頁前完成一次 traversal",
-      "severity": "medium",
-      "category": "functional"
-    },
-    {
-      "id": "ISSUE-004",
-      "title": "prefers-reduced-motion 下的超長靜態文字不可讀",
-      "severity": "medium",
-      "category": "accessibility"
-    },
     {
       "id": "ISSUE-005",
       "title": "封裝版 Main Process 顯示 Electron ASAR deprecation warning",
       "severity": "low",
-      "category": "console"
+      "category": "console",
+      "status": "deferred-upstream"
+    }
+  ],
+  "fixedIssues": [
+    {
+      "id": "ISSUE-001",
+      "title": "顯示次數無法儲存",
+      "severity": "high",
+      "category": "functional",
+      "commit": "e2cca4a9a723fd4169cd027a444cc1f6a1dff66e"
     }
   ],
   "categoryScores": {
-    "console": 100,
+    "console": 97,
     "links": 100,
     "visual": 100,
-    "functional": 92,
+    "functional": 100,
     "ux": 100,
     "performance": 100,
     "content": 100,
-    "accessibility": 92
+    "accessibility": 100
   }
 }
