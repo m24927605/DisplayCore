@@ -61,11 +61,45 @@ test('建立引擎不會自行播放，start 後第一幀仍為未溶解狀態',
   animationFrames.fire(animationFrames.active()[0], 2_000);
   assert.equal(frames.length, 1);
   assert.equal(frames[0].progress, 0);
-  assert.equal(frames[0].dissolveFrontX, 0);
+  assert.deepEqual(frames[0].erosionOrigin, { x: 0, y: 1_080 });
+  assert.deepEqual(frames[0].erosionPatches, []);
   assert.deepEqual(frames[0].particles, []);
 });
 
-test('溶解邊界由左向右前進，舊圖片顆粒只向右漂移且保持清楚尺寸', async () => {
+test('侵蝕從左下角向右上擴散，不能退化成垂直直線 wipe', async () => {
+  const { animationFrames, engine, frames } = await createHarness();
+
+  engine.start({ width: 1_000, height: 500, durationMs: 1_000 });
+  animationFrames.fire(animationFrames.active()[0], 1_000);
+  animationFrames.fire(animationFrames.active()[0], 1_200);
+
+  const earlyFrame = frames.at(-1);
+  assert.equal(earlyFrame.progress, 0.2);
+  assert.deepEqual(earlyFrame.erosionOrigin, { x: 0, y: 500 });
+  assert.equal(Object.hasOwn(earlyFrame, 'dissolveFrontX'), false);
+  assert.ok(earlyFrame.erosionPatches.length > 0);
+
+  const meanX = earlyFrame.erosionPatches.reduce(
+    (total, patch) => total + patch.x,
+    0,
+  ) / earlyFrame.erosionPatches.length;
+  const meanY = earlyFrame.erosionPatches.reduce(
+    (total, patch) => total + patch.y,
+    0,
+  ) / earlyFrame.erosionPatches.length;
+  const lowerLeftCount = earlyFrame.erosionPatches.filter(
+    ({ x, y }) => x < earlyFrame.width * 0.35 && y > earlyFrame.height * 0.65,
+  ).length;
+  const upperLeftCount = earlyFrame.erosionPatches.filter(
+    ({ x, y }) => x < earlyFrame.width * 0.35 && y < earlyFrame.height * 0.35,
+  ).length;
+
+  assert.ok(meanX < earlyFrame.width * 0.35, '初期侵蝕必須集中在左側');
+  assert.ok(meanY > earlyFrame.height * 0.65, '初期侵蝕必須集中在下方');
+  assert.ok(lowerLeftCount > upperLeftCount * 3, '左下角必須明顯早於左上角');
+});
+
+test('舊圖片顆粒由來源位置向右上揚起並逐漸縮小', async () => {
   const { animationFrames, engine, frames } = await createHarness();
 
   engine.start({ width: 1_920, height: 1_080, durationMs: 1_000 });
@@ -74,22 +108,27 @@ test('溶解邊界由左向右前進，舊圖片顆粒只向右漂移且保持�
 
   const middleFrame = frames.at(-1);
   assert.equal(middleFrame.progress, 0.5);
-  assert.equal(middleFrame.dissolveFrontX, 960);
-  assert.equal(middleFrame.sampleCount, 120);
   assert.ok(middleFrame.particles.length > 0);
   assert.ok(middleFrame.particles.length <= middleFrame.sampleCount);
   assert.ok(middleFrame.particles.some(({ x, sourceX }) => x > sourceX));
+  assert.ok(middleFrame.particles.some(({ y, sourceY }) => y < sourceY));
 
   for (const particle of middleFrame.particles) {
     assert.ok(particle.x >= particle.sourceX, '沙粒不可逆風向左飄移');
+    assert.ok(particle.y <= particle.sourceY, '沙粒必須被風向上揚起');
     assert.ok(particle.sourceX >= 0 && particle.sourceX <= middleFrame.width);
     assert.ok(particle.sourceY >= 0 && particle.sourceY <= middleFrame.height);
+    assert.ok(particle.sourceSize >= 2, '沙粒必須裁自舊圖片的來源區塊');
     assert.ok(particle.size >= 2, '沙粒必須維持可辨識尺寸');
+    assert.ok(particle.size <= particle.sourceSize, '沙粒飄散時只能縮小');
     assert.ok(particle.opacity > 0 && particle.opacity <= 1);
   }
 
   animationFrames.fire(animationFrames.active()[0], 1_750);
-  assert.ok(frames.at(-1).dissolveFrontX > middleFrame.dissolveFrontX);
+  assert.ok(
+    frames.at(-1).erosionPatches.length > middleFrame.erosionPatches.length,
+    '侵蝕區必須隨時間向外擴散',
+  );
 });
 
 test('4K 畫面採固定且有界的取樣數，不依總像素逐點處理', async () => {
@@ -107,9 +146,28 @@ test('4K 畫面採固定且有界的取樣數，不依總像素逐點處理', as
   animationFrames.fire(animationFrames.active()[0], 0);
   animationFrames.fire(animationFrames.active()[0], 600);
 
-  assert.equal(frames[0].sampleCount, maximum);
-  assert.equal(frames[1].sampleCount, maximum);
+  assert.ok(frames[0].sampleCount <= maximum);
+  assert.ok(frames[0].sampleCount >= maximum * 0.85);
+  assert.equal(frames[1].sampleCount, frames[0].sampleCount);
   assert.ok(frames[1].particles.length <= maximum);
+  assert.ok(randomCallCount <= maximum * 5);
+});
+
+test('極端寬高比仍不得突破呼叫端指定的粒子上限', async () => {
+  let randomCallCount = 0;
+  const maximum = 7;
+  const { animationFrames, engine, frames } = await createHarness({
+    maxParticleCount: maximum,
+    random() {
+      randomCallCount += 1;
+      return 0.5;
+    },
+  });
+
+  engine.start({ width: 100_000, height: 100, durationMs: 1_000 });
+  animationFrames.fire(animationFrames.active()[0], 0);
+
+  assert.ok(frames[0].sampleCount <= maximum);
   assert.ok(randomCallCount <= maximum * 5);
 });
 

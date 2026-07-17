@@ -1103,6 +1103,141 @@ async function verifyClockWithoutLogo() {
   assert.ok(standbyClock.fontSize >= standbyClock.minimumLargeFontSize);
 }
 
+/**
+ * 在指定進度區間擷取真實 Canvas alpha 分佈與圖片幾何。
+ * 使用區間 waitFor 避免依賴單一毫秒時點，降低不同機器幀率差異。
+ */
+async function captureSandFrame({
+  minimumProgress,
+  maximumProgress,
+  expectedVisibleSource,
+  description,
+}) {
+  return waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const progress = Number(stage.dataset.sandProgress);
+      const layer = document.getElementById('standby-background-layer')
+        .getBoundingClientRect();
+      const canvas = document.getElementById('standby-sand-transition');
+      const canvasBox = canvas.getBoundingClientRect();
+      const images = [...document.querySelectorAll('.standby-background-image')];
+      const visibleImage = images.find((image) => !image.hidden);
+
+      if (
+        stage.dataset.mode !== 'blank' ||
+        stage.dataset.standbyTransition !== 'sand' ||
+        progress < ${minimumProgress} || progress > ${maximumProgress} ||
+        canvas.hidden || canvas.width <= 1 || canvas.height <= 1 ||
+        visibleImage?.getAttribute('src') !== '${expectedVisibleSource}'
+      ) {
+        return false;
+      }
+
+      const context = canvas.getContext('2d');
+      const sampleRegion = (
+        minimumX,
+        maximumX,
+        minimumY,
+        maximumY,
+        columns = 14,
+        rows = 14,
+      ) => {
+        let transparent = 0;
+        let partial = 0;
+        let opaque = 0;
+
+        for (let column = 0; column < columns; column += 1) {
+          const normalizedX = minimumX +
+            ((column + 0.5) / columns) * (maximumX - minimumX);
+          const x = Math.min(
+            canvas.width - 1,
+            Math.floor(normalizedX * canvas.width),
+          );
+          for (let row = 0; row < rows; row += 1) {
+            const normalizedY = minimumY +
+              ((row + 0.5) / rows) * (maximumY - minimumY);
+            const y = Math.min(
+              canvas.height - 1,
+              Math.floor(normalizedY * canvas.height),
+            );
+            const alpha = context.getImageData(x, y, 1, 1).data[3];
+            if (alpha <= 24) {
+              transparent += 1;
+            } else if (alpha >= 231) {
+              opaque += 1;
+            } else {
+              partial += 1;
+            }
+          }
+        }
+
+        const total = transparent + partial + opaque;
+        return {
+          transparent,
+          partial,
+          opaque,
+          transparentRatio: transparent / total,
+          opaqueRatio: opaque / total,
+        };
+      };
+
+      const visibleBox = visibleImage.getBoundingClientRect();
+      const toBox = (box) => ({
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+        width: box.width,
+        height: box.height,
+      });
+      const coversLayer = (box) =>
+        Math.abs(box.left - layer.left) <= 0.5 &&
+        Math.abs(box.top - layer.top) <= 0.5 &&
+        Math.abs(box.width - layer.width) <= 0.5 &&
+        Math.abs(box.height - layer.height) <= 0.5;
+
+      return {
+        progress,
+        transition: stage.dataset.standbyTransition,
+        canvasCoversLayer: coversLayer(canvasBox),
+        visibleSource: visibleImage.getAttribute('src'),
+        visibleImageCoversLayer: coversLayer(visibleBox),
+        layerBox: toBox(layer),
+        canvasBox: toBox(canvasBox),
+        visibleImageBox: toBox(visibleBox),
+        regions: {
+          topLeft: sampleRegion(0.04, 0.28, 0.05, 0.29),
+          topRight: sampleRegion(0.72, 0.96, 0.05, 0.29),
+          bottomLeft: sampleRegion(0.04, 0.28, 0.71, 0.95),
+          bottomRight: sampleRegion(0.72, 0.96, 0.71, 0.95),
+          leftColumn: sampleRegion(0.115, 0.125, 0.04, 0.96, 1, 64),
+        },
+        imageMotion: images.map((image) => {
+          const style = getComputedStyle(image);
+          return {
+            source: image.getAttribute('src'),
+            hidden: image.hidden,
+            transform: style.transform,
+            translate: style.translate || 'none',
+            animationName: style.animationName,
+          };
+        }),
+      };
+    })()`),
+    description,
+  );
+}
+
+function assertImagesRemainStationary(imageMotion, description) {
+  assert.equal(imageMotion.length, 2, `${description} 雙緩衝圖片`);
+  for (const image of imageMotion) {
+    assert.equal(image.transform, 'none', `${description} image transform`);
+    assert.equal(image.translate, 'none', `${description} image translate`);
+    assert.equal(image.animationName, 'none', `${description} image animation`);
+  }
+}
+
 async function runWorkflow(
   timers,
   expectedLogoUrl,
@@ -1180,105 +1315,117 @@ async function runWorkflow(
     pendingHidden: true,
   });
 
+  const beforeSandGeometry = await execute(`(() => {
+    const layer = document.getElementById('standby-background-layer')
+      .getBoundingClientRect();
+    const images = [...document.querySelectorAll('.standby-background-image')];
+    const visibleImage = images.find((image) => !image.hidden);
+    const visibleBox = visibleImage.getBoundingClientRect();
+    return {
+      visibleSource: visibleImage.getAttribute('src'),
+      visibleImageCoversLayer:
+        Math.abs(visibleBox.left - layer.left) <= 0.5 &&
+        Math.abs(visibleBox.top - layer.top) <= 0.5 &&
+        Math.abs(visibleBox.width - layer.width) <= 0.5 &&
+        Math.abs(visibleBox.height - layer.height) <= 0.5,
+      imageMotion: images.map((image) => {
+        const style = getComputedStyle(image);
+        return {
+          source: image.getAttribute('src'),
+          hidden: image.hidden,
+          transform: style.transform,
+          translate: style.translate || 'none',
+          animationName: style.animationName,
+        };
+      }),
+    };
+  })()`);
+  assert.equal(beforeSandGeometry.visibleSource, expectedStandbyBackgroundUrl);
+  assert.equal(beforeSandGeometry.visibleImageCoversLayer, true);
+  assertImagesRemainStationary(beforeSandGeometry.imageMotion, '轉場前');
+
   delayedSecondBackgroundRead.release();
-  const sandTransition = await waitFor(
-    () => execute(`(() => {
-      const stage = document.getElementById('display-stage');
-      const layer = document.getElementById('standby-background-layer')
-        .getBoundingClientRect();
-      const canvas = document.getElementById('standby-sand-transition');
-      const canvasBox = canvas.getBoundingClientRect();
-      const image = [...document.querySelectorAll('.standby-background-image')]
-        .find((candidate) => !candidate.hidden);
-
-      if (
-        stage.dataset.mode !== 'blank' ||
-        stage.dataset.standbyTransition !== 'sand' ||
-        !(Number(stage.dataset.sandProgress) > 0 &&
-          Number(stage.dataset.sandProgress) < 1) ||
-        canvas.hidden || canvas.width <= 1 || canvas.height <= 1 ||
-        image?.getAttribute('src') !== '${secondStandbyBackgroundUrl}'
-      ) {
-        return false;
-      }
-
-      const context = canvas.getContext('2d');
-      const sampleColumns = 32;
-      const sampleRows = 8;
-      let transparentSamples = 0;
-      let leftAlpha = 0;
-      let rightAlpha = 0;
-      let leftCount = 0;
-      let rightCount = 0;
-
-      for (let column = 0; column < sampleColumns; column += 1) {
-        const x = Math.min(
-          canvas.width - 1,
-          Math.floor(((column + 0.5) / sampleColumns) * canvas.width),
-        );
-        for (let row = 0; row < sampleRows; row += 1) {
-          const y = Math.min(
-            canvas.height - 1,
-            Math.floor(((row + 0.5) / sampleRows) * canvas.height),
-          );
-          const alpha = context.getImageData(x, y, 1, 1).data[3];
-          if (alpha < 16) {
-            transparentSamples += 1;
-          }
-          if (column < sampleColumns / 4) {
-            leftAlpha += alpha;
-            leftCount += 1;
-          } else if (column >= sampleColumns * 3 / 4) {
-            rightAlpha += alpha;
-            rightCount += 1;
-          }
-        }
-      }
-
-      const progress = transparentSamples / (sampleColumns * sampleRows);
-      const averageLeftAlpha = leftAlpha / leftCount;
-      const averageRightAlpha = rightAlpha / rightCount;
-      if (
-        progress <= 0 || progress >= 1 ||
-        averageLeftAlpha >= averageRightAlpha
-      ) {
-        return false;
-      }
-
-      return {
-        transition: stage.dataset.standbyTransition,
-        reportedProgress: Number(stage.dataset.sandProgress),
-        canvasHidden: canvas.hidden,
-        canvasWidth: canvas.width,
-        canvasHeight: canvas.height,
-        canvasCoversLayer:
-          Math.abs(canvasBox.left - layer.left) <= 0.5 &&
-          Math.abs(canvasBox.top - layer.top) <= 0.5 &&
-          Math.abs(canvasBox.width - layer.width) <= 0.5 &&
-          Math.abs(canvasBox.height - layer.height) <= 0.5,
-        progress,
-        averageLeftAlpha,
-        averageRightAlpha,
-        visibleSource: image.getAttribute('src'),
-      };
-    })()`),
-    '第二張背景由左向右吹沙轉場進行中',
-  );
-  assert.equal(sandTransition.transition, 'sand');
+  const earlySandFrame = await captureSandFrame({
+    minimumProgress: 0.18,
+    maximumProgress: 0.32,
+    expectedVisibleSource: secondStandbyBackgroundUrl,
+    description: '左下起砂早段 Canvas 幀',
+  });
+  assert.equal(earlySandFrame.transition, 'sand');
+  assert.equal(earlySandFrame.canvasCoversLayer, true);
+  assert.equal(earlySandFrame.visibleImageCoversLayer, true);
+  assert.equal(earlySandFrame.visibleSource, secondStandbyBackgroundUrl);
+  assertImagesRemainStationary(earlySandFrame.imageMotion, '轉場早段');
   assert.ok(
-    sandTransition.reportedProgress > 0 &&
-      sandTransition.reportedProgress < 1,
+    earlySandFrame.regions.bottomLeft.transparentRatio >=
+      earlySandFrame.regions.topLeft.transparentRatio + 0.15,
+    `早段左下必須明顯早於左上：${JSON.stringify(earlySandFrame.regions)}`,
   );
-  assert.equal(sandTransition.canvasHidden, false);
-  assert.ok(sandTransition.canvasWidth > 1);
-  assert.ok(sandTransition.canvasHeight > 1);
-  assert.equal(sandTransition.canvasCoversLayer, true);
-  assert.ok(sandTransition.progress > 0 && sandTransition.progress < 1);
   assert.ok(
-    sandTransition.averageLeftAlpha < sandTransition.averageRightAlpha,
-    '左側必須先溶解，沙風方向才是向右',
+    earlySandFrame.regions.bottomLeft.transparentRatio >=
+      earlySandFrame.regions.bottomRight.transparentRatio + 0.15,
+    `早段左下必須明顯早於右下：${JSON.stringify(earlySandFrame.regions)}`,
   );
-  assert.equal(sandTransition.visibleSource, secondStandbyBackgroundUrl);
+  assert.ok(
+    earlySandFrame.regions.bottomLeft.transparentRatio >=
+      earlySandFrame.regions.topRight.transparentRatio + 0.2,
+    `早段右上必須仍晚於左下：${JSON.stringify(earlySandFrame.regions)}`,
+  );
+  assert.ok(
+    earlySandFrame.regions.leftColumn.transparent > 0 &&
+      earlySandFrame.regions.leftColumn.opaque > 0,
+    `同一左側欄必須同時有透明與不透明點，不可是 vertical wipe：` +
+      JSON.stringify(earlySandFrame.regions.leftColumn),
+  );
+
+  const middleSandFrame = await captureSandFrame({
+    minimumProgress: 0.56,
+    maximumProgress: 0.68,
+    expectedVisibleSource: secondStandbyBackgroundUrl,
+    description: '左下起砂中段 Canvas 幀',
+  });
+  assert.equal(middleSandFrame.transition, 'sand');
+  assert.equal(middleSandFrame.canvasCoversLayer, true);
+  assert.equal(middleSandFrame.visibleImageCoversLayer, true);
+  assert.equal(middleSandFrame.visibleSource, secondStandbyBackgroundUrl);
+  assertImagesRemainStationary(middleSandFrame.imageMotion, '轉場中段');
+  assert.ok(
+    middleSandFrame.regions.bottomLeft.transparentRatio >=
+      middleSandFrame.regions.topRight.transparentRatio + 0.3,
+    `中段右上仍必須晚於左下：${JSON.stringify(middleSandFrame.regions)}`,
+  );
+  assert.ok(
+    middleSandFrame.regions.topRight.transparentRatio <
+      middleSandFrame.regions.topLeft.transparentRatio &&
+      middleSandFrame.regions.topRight.transparentRatio <
+        middleSandFrame.regions.bottomRight.transparentRatio,
+    `中段右上必須是四區中較晚侵蝕的區域：` +
+      JSON.stringify(middleSandFrame.regions),
+  );
+  assert.ok(
+    middleSandFrame.regions.bottomLeft.transparentRatio >=
+      earlySandFrame.regions.bottomLeft.transparentRatio,
+    '左下侵蝕量不得隨進度倒退',
+  );
+  assert.ok(
+    Math.abs(
+      middleSandFrame.visibleImageBox.left -
+        earlySandFrame.visibleImageBox.left,
+    ) <= 0.5 &&
+      Math.abs(
+        middleSandFrame.visibleImageBox.top -
+          earlySandFrame.visibleImageBox.top,
+      ) <= 0.5 &&
+      Math.abs(
+        middleSandFrame.visibleImageBox.width -
+          earlySandFrame.visibleImageBox.width,
+      ) <= 0.5 &&
+      Math.abs(
+        middleSandFrame.visibleImageBox.height -
+          earlySandFrame.visibleImageBox.height,
+      ) <= 0.5,
+    '新圖不得在轉場期間平移或縮放',
+  );
 
   await waitFor(
     () => execute(`(() => {

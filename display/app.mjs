@@ -637,26 +637,21 @@ function cancelStandbySandTransition() {
   delete elements.stage.dataset.sandProgress;
 }
 
-function drawCoverTail(context, image, crop, startX, width, height) {
-  if (startX >= width) {
-    return;
-  }
-
-  const destinationWidth = width - startX;
+function drawCoverImage(context, image, crop, width, height) {
   context.drawImage(
     image,
-    crop.sourceX + startX / crop.scale,
+    crop.sourceX,
     crop.sourceY,
-    destinationWidth / crop.scale,
+    crop.sourceWidth,
     crop.sourceHeight,
-    startX,
     0,
-    destinationWidth,
+    0,
+    width,
     height,
   );
 }
 
-/** 每幀保留舊圖右側完整區，並把溶解邊緣畫成可辨識、向右飄散的圖像顆粒。 */
+/** 舊圖原位挖出左下起始的不規則孔洞，再把來源圖塊畫成向右上飄散的沙粒。 */
 function drawStandbySandFrame(frame) {
   if (!sandContext || !sandOutgoingImage || !sandCoverCrop) {
     return;
@@ -665,28 +660,40 @@ function drawStandbySandFrame(frame) {
   elements.stage.dataset.sandProgress = frame.progress.toFixed(3);
   sandContext.clearRect(0, 0, frame.width, frame.height);
   sandContext.imageSmoothingEnabled = true;
-  const dissolveBand = frame.progress > 0 && frame.progress < 1
-    ? Math.max(12, frame.width * 0.025)
-    : 0;
-  drawCoverTail(
+  drawCoverImage(
     sandContext,
     sandOutgoingImage,
     sandCoverCrop,
-    Math.min(frame.width, frame.dissolveFrontX + dissolveBand),
     frame.width,
     frame.height,
   );
 
+  sandContext.save();
+  sandContext.globalCompositeOperation = 'destination-out';
+  sandContext.beginPath();
+  for (const patch of frame.erosionPatches) {
+    sandContext.moveTo(patch.x + patch.radius, patch.y);
+    sandContext.arc(
+      patch.x,
+      patch.y,
+      patch.radius,
+      0,
+      Math.PI * 2,
+    );
+  }
+  sandContext.fill();
+  sandContext.restore();
+
   sandContext.imageSmoothingEnabled = false;
   for (const particle of frame.particles) {
-    const sourceSize = particle.size / sandCoverCrop.scale;
+    const sourceSize = particle.sourceSize / sandCoverCrop.scale;
     sandContext.globalAlpha = particle.opacity;
     sandContext.drawImage(
       sandOutgoingImage,
       sandCoverCrop.sourceX +
-        (particle.sourceX - particle.size / 2) / sandCoverCrop.scale,
+        (particle.sourceX - particle.sourceSize / 2) / sandCoverCrop.scale,
       sandCoverCrop.sourceY +
-        (particle.sourceY - particle.size / 2) / sandCoverCrop.scale,
+        (particle.sourceY - particle.sourceSize / 2) / sandCoverCrop.scale,
       sourceSize,
       sourceSize,
       particle.x - particle.size / 2,
@@ -699,7 +706,8 @@ function drawStandbySandFrame(frame) {
 }
 
 /**
- * 將新圖先放到 Canvas 下層，再以舊圖粒子由左向右揭露；第一張圖片不播放。
+ * 將新圖固定在 Canvas 下層，再從左下風蝕舊圖並讓來源圖粒向右上飄散；
+ * 第一張圖片不播放轉場。
  * 若 Canvas 無法使用則立即切換，絕不讓待機輪播停住。
  */
 function startStandbySandTransition(image, url) {
@@ -725,7 +733,7 @@ function startStandbySandTransition(image, url) {
   sandCoverCrop = calculateCoverCrop(outgoingImage, width, height);
   sandContext.clearRect(0, 0, width, height);
   sandContext.imageSmoothingEnabled = true;
-  drawCoverTail(sandContext, outgoingImage, sandCoverCrop, 0, width, height);
+  drawCoverImage(sandContext, outgoingImage, sandCoverCrop, width, height);
 
   activeStandbyBackgroundImage = image;
   pendingStandbyBackgroundImage = null;
@@ -763,7 +771,7 @@ function isExpectedStandbyBackground(image) {
     image.getAttribute('src') === expectedStandbyBackgroundUrl;
 }
 
-/** 第一張立即顯示；後續健康圖片以風吹沙轉場原子替換。 */
+/** 第一張立即顯示；後續健康圖片以左下起砂的風蝕轉場原子替換。 */
 function commitStandbyBackgroundImage(image, url) {
   if (!isExpectedStandbyBackground(image) || url !== expectedStandbyBackgroundUrl) {
     return false;

@@ -155,7 +155,7 @@ body {
   object-position: center;
 }
 
-/* 舊圖在 Canvas 中由左向右碎裂；新圖保持在下層，逐步被揭露。 */
+/* 舊圖從左下角風蝕成向右上飄散的來源圖粒；新圖固定在下層逐步顯露。 */
 .standby-sand-transition {
   position: absolute;
   inset: 0;
