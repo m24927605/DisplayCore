@@ -98,6 +98,10 @@ function createDisplayWindowOptions({
     // 託管模式先建立隱藏的普通視窗，定位控制器套用正確螢幕 bounds 後
     // 才進入全螢幕，避免作業系統先在主螢幕閃現。
     fullscreen: !windowed && !managedOutput,
+    // Electron 在 macOS 收到明確的 fullscreen:false 時，會連帶關閉
+    // fullscreenable。託管輸出必須覆寫回 true，否則定位後呼叫
+    // setFullScreen(true) 只會被原生層靜默忽略。
+    fullscreenable: !windowed,
     alwaysOnTop: true,
     focusable: false,
     skipTaskbar: true,

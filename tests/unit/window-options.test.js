@@ -54,6 +54,7 @@ test('Display Window 預設為全螢幕、無框、置頂且不可操作', () =>
   });
 
   assert.equal(options.fullscreen, true);
+  assert.equal(options.fullscreenable, true);
   assert.equal(options.frame, false);
   assert.equal(options.alwaysOnTop, true);
   assert.equal(options.focusable, false);
@@ -77,6 +78,7 @@ test('第 9 步託管輸出先建立隱藏的非全螢幕視窗，等待定位�
 
   assert.equal(options.show, false);
   assert.equal(options.fullscreen, false);
+  assert.equal(options.fullscreenable, true);
   assert.equal(options.frame, false);
   assert.equal(options.focusable, false);
 });
@@ -89,6 +91,7 @@ test('視窗煙霧測試模式將 Display 限制為 16:9 視窗', () => {
   });
 
   assert.equal(options.fullscreen, false);
+  assert.equal(options.fullscreenable, false);
   assert.equal(options.width, 960);
   assert.equal(options.height, 540);
 });
