@@ -31,8 +31,11 @@ const INVALID_USER_CONFIG_NOTICE = Object.freeze({
 export const SETTINGS_LIMITS = Object.freeze({
   MAX_LOGO_PATH_LENGTH: 128,
   MINIMUM_LOGO_SIZE_PERCENT: 50,
-  MAXIMUM_LOGO_SIZE_PERCENT: 200,
+  MAXIMUM_LOGO_SIZE_PERCENT: 1_000,
   MAX_STANDBY_BACKGROUND_PATH_LENGTH: 128,
+  MAX_STANDBY_BACKGROUND_IMAGES: 20,
+  MINIMUM_STANDBY_SLIDE_DURATION_SECONDS: 1,
+  MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS: 3_600,
   MAX_FONT_FAMILY_LENGTH: 200,
   MINIMUM_FONT_SIZE_REM: 1,
   MAXIMUM_FONT_SIZE_REM: 12,
@@ -51,6 +54,7 @@ export const SETTINGS_LIMITS = Object.freeze({
 });
 
 const PLAYBACK_MODES = Object.freeze(['finite', 'continuous']);
+const STANDBY_BACKGROUND_MODES = Object.freeze(['fixed', 'slideshow']);
 
 const RENDER_RESOLUTIONS = Object.freeze([
   'auto',
@@ -87,6 +91,8 @@ function failure(field, message) {
 }
 
 function freezeConfig(config) {
+  Object.freeze(config.standby.backgroundImagePaths);
+
   for (const section of [
     'logo',
     'appearance',
@@ -105,7 +111,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 6) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 7) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -141,29 +147,59 @@ function normalizeConfig(candidate) {
   ) {
     return failure(
       'logo.sizePercent',
-      'Logo 大小必須介於 50% 至 200%，並以 5% 遞增。',
+      'Logo 大小必須介於 50% 至 1000%，並以 5% 遞增。',
     );
   }
 
   const standby = candidate.standby;
-  if (!hasExactKeys(standby, ['backgroundImagePath'])) {
+  if (
+    !hasExactKeys(standby, [
+      'backgroundImagePaths',
+      'backgroundMode',
+      'slideDurationSeconds',
+    ])
+  ) {
     return failure('standby', '待機畫面設定格式不正確。');
   }
 
   if (
-    standby.backgroundImagePath !== null &&
-    (
-      typeof standby.backgroundImagePath !== 'string' ||
-      standby.backgroundImagePath.length === 0 ||
-      standby.backgroundImagePath.length >
-        SETTINGS_LIMITS.MAX_STANDBY_BACKGROUND_PATH_LENGTH ||
-      CONTROL_CHARACTERS.test(standby.backgroundImagePath) ||
-      !MANAGED_STANDBY_BACKGROUND_PATH.test(standby.backgroundImagePath)
+    !STANDBY_BACKGROUND_MODES.includes(standby.backgroundMode)
+  ) {
+    return failure('standby.backgroundMode', '請選擇有效的待機背景顯示方式。');
+  }
+
+  if (
+    !Array.isArray(standby.backgroundImagePaths) ||
+    standby.backgroundImagePaths.length >
+      SETTINGS_LIMITS.MAX_STANDBY_BACKGROUND_IMAGES ||
+    new Set(standby.backgroundImagePaths).size !==
+      standby.backgroundImagePaths.length ||
+    standby.backgroundImagePaths.some(
+      (assetPath) =>
+        typeof assetPath !== 'string' ||
+        assetPath.length === 0 ||
+        assetPath.length >
+          SETTINGS_LIMITS.MAX_STANDBY_BACKGROUND_PATH_LENGTH ||
+        CONTROL_CHARACTERS.test(assetPath) ||
+        !MANAGED_STANDBY_BACKGROUND_PATH.test(assetPath),
     )
   ) {
     return failure(
-      'standby.backgroundImagePath',
-      '請重新選擇有效的待機背景圖片。',
+      'standby.backgroundImagePaths',
+      '請重新選擇有效且不重複的待機背景圖片（最多 20 張）。',
+    );
+  }
+
+  if (
+    !Number.isSafeInteger(standby.slideDurationSeconds) ||
+    standby.slideDurationSeconds <
+      SETTINGS_LIMITS.MINIMUM_STANDBY_SLIDE_DURATION_SECONDS ||
+    standby.slideDurationSeconds >
+      SETTINGS_LIMITS.MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS
+  ) {
+    return failure(
+      'standby.slideDurationSeconds',
+      '每張背景顯示秒數必須是 1 至 3600 的整數。',
     );
   }
 
@@ -351,14 +387,16 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 6,
+      configVersion: 7,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
         sizePercent: candidate.logo.sizePercent,
       },
       standby: {
-        backgroundImagePath: standby.backgroundImagePath,
+        backgroundMode: standby.backgroundMode,
+        backgroundImagePaths: [...standby.backgroundImagePaths],
+        slideDurationSeconds: standby.slideDurationSeconds,
       },
       appearance: {
         backgroundColor: appearance.backgroundColor.toUpperCase(),
@@ -440,7 +478,9 @@ export function buildSettingsDraft({
   logoEnabled,
   logoPath,
   logoSizePercent,
-  standbyBackgroundImagePath,
+  standbyBackgroundMode,
+  standbyBackgroundImagePaths,
+  standbySlideDurationSeconds,
   backgroundColor,
   fontFamily,
   fontColor,
@@ -475,6 +515,11 @@ export function buildSettingsDraft({
 
   for (const [value, field, label] of [
     [logoSizePercent, 'logo.sizePercent', 'Logo 大小'],
+    [
+      standbySlideDurationSeconds,
+      'standby.slideDurationSeconds',
+      '每張背景顯示秒數',
+    ],
     [fontSizePercent, 'appearance.fontSizePercent', '字體大小'],
     [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
     [pageDurationSeconds, 'playback.pageDurationSeconds', '每頁顯示秒數'],
@@ -486,13 +531,17 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       enabled: logoEnabled,
       path: logoPath,
       sizePercent: Number(logoSizePercent),
     },
-    standby: { backgroundImagePath: standbyBackgroundImagePath },
+    standby: {
+      backgroundMode: standbyBackgroundMode,
+      backgroundImagePaths: standbyBackgroundImagePaths,
+      slideDurationSeconds: Number(standbySlideDurationSeconds),
+    },
     appearance: {
       backgroundColor,
       fontFamily,

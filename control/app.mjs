@@ -749,7 +749,8 @@ async function boot() {
     saveSettings: (config, expectedRevision) =>
       bridge.saveSettings(config, expectedRevision),
     chooseLogo: () => bridge.chooseLogo(),
-    chooseStandbyBackground: () => bridge.chooseStandbyBackground(),
+    chooseStandbyBackground: (backgroundMode) =>
+      bridge.chooseStandbyBackground(backgroundMode),
     getOutputStatus: () => bridge.getOutputStatus(),
     onOutputStatusChanged: (listener) =>
       bridge.onOutputStatusChanged(listener),

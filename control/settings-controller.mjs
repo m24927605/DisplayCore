@@ -6,6 +6,8 @@ const INVALID_SETTINGS_ERROR =
 const MANAGED_LOGO_PATH = /^logos\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const MANAGED_STANDBY_BACKGROUND_PATH =
   /^standby-backgrounds\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
+const MAX_STANDBY_BACKGROUND_IMAGES = 20;
+const STANDBY_BACKGROUND_MODES = Object.freeze(['fixed', 'slideshow']);
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -87,11 +89,44 @@ function acceptLogoSelection(candidate) {
   return acceptManagedImageSelection(candidate, MANAGED_LOGO_PATH);
 }
 
-function acceptStandbyBackgroundSelection(candidate) {
-  return acceptManagedImageSelection(
-    candidate,
-    MANAGED_STANDBY_BACKGROUND_PATH,
-  );
+function acceptStandbyBackgroundSelection(candidate, backgroundMode) {
+  if (
+    !hasExactKeys(candidate, ['assetPaths', 'canceled']) ||
+    typeof candidate.canceled !== 'boolean' ||
+    !Array.isArray(candidate.assetPaths)
+  ) {
+    return null;
+  }
+
+  if (candidate.canceled) {
+    return candidate.assetPaths.length === 0
+      ? Object.freeze({ canceled: true, assetPaths: Object.freeze([]) })
+      : null;
+  }
+
+  const assetPaths = candidate.assetPaths;
+  const expectedMaximum = backgroundMode === 'fixed'
+    ? 1
+    : MAX_STANDBY_BACKGROUND_IMAGES;
+
+  if (
+    assetPaths.length < 1 ||
+    assetPaths.length > expectedMaximum ||
+    new Set(assetPaths).size !== assetPaths.length ||
+    assetPaths.some(
+      (assetPath) =>
+        typeof assetPath !== 'string' ||
+        assetPath.length > 128 ||
+        !MANAGED_STANDBY_BACKGROUND_PATH.test(assetPath),
+    )
+  ) {
+    return null;
+  }
+
+  return Object.freeze({
+    canceled: false,
+    assetPaths: Object.freeze([...assetPaths]),
+  });
 }
 
 /** 設定專用控制器；不接觸 presentation revision 或 DOM。 */
@@ -195,12 +230,20 @@ export function createSettingsController({ api, view }) {
       );
     },
 
-    chooseStandbyBackground() {
+    chooseStandbyBackground(backgroundMode) {
+      if (!STANDBY_BACKGROUND_MODES.includes(backgroundMode)) {
+        view.renderSettingsError(INVALID_SETTINGS_ERROR);
+        return false;
+      }
+
       return runOperation(
         'standby-background',
-        () => api.chooseStandbyBackground(),
+        () => api.chooseStandbyBackground(backgroundMode),
         (candidate) => {
-          const result = acceptStandbyBackgroundSelection(candidate);
+          const result = acceptStandbyBackgroundSelection(
+            candidate,
+            backgroundMode,
+          );
 
           if (!result) {
             view.renderSettingsError(INVALID_SETTINGS_ERROR);
@@ -212,9 +255,9 @@ export function createSettingsController({ api, view }) {
             return true;
           }
 
-          view.renderStandbyBackgroundSelection(result.assetPath);
+          view.renderStandbyBackgroundSelection(result.assetPaths);
           view.renderSettingsStatus(
-            '待機背景圖片已匯入；儲存設定後才會採用。',
+            `已匯入 ${result.assetPaths.length} 張待機背景；儲存設定後才會採用。`,
           );
           return true;
         },

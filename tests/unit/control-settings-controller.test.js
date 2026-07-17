@@ -24,6 +24,7 @@ function createHarness(apiOverrides = {}) {
     errors: [],
     logoAssets: [],
     standbyBackgroundAssets: [],
+    standbyBackgroundModes: [],
     snapshots: [],
     statuses: [],
   };
@@ -46,13 +47,16 @@ function createHarness(apiOverrides = {}) {
         },
       };
     },
-    async chooseStandbyBackground() {
+    async chooseStandbyBackground(backgroundMode) {
+      calls.standbyBackgroundModes.push(backgroundMode);
       return {
         ok: true,
         data: {
           canceled: false,
-          assetPath:
+          assetPaths: [
             'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+            'standby-backgrounds/0123456789abcdef01234567.png',
+          ],
         },
       };
     },
@@ -68,8 +72,8 @@ function createHarness(apiOverrides = {}) {
     renderLogoSelection(assetPath) {
       calls.logoAssets.push(assetPath);
     },
-    renderStandbyBackgroundSelection(assetPath) {
-      calls.standbyBackgroundAssets.push(assetPath);
+    renderStandbyBackgroundSelection(assetPaths) {
+      calls.standbyBackgroundAssets.push(assetPaths);
     },
     renderSettingsSnapshot(snapshot) {
       calls.snapshots.push(snapshot);
@@ -92,7 +96,7 @@ test('載入設定時驗證 snapshot，再交給 view 建立基準與預設值',
   assert.equal(loaded, true);
   assert.equal(harness.calls.snapshots.length, 1);
   assert.equal(harness.calls.snapshots[0].revision, 0);
-  assert.equal(harness.calls.snapshots[0].config.configVersion, 6);
+  assert.equal(harness.calls.snapshots[0].config.configVersion, 7);
   assert.deepEqual(
     harness.calls.snapshots[0].config.playback,
     defaultConfig.playback,
@@ -153,15 +157,21 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   ]);
 });
 
-test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v6 snapshot', async () => {
+test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v7 snapshot', async () => {
   const { createSettingsController } = await loadModule();
   const invalidConfigs = [
-    { ...defaultConfig, configVersion: 5 },
+    { ...defaultConfig, configVersion: 6 },
     {
       ...defaultConfig,
       logo: { ...defaultConfig.logo, sizePercent: 101 },
     },
-    { ...defaultConfig, standby: { backgroundImagePath: 'C:\\private.png' } },
+    {
+      ...defaultConfig,
+      standby: {
+        ...defaultConfig.standby,
+        backgroundImagePaths: ['C:\\private.png'],
+      },
+    },
     { ...defaultConfig, playback: { ...defaultConfig.playback, roundCount: 0 } },
     { ...defaultConfig, playback: { ...defaultConfig.playback, extra: true } },
   ];
@@ -249,12 +259,15 @@ test('待機背景取消不改草稿；成功只接受專用受管理路徑', as
   const { createSettingsController } = await loadModule();
   const canceledHarness = createHarness({
     async chooseStandbyBackground() {
-      return { ok: true, data: { canceled: true, assetPath: null } };
+      return { ok: true, data: { canceled: true, assetPaths: [] } };
     },
   });
   const canceledController = createSettingsController(canceledHarness);
 
-  assert.equal(await canceledController.chooseStandbyBackground(), true);
+  assert.equal(
+    await canceledController.chooseStandbyBackground('slideshow'),
+    true,
+  );
   assert.deepEqual(canceledHarness.calls.standbyBackgroundAssets, []);
   assert.deepEqual(canceledHarness.calls.statuses, [
     '已取消選擇待機背景圖片。',
@@ -262,29 +275,55 @@ test('待機背景取消不改草稿；成功只接受專用受管理路徑', as
 
   const selectedHarness = createHarness();
   const selectedController = createSettingsController(selectedHarness);
-  assert.equal(await selectedController.chooseStandbyBackground(), true);
+  assert.equal(
+    await selectedController.chooseStandbyBackground('slideshow'),
+    true,
+  );
+  assert.deepEqual(selectedHarness.calls.standbyBackgroundModes, [
+    'slideshow',
+  ]);
   assert.deepEqual(selectedHarness.calls.standbyBackgroundAssets, [
-    'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+    [
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+      'standby-backgrounds/0123456789abcdef01234567.png',
+    ],
   ]);
   assert.deepEqual(selectedHarness.calls.statuses, [
-    '待機背景圖片已匯入；儲存設定後才會採用。',
+    '已匯入 2 張待機背景；儲存設定後才會採用。',
   ]);
 
-  for (const assetPath of [
-    'logos/abcdefabcdefabcdefabcdef.webp',
-    'standby-backgrounds/operator.webp',
-    'C:\\Users\\Operator\\private.webp',
+  for (const assetPaths of [
+    ['logos/abcdefabcdefabcdefabcdef.webp'],
+    ['standby-backgrounds/operator.webp'],
+    ['C:\\Users\\Operator\\private.webp'],
+    [
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+    ],
+    Array.from(
+      { length: 21 },
+      (_, index) =>
+        `standby-backgrounds/${index.toString(16).padStart(24, '0')}.png`,
+    ),
   ]) {
     const invalidHarness = createHarness({
       async chooseStandbyBackground() {
-        return { ok: true, data: { canceled: false, assetPath } };
+        return { ok: true, data: { canceled: false, assetPaths } };
       },
     });
     const controller = createSettingsController(invalidHarness);
-    assert.equal(await controller.chooseStandbyBackground(), false);
+    assert.equal(
+      await controller.chooseStandbyBackground('slideshow'),
+      false,
+    );
     assert.deepEqual(invalidHarness.calls.standbyBackgroundAssets, []);
     assert.doesNotMatch(JSON.stringify(invalidHarness.calls.errors), /Users/);
   }
+
+  assert.equal(
+    await selectedController.chooseStandbyBackground('carousel'),
+    false,
+  );
 });
 
 test('畸形成功 envelope 與 IPC rejection 使用固定錯誤，不洩漏路徑', async () => {
@@ -315,6 +354,7 @@ test('畸形成功 envelope 與 IPC rejection 使用固定錯誤，不洩漏路�
         },
       },
       method: 'chooseStandbyBackground',
+      args: ['fixed'],
       expected: '無法連接主程序，請重新啟動 DisplayCore。',
     },
   ];
@@ -322,7 +362,7 @@ test('畸形成功 envelope 與 IPC rejection 使用固定錯誤，不洩漏路�
   for (const scenario of scenarios) {
     const harness = createHarness(scenario.api);
     const controller = createSettingsController(harness);
-    const result = await controller[scenario.method]();
+    const result = await controller[scenario.method](...(scenario.args ?? []));
 
     assert.equal(result, false);
     assert.deepEqual(harness.calls.errors, [{
@@ -348,6 +388,6 @@ test('dispose 後所有設定操作安全失敗且不再呼叫 bridge', async ()
   assert.equal(await controller.loadSettings(), false);
   assert.equal(await controller.saveSettings(defaultConfig, 0), false);
   assert.equal(await controller.chooseLogo(), false);
-  assert.equal(await controller.chooseStandbyBackground(), false);
+  assert.equal(await controller.chooseStandbyBackground('fixed'), false);
   assert.equal(calls, 0);
 });

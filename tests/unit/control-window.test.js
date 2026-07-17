@@ -171,7 +171,9 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'logo-enabled-input',
     'logo-path-input',
     'logo-size-percent-input',
-    'standby-background-path-input',
+    'standby-background-mode-select',
+    'standby-background-summary',
+    'standby-slide-duration-input',
     'background-color-input',
     'font-family-select',
     'font-color-input',
@@ -196,7 +198,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.match(logoFieldset, /<label[^>]+for="logo-size-percent-input"[^>]*>\s*Logo 大小（%）\s*<\/label>/);
   assert.match(
     logoFieldset,
-    /<input[^>]+id="logo-size-percent-input"[^>]+type="number"[^>]+min="50"[^>]+max="200"[^>]+step="5"[^>]+aria-describedby="logo-size-percent-help logo-size-percent-error"/,
+    /<input[^>]+id="logo-size-percent-input"[^>]+type="number"[^>]+min="50"[^>]+max="1000"[^>]+step="5"[^>]+aria-describedby="logo-size-percent-help logo-size-percent-error"/,
   );
   assert.match(
     logoFieldset,
@@ -210,6 +212,15 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   );
   assert.match(html, /id="choose-standby-background-button"/);
   assert.match(html, /id="remove-standby-background-button"/);
+  assert.match(html, /id="standby-background-mode-select"/);
+  assert.match(html, /value="fixed"/);
+  assert.match(html, /value="slideshow"/);
+  assert.match(
+    html,
+    /id="standby-slide-duration-input"[^>]+min="1"[^>]+max="3600"/,
+  );
+  assert.match(html, /重新選擇[^<]*取代/);
+  assert.doesNotMatch(html, /背景圖片清單|縮圖|調整順序/);
   assert.doesNotMatch(html, /id="standby-background-enabled-input"/);
   assert.doesNotMatch(html, /id="hour12-input"|12 小時制/);
   assert.match(html, /訊息播放時顯示時間/);

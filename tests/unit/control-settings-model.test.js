@@ -6,10 +6,10 @@ const test = require('node:test');
 const currentDefaultConfig = require('../../config.json');
 const { validateConfig } = require('../../config/config-schema');
 
-// Control Renderer 測試固定宣告完整 v6 契約，不依賴遷移測試的 fixture。
+// Control Renderer 測試固定宣告完整 v7 契約，不依賴遷移測試的 fixture。
 const defaultConfig = structuredClone({
   ...currentDefaultConfig,
-  configVersion: 6,
+  configVersion: 7,
   logo: {
     ...currentDefaultConfig.logo,
     sizePercent: 100,
@@ -36,7 +36,9 @@ function createValidDraftInput(overrides = {}) {
     logoEnabled: false,
     logoPath: null,
     logoSizePercent: '100',
-    standbyBackgroundImagePath: null,
+    standbyBackgroundMode: 'fixed',
+    standbyBackgroundImagePaths: [],
+    standbySlideDurationSeconds: '10',
     backgroundColor: '#000000',
     fontFamily: defaultConfig.appearance.fontFamily,
     fontColor: '#FFFFFF',
@@ -79,6 +81,10 @@ test('Control 接受完整設定 snapshot，建立深層凍結副本', async () 
   assert.equal(Object.isFrozen(result.snapshot.config.appearance), true);
   assert.equal(Object.isFrozen(result.snapshot.config.playback), true);
   assert.equal(Object.isFrozen(result.snapshot.config.standby), true);
+  assert.equal(
+    Object.isFrozen(result.snapshot.config.standby.backgroundImagePaths),
+    true,
+  );
   assert.equal(Object.isFrozen(result.snapshot.defaults.standby), true);
   assert.equal(Object.isFrozen(result.snapshot.defaults.playback), true);
   assert.equal(Object.isFrozen(result.snapshot.notice), true);
@@ -96,7 +102,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
     createSnapshot({ notice: { code: 'INVALID_USER_CONFIG' } }),
     createSnapshot({ config: { ...defaultConfig, unknown: true } }),
     createSnapshot({
-      config: { ...defaultConfig, configVersion: 5 },
+      config: { ...defaultConfig, configVersion: 6 },
     }),
     createSnapshot({
       config: {
@@ -123,7 +129,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含 Logo 大小、待機背景、playback v6、顯示外觀、校時及解析度', async () => {
+test('設定草稿包含 Logo 大小、多張待機背景、playback v7、顯示外觀、校時及解析度', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -138,8 +144,12 @@ test('設定草稿包含 Logo 大小、待機背景、playback v6、顯示外觀
     logoEnabled: true,
     logoPath: 'logos/0123456789abcdef01234567.png',
     logoSizePercent: '135',
-    standbyBackgroundImagePath:
+    standbyBackgroundMode: 'slideshow',
+    standbyBackgroundImagePaths: [
       'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+      'standby-backgrounds/0123456789abcdef01234567.png',
+    ],
+    standbySlideDurationSeconds: '8',
     backgroundColor: '#102a3c',
     fontFamily: 'Arial, sans-serif',
     fontColor: '#f0e0d0',
@@ -159,15 +169,19 @@ test('設定草稿包含 Logo 大小、待機背景、playback v6、顯示外觀
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 6,
+    configVersion: 7,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
       sizePercent: 135,
     },
     standby: {
-      backgroundImagePath:
+      backgroundMode: 'slideshow',
+      backgroundImagePaths: [
         'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+        'standby-backgrounds/0123456789abcdef01234567.png',
+      ],
+      slideDurationSeconds: 8,
     },
     appearance: {
       backgroundColor: '#102A3C',
@@ -207,14 +221,26 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { logoPath: 'logos/operator-logo.png' },
     { logoSizePercent: 100 },
     { logoSizePercent: '49' },
-    { logoSizePercent: '201' },
+    { logoSizePercent: '1005' },
     { logoSizePercent: '101' },
     { logoSizePercent: '-50' },
     { logoSizePercent: '1e2' },
-    { standbyBackgroundImagePath: 'C:\\background.png' },
-    { standbyBackgroundImagePath: 'logos/0123456789abcdef01234567.png' },
-    { standbyBackgroundImagePath: 'standby-backgrounds/operator.png' },
-    { standbyBackgroundImagePath: 'standby-backgrounds/../private.png' },
+    { standbyBackgroundMode: 'carousel' },
+    { standbyBackgroundImagePaths: null },
+    { standbyBackgroundImagePaths: ['C:\\background.png'] },
+    { standbyBackgroundImagePaths: ['logos/0123456789abcdef01234567.png'] },
+    { standbyBackgroundImagePaths: ['standby-backgrounds/operator.png'] },
+    { standbyBackgroundImagePaths: ['standby-backgrounds/../private.png'] },
+    {
+      standbyBackgroundImagePaths: Array.from(
+        { length: 21 },
+        (_, index) =>
+          `standby-backgrounds/${index.toString(16).padStart(24, '0')}.png`,
+      ),
+    },
+    { standbySlideDurationSeconds: '0' },
+    { standbySlideDurationSeconds: '3601' },
+    { standbySlideDurationSeconds: 10 },
     { backgroundColor: '#000' },
     { fontColor: 'white' },
     { fontFamily: '   ' },
@@ -248,10 +274,10 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
   }
 });
 
-test('Logo 大小只接受 50% 至 200% 且以 5% 遞增的十進位整數', async () => {
+test('Logo 大小只接受 50% 至 1000% 且以 5% 遞增的十進位整數', async () => {
   const { buildSettingsDraft } = await loadModule();
 
-  for (const logoSizePercent of ['50', '100', '200']) {
+  for (const logoSizePercent of ['50', '100', '200', '1000']) {
     const result = buildSettingsDraft(createValidDraftInput({
       logoSizePercent,
     }));
@@ -263,7 +289,7 @@ test('Logo 大小只接受 50% 至 200% 且以 5% 遞增的十進位整數', asy
   for (const logoSizePercent of [
     '',
     '49',
-    '201',
+    '1005',
     '101',
     '-50',
     '100.0',
@@ -354,8 +380,10 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   changedPageDuration.playback.pageDurationSeconds += 1;
   changedRepeatMode.playback.repeatMode = 'continuous';
   changedRoundCount.playback.roundCount += 1;
-  changedStandbyBackground.standby.backgroundImagePath =
-    'standby-backgrounds/0123456789abcdef01234567.png';
+  changedStandbyBackground.standby.backgroundMode = 'slideshow';
+  changedStandbyBackground.standby.backgroundImagePaths = [
+    'standby-backgrounds/0123456789abcdef01234567.png',
+  ];
   changedLogoSize.logo.sizePercent = 125;
 
   assert.equal(settingsEqual(defaultConfig, same), true);

@@ -299,7 +299,7 @@
               </div>
               <div class="settings-field">
                 <label for="logo-size-percent-input">Logo 大小（%）</label>
-                <input id="logo-size-percent-input" type="number" min="50" max="200" step="5" value="100" inputmode="numeric" aria-describedby="logo-size-percent-help logo-size-percent-error">
+                <input id="logo-size-percent-input" type="number" min="50" max="1000" step="5" value="100" inputmode="numeric" aria-describedby="logo-size-percent-help logo-size-percent-error">
                 <small id="logo-size-percent-help" class="settings-field-help">
                   同時套用於一般訊息與待機畫面的 Logo；透明圖使用亮白輪廓，不透明圖使用亮白底襯。
                 </small>
@@ -310,15 +310,42 @@
               <button id="choose-logo-button" class="button button-secondary" type="button">選擇 Logo</button>
               <button id="remove-logo-button" class="button button-quiet" type="button">移除 Logo</button>
             </div>
-            <div class="settings-field">
-              <label for="standby-background-path-input">待機背景圖片</label>
-              <input
-                id="standby-background-path-input"
-                type="text"
-                readonly
-                placeholder="尚未選擇待機背景圖片"
-              >
-              <p id="standby-background-path-error" class="field-error" hidden></p>
+            <div class="settings-control-grid">
+              <div class="settings-field">
+                <label for="standby-background-mode-select">待機背景方式</label>
+                <select id="standby-background-mode-select" aria-describedby="standby-background-error">
+                  <option value="fixed">固定圖片</option>
+                  <option value="slideshow">多張輪播</option>
+                </select>
+              </div>
+              <div id="standby-slide-duration-field" class="settings-field" hidden>
+                <label for="standby-slide-duration-input">每張顯示秒數</label>
+                <input
+                  id="standby-slide-duration-input"
+                  type="number"
+                  min="1"
+                  max="3600"
+                  step="1"
+                  value="10"
+                  inputmode="numeric"
+                  aria-describedby="standby-slide-duration-error"
+                >
+                <p id="standby-slide-duration-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field settings-field-wide">
+                <label for="standby-background-summary">背景圖片</label>
+                <input
+                  id="standby-background-summary"
+                  type="text"
+                  readonly
+                  value="尚未選擇背景圖片"
+                  aria-describedby="standby-background-help standby-background-error"
+                >
+                <small id="standby-background-help" class="settings-field-help">
+                  重新選擇會取代目前圖片；固定模式只顯示第一張。
+                </small>
+                <p id="standby-background-error" class="field-error" hidden></p>
+              </div>
             </div>
             <div class="settings-inline-actions">
               <button
@@ -330,7 +357,7 @@
                 id="remove-standby-background-button"
                 class="button button-quiet"
                 type="button"
-              >移除背景圖片</button>
+              >清除全部背景</button>
             </div>
           </fieldset>
 

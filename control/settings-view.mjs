@@ -46,11 +46,23 @@ export function createSettingsView({
     ),
     chooseLogoButton: document.getElementById('choose-logo-button'),
     removeLogoButton: document.getElementById('remove-logo-button'),
-    standbyBackgroundPath: document.getElementById(
-      'standby-background-path-input',
+    standbyBackgroundMode: document.getElementById(
+      'standby-background-mode-select',
     ),
-    standbyBackgroundPathError: document.getElementById(
-      'standby-background-path-error',
+    standbyBackgroundSummary: document.getElementById(
+      'standby-background-summary',
+    ),
+    standbyBackgroundError: document.getElementById(
+      'standby-background-error',
+    ),
+    standbySlideDurationField: document.getElementById(
+      'standby-slide-duration-field',
+    ),
+    standbySlideDuration: document.getElementById(
+      'standby-slide-duration-input',
+    ),
+    standbySlideDurationError: document.getElementById(
+      'standby-slide-duration-error',
     ),
     chooseStandbyBackgroundButton: document.getElementById(
       'choose-standby-background-button',
@@ -130,7 +142,7 @@ export function createSettingsView({
     defaults: null,
     revision: null,
     logoPath: null,
-    standbyBackgroundImagePath: null,
+    standbyBackgroundImagePaths: [],
     ready: false,
     busy: false,
     dirty: false,
@@ -149,12 +161,20 @@ export function createSettingsView({
       elements.logoSizePercentError,
     ],
     standby: [
-      elements.standbyBackgroundPath,
-      elements.standbyBackgroundPathError,
+      elements.standbyBackgroundSummary,
+      elements.standbyBackgroundError,
     ],
-    'standby.backgroundImagePath': [
-      elements.standbyBackgroundPath,
-      elements.standbyBackgroundPathError,
+    'standby.backgroundMode': [
+      elements.standbyBackgroundMode,
+      elements.standbyBackgroundError,
+    ],
+    'standby.backgroundImagePaths': [
+      elements.standbyBackgroundSummary,
+      elements.standbyBackgroundError,
+    ],
+    'standby.slideDurationSeconds': [
+      elements.standbySlideDuration,
+      elements.standbySlideDurationError,
     ],
     appearance: [elements.backgroundColor, elements.backgroundColorError],
     'appearance.backgroundColor': [
@@ -274,7 +294,9 @@ export function createSettingsView({
       logoEnabled: elements.logoEnabled.checked,
       logoPath: state.logoPath,
       logoSizePercent: elements.logoSizePercent.value,
-      standbyBackgroundImagePath: state.standbyBackgroundImagePath,
+      standbyBackgroundMode: elements.standbyBackgroundMode.value,
+      standbyBackgroundImagePaths: [...state.standbyBackgroundImagePaths],
+      standbySlideDurationSeconds: elements.standbySlideDuration.value,
       backgroundColor: elements.backgroundColor.value,
       fontFamily: elements.fontFamily.value,
       fontColor: elements.fontColor.value,
@@ -309,7 +331,7 @@ export function createSettingsView({
     elements.removeLogoButton.disabled =
       settingsDisabled || state.logoPath === null;
     elements.removeStandbyBackgroundButton.disabled =
-      settingsDisabled || state.standbyBackgroundImagePath === null;
+      settingsDisabled || state.standbyBackgroundImagePaths.length === 0;
   }
 
   function setDirty(dirty) {
@@ -345,6 +367,24 @@ export function createSettingsView({
     }
   }
 
+  function renderStandbyBackgroundControls() {
+    const imageCount = state.standbyBackgroundImagePaths.length;
+    const slideshow = elements.standbyBackgroundMode.value === 'slideshow';
+
+    elements.standbySlideDurationField.hidden = !slideshow;
+    elements.standbySlideDuration.disabled = !slideshow;
+    elements.chooseStandbyBackgroundButton.textContent = slideshow
+      ? '選擇多張背景圖片'
+      : '選擇固定背景圖片';
+    elements.standbyBackgroundSummary.value = imageCount === 0
+      ? '尚未選擇背景圖片'
+      : slideshow
+        ? `已選擇 ${imageCount} 張圖片`
+        : imageCount === 1
+          ? '已選擇 1 張圖片'
+          : `已選擇 ${imageCount} 張圖片（固定顯示第 1 張）`;
+  }
+
   function renderConfig(config) {
     const currentSeconds = getCurrentSecondOfDay();
     if (currentSeconds === null) {
@@ -352,14 +392,19 @@ export function createSettingsView({
     }
 
     state.logoPath = config.logo.path;
-    state.standbyBackgroundImagePath = config.standby.backgroundImagePath;
+    state.standbyBackgroundImagePaths = [
+      ...config.standby.backgroundImagePaths,
+    ];
     state.clockOffsetSeconds = config.dateTime.offsetSeconds;
     state.clockTimeTouched = false;
     elements.logoEnabled.checked = config.logo.enabled;
     elements.logoPath.value = config.logo.path ?? '';
     elements.logoSizePercent.value = String(config.logo.sizePercent);
-    elements.standbyBackgroundPath.value =
-      config.standby.backgroundImagePath ?? '';
+    elements.standbyBackgroundMode.value = config.standby.backgroundMode;
+    elements.standbySlideDuration.value = String(
+      config.standby.slideDurationSeconds,
+    );
+    renderStandbyBackgroundControls();
     elements.backgroundColor.value = config.appearance.backgroundColor;
     elements.backgroundColorPicker.value =
       config.appearance.backgroundColor.toLowerCase();
@@ -454,7 +499,7 @@ export function createSettingsView({
     state.defaults = null;
     state.revision = null;
     state.logoPath = null;
-    state.standbyBackgroundImagePath = null;
+    state.standbyBackgroundImagePaths = [];
     state.clockTimeTouched = false;
     state.clockOffsetSeconds = 0;
     clearSettingsErrors();
@@ -493,7 +538,11 @@ export function createSettingsView({
   }
 
   async function chooseStandbyBackground() {
-    if (await state.controller?.chooseStandbyBackground()) {
+    if (
+      await state.controller?.chooseStandbyBackground(
+        elements.standbyBackgroundMode.value,
+      )
+    ) {
       focusWhenUnlocked(elements.chooseStandbyBackgroundButton);
     }
   }
@@ -523,8 +572,8 @@ export function createSettingsView({
       handleDraftInput();
     }, { signal });
     elements.removeStandbyBackgroundButton.addEventListener('click', () => {
-      state.standbyBackgroundImagePath = null;
-      elements.standbyBackgroundPath.value = '';
+      state.standbyBackgroundImagePaths = [];
+      renderStandbyBackgroundControls();
       handleDraftInput();
     }, { signal });
     elements.loadDefaultsButton.addEventListener('click', () => {
@@ -575,6 +624,7 @@ export function createSettingsView({
     for (const control of [
       elements.logoEnabled,
       elements.logoSizePercent,
+      elements.standbySlideDuration,
       elements.fontFamily,
       elements.minimumFontSize,
       elements.fontSizePercent,
@@ -588,6 +638,11 @@ export function createSettingsView({
       control.addEventListener('input', handleDraftInput, { signal });
       control.addEventListener('change', handleDraftInput, { signal });
     }
+
+    elements.standbyBackgroundMode.addEventListener('change', () => {
+      renderStandbyBackgroundControls();
+      handleDraftInput();
+    }, { signal });
 
     elements.clockTime.addEventListener('input', handleClockInput, { signal });
     elements.clockTime.addEventListener('change', handleClockInput, { signal });
@@ -619,7 +674,7 @@ export function createSettingsView({
       state.defaults = null;
       state.revision = null;
       state.logoPath = null;
-      state.standbyBackgroundImagePath = null;
+      state.standbyBackgroundImagePaths = [];
       state.clockTimeTouched = false;
       state.clockOffsetSeconds = 0;
       state.closing = false;
@@ -656,7 +711,7 @@ export function createSettingsView({
         errorElement.hidden = false;
         const focusTarget = field === 'logo' || field === 'logo.path'
           ? elements.chooseLogoButton
-          : field === 'standby' || field === 'standby.backgroundImagePath'
+          : field === 'standby' || field === 'standby.backgroundImagePaths'
             ? elements.chooseStandbyBackgroundButton
           : field === 'playback.repeatMode'
             ? elements.repeatModeFinite
@@ -675,9 +730,9 @@ export function createSettingsView({
       refreshDirtyState();
     },
 
-    renderStandbyBackgroundSelection(assetPath) {
-      state.standbyBackgroundImagePath = assetPath;
-      elements.standbyBackgroundPath.value = assetPath;
+    renderStandbyBackgroundSelection(assetPaths) {
+      state.standbyBackgroundImagePaths = [...assetPaths];
+      renderStandbyBackgroundControls();
       clearSettingsErrors();
       refreshDirtyState();
     },
