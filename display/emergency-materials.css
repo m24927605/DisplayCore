@@ -1,0 +1,127 @@
+:root {
+  --emergency-material-image: none;
+  --emergency-signal-color: #000000;
+  --emergency-signal-background: var(--emergency-background);
+  --emergency-material-scrim: linear-gradient(
+    rgb(0 0 0 / 18%),
+    rgb(0 0 0 / 26%)
+  );
+}
+
+/*
+ * 緊急 tone 由 Main 的白名單指令提供；Renderer 不從 555／888 文字推論語意。
+ * 固定信號色占 82%，管理員設定色只保留 18% 微調，避免誤設黑色後失去警示性。
+ */
+.display-stage[data-mode="emergency"][data-emergency-tone="inspection"] {
+  --emergency-material-image: url("../assets/emergency-materials/red-cypress-4k.jpg");
+  --emergency-signal-color: #A70F22;
+  --emergency-signal-background: color-mix(
+    in srgb,
+    var(--emergency-background) 18%,
+    var(--emergency-signal-color)
+  );
+  --emergency-material-scrim: linear-gradient(
+    rgb(40 0 5 / 16%),
+    rgb(40 0 5 / 25%)
+  );
+}
+
+.display-stage[data-mode="emergency"][data-emergency-tone="release"] {
+  --emergency-material-image: url("../assets/emergency-materials/emerald-4k.jpg");
+  --emergency-signal-color: #087A46;
+  --emergency-signal-background: color-mix(
+    in srgb,
+    var(--emergency-background) 18%,
+    var(--emergency-signal-color)
+  );
+  --emergency-material-scrim: linear-gradient(
+    rgb(0 22 12 / 28%),
+    rgb(0 22 12 / 38%)
+  );
+}
+
+body:has(.display-stage[data-mode="emergency"][data-emergency-tone]) {
+  background-color: var(--emergency-signal-background);
+}
+
+.display-stage[data-mode="emergency"][data-emergency-tone],
+.display-stage[data-mode="emergency"][data-emergency-tone] .fill-layer {
+  background-color: var(--emergency-signal-background);
+}
+
+/*
+ * 每格將同一張 4K 材質放大為 300% × 300%，再依格位取樣。
+ * 九格因此像同一塊紅檜木／祖母綠被切開，而不是重複九張相同貼圖。
+ */
+.fill-cell {
+  --material-inline-position: 50%;
+  --material-block-position: 50%;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  background-color: var(--emergency-signal-color);
+  background-image:
+    var(--emergency-material-scrim),
+    var(--emergency-material-image);
+  background-repeat: no-repeat, no-repeat;
+  background-size: 100% 100%, 300% 300%;
+  background-position:
+    center,
+    var(--material-inline-position) var(--material-block-position);
+  box-shadow:
+    inset 0 0 0 max(0.0625rem, 0.1cqmin) rgb(255 255 255 / 18%),
+    inset 0 max(0.125rem, 0.24cqh) max(0.25rem, 0.7cqh)
+      rgb(255 255 255 / 8%),
+    inset 0 min(-0.125rem, -0.24cqh) max(0.4rem, 1.15cqh)
+      rgb(0 0 0 / 34%),
+    0 max(0.125rem, 0.22cqh) max(0.35rem, 0.9cqh)
+      rgb(0 0 0 / 30%);
+  text-shadow:
+    0 0.025em 0.045em rgb(0 0 0 / 88%),
+    0 0 0.12em rgb(0 0 0 / 52%),
+    0 0 0.18em rgb(255 255 255 / 16%);
+}
+
+.fill-cell:nth-child(1) {
+  --material-inline-position: 0%;
+  --material-block-position: 0%;
+}
+
+.fill-cell:nth-child(2) {
+  --material-inline-position: 50%;
+  --material-block-position: 0%;
+}
+
+.fill-cell:nth-child(3) {
+  --material-inline-position: 100%;
+  --material-block-position: 0%;
+}
+
+.fill-cell:nth-child(4) {
+  --material-inline-position: 0%;
+  --material-block-position: 50%;
+}
+
+.fill-cell:nth-child(5) {
+  --material-inline-position: 50%;
+  --material-block-position: 50%;
+}
+
+.fill-cell:nth-child(6) {
+  --material-inline-position: 100%;
+  --material-block-position: 50%;
+}
+
+.fill-cell:nth-child(7) {
+  --material-inline-position: 0%;
+  --material-block-position: 100%;
+}
+
+.fill-cell:nth-child(8) {
+  --material-inline-position: 50%;
+  --material-block-position: 100%;
+}
+
+.fill-cell:nth-child(9) {
+  --material-inline-position: 100%;
+  --material-block-position: 100%;
+}
