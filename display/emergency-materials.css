@@ -40,8 +40,24 @@
   );
 }
 
-body:has(.display-stage[data-mode="emergency"][data-emergency-tone]) {
-  background-color: var(--emergency-signal-background);
+body:has(
+  .display-stage[data-mode="emergency"][data-emergency-tone="inspection"]
+) {
+  background-color: color-mix(
+    in srgb,
+    var(--emergency-background) 18%,
+    #A70F22
+  );
+}
+
+body:has(
+  .display-stage[data-mode="emergency"][data-emergency-tone="release"]
+) {
+  background-color: color-mix(
+    in srgb,
+    var(--emergency-background) 18%,
+    #087A46
+  );
 }
 
 .display-stage[data-mode="emergency"][data-emergency-tone],

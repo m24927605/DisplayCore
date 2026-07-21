@@ -126,6 +126,19 @@ test('九宮格共同切割一張材質，且保留純白數字的高對比保�
   }
 });
 
+test('非 16:9 螢幕邊帶仍依 555／888 tone 維持明顯紅色與綠色', async () => {
+  const css = await readFile(materialCssPath, 'utf8');
+
+  assert.match(
+    css,
+    /body:has\(\s*\.display-stage\[data-mode="emergency"\]\[data-emergency-tone="inspection"\]\s*\)\s*\{[\s\S]*?background-color:\s*color-mix\([\s\S]*?#A70F22[\s\S]*?\)/i,
+  );
+  assert.match(
+    css,
+    /body:has\(\s*\.display-stage\[data-mode="emergency"\]\[data-emergency-tone="release"\]\s*\)\s*\{[\s\S]*?background-color:\s*color-mix\([\s\S]*?#087A46[\s\S]*?\)/i,
+  );
+});
+
 test('紅檜木與祖母綠材質以 4K JPEG 隨專案封裝', async () => {
   for (const material of MATERIALS) {
     const assetPath = path.join(assetDirectory, material.fileName);
