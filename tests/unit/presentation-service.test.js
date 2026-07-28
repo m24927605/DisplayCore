@@ -62,7 +62,7 @@ function createProgress(service, phase, overrides = {}) {
   return progress;
 }
 
-test('每頁等待目前 Display ready 後才串接最短停留 timer', () => {
+test('ready 只授權目前 layout，started 才冪等啟動最短停留 timer', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
     store: new PresentationStore(),
@@ -83,18 +83,33 @@ test('每頁等待目前 Display ready 後才串接最短停留 timer', () => {
     service.reportPageProgress(createProgress(service, 'ready')),
     true,
   );
+  assert.equal(timers.active().length, 0, 'ready 回覆遺失不得使頁面提早前進');
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready')),
+    true,
+  );
+  assert.equal(timers.active().length, 0, 'duplicate ready 仍不得計時');
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started')),
+    true,
+  );
   assert.equal(timers.active().length, 1);
   assert.equal(timers.active()[0].delay, 3_000);
   assert.equal(timers.active()[0].unrefCalled, true);
 
   const firstTimer = timers.active()[0];
   assert.equal(
-    service.reportPageProgress(createProgress(service, 'ready')),
+    service.reportPageProgress(createProgress(service, 'started')),
     true,
   );
-  assert.equal(timers.active()[0], firstTimer, 'duplicate ready 不得重新計時');
+  assert.equal(timers.active()[0], firstTimer, 'duplicate started 不得重新計時');
 
   timers.fire(firstTimer);
+  assert.equal(service.getSnapshot().pageNumber, 1);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete')),
+    true,
+  );
   assert.equal(service.getSnapshot().pageNumber, 2);
   assert.equal(timers.active().length, 0);
 
@@ -104,8 +119,22 @@ test('每頁等待目前 Display ready 後才串接最短停留 timer', () => {
     })),
     true,
   );
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
   assert.equal(timers.active().length, 1);
   timers.fire(timers.active()[0]);
+  assert.equal(service.getSnapshot().mode, 'page');
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
   assert.equal(service.getSnapshot().mode, 'blank');
   assert.equal(timers.active().length, 0);
   assert.deepEqual(
@@ -122,6 +151,35 @@ test('每頁等待目前 Display ready 後才串接最短停留 timer', () => {
   );
 });
 
+test('沒有跑馬燈的頁面也必須同時等期限與 Renderer 終幀 complete', () => {
+  const timers = createFakeTimers();
+  const service = new PresentationService({
+    store: new PresentationStore(),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
+
+  service.startProgram(createProgram(6, { mode: 'finite', rounds: 1 }));
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready')),
+    true,
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started')),
+    true,
+  );
+  timers.fire(timers.active()[0]);
+  assert.equal(service.getSnapshot().pageNumber, 1);
+  assert.equal(service.getSnapshot().revision, 1);
+
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'complete')),
+    true,
+  );
+  assert.equal(service.getSnapshot().pageNumber, 2);
+  assert.equal(service.getSnapshot().revision, 2);
+});
+
 test('跑馬燈頁只有最短時間與所有 traversal 都完成後才前進', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
@@ -133,6 +191,10 @@ test('跑馬燈頁只有最短時間與所有 traversal 都完成後才前進', 
   service.startProgram(createProgram(6, { mode: 'finite', rounds: 1 }));
   const firstLayout = createProgress(service, 'ready', { marqueeCount: 2 });
   assert.equal(service.reportPageProgress(firstLayout), true);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started')),
+    true,
+  );
   timers.fire(timers.active()[0]);
   assert.equal(service.getSnapshot().revision, 1);
   assert.equal(service.getSnapshot().pageNumber, 1);
@@ -159,6 +221,7 @@ test('跑馬燈頁只有最短時間與所有 traversal 都完成後才前進', 
   );
   assert.equal(service.getSnapshot().mode, 'page');
   assert.equal(service.getSnapshot().revision, 2);
+  assert.equal(timers.active().length, 0, 'complete 先到仍須等待 started');
   assert.equal(
     service.reportPageProgress(createProgress(service, 'complete', {
       layoutGeneration: 2,
@@ -167,6 +230,12 @@ test('跑馬燈頁只有最短時間與所有 traversal 都完成後才前進', 
     'duplicate complete 必須冪等',
   );
 
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
   timers.fire(timers.active()[0]);
   assert.equal(service.getSnapshot().mode, 'blank');
   assert.equal(service.getSnapshot().revision, 3);
@@ -182,6 +251,7 @@ test('新 layout、手動失效與狀態替換使舊 timer 及舊事件失效', 
 
   service.startProgram(createProgram(6));
   service.reportPageProgress(createProgress(service, 'ready'));
+  service.reportPageProgress(createProgress(service, 'started'));
   const staleAfterRefit = timers.active()[0];
   assert.equal(
     service.reportPageProgress(createProgress(service, 'pending', {
@@ -209,6 +279,9 @@ test('新 layout、手動失效與狀態替換使舊 timer 及舊事件失效', 
     layoutGeneration: 2,
     marqueeCount: 1,
   }));
+  service.reportPageProgress(createProgress(service, 'started', {
+    layoutGeneration: 2,
+  }));
   const staleAfterInvalidation = timers.active()[0];
   const delayedReady = createProgress(service, 'ready', {
     layoutGeneration: 2,
@@ -233,6 +306,10 @@ test('新 layout、手動失效與狀態替換使舊 timer 及舊事件失效', 
     rendererId: 202,
     layoutGeneration: 1,
   }));
+  service.reportPageProgress(createProgress(service, 'started', {
+    rendererId: 202,
+    layoutGeneration: 1,
+  }));
   const staleAfterEmergency = timers.active()[0];
   service.showEmergency('555');
   timers.fire(staleAfterEmergency);
@@ -240,6 +317,7 @@ test('新 layout、手動失效與狀態替換使舊 timer 及舊事件失效', 
 
   service.startProgram(createProgram(6));
   service.reportPageProgress(createProgress(service, 'ready'));
+  service.reportPageProgress(createProgress(service, 'started'));
   const staleAfterClear = timers.active()[0];
   service.clearPresentation();
   timers.fire(staleAfterClear);
@@ -247,6 +325,7 @@ test('新 layout、手動失效與狀態替換使舊 timer 及舊事件失效', 
 
   service.startProgram(createProgram(6));
   service.reportPageProgress(createProgress(service, 'ready'));
+  service.reportPageProgress(createProgress(service, 'started'));
   const staleAfterReplacement = timers.active()[0];
   service.startProgram(createProgram(1, { mode: 'continuous' }));
   timers.fire(staleAfterReplacement);
@@ -285,6 +364,7 @@ test('錯誤頁面進度、單頁持續模式與 dispose 一律 fail closed', ()
 
   service.startProgram(createProgram(6));
   service.reportPageProgress(createProgress(service, 'ready'));
+  service.reportPageProgress(createProgress(service, 'started'));
   const activeTimer = timers.active()[0];
   service.dispose();
   assert.equal(activeTimer.cleared, true);
@@ -297,7 +377,7 @@ test('錯誤頁面進度、單頁持續模式與 dispose 一律 fail closed', ()
   assert.equal(published, 2);
 });
 
-test('設定 revision 與 Display 可見性都必須符合才接受 ready', () => {
+test('設定 revision 與 Display 可見性都必須符合才接受 ready／started', () => {
   const timers = createFakeTimers();
   const service = new PresentationService({
     store: new PresentationStore(),
@@ -325,6 +405,13 @@ test('設定 revision 與 Display 可見性都必須符合才接受 ready', () =
     })),
     true,
   );
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started', {
+      layoutGeneration: 2,
+    })),
+    true,
+  );
   const visibleTimer = timers.active()[0];
   assert.ok(visibleTimer);
 
@@ -341,6 +428,14 @@ test('設定 revision 與 Display 可見性都必須符合才接受 ready', () =
 
   assert.equal(
     service.reportPageProgress(createProgress(service, 'ready', {
+      settingsRevision: 1,
+      layoutGeneration: 3,
+    })),
+    true,
+  );
+  assert.equal(timers.active().length, 0);
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started', {
       settingsRevision: 1,
       layoutGeneration: 3,
     })),
@@ -372,5 +467,62 @@ test('設定 revision 與 Display 可見性都必須符合才接受 ready', () =
       layoutGeneration: 5,
     })),
     true,
+  );
+});
+
+test('stale、refit 與未 ready 的 started 一律 fail closed 且不得取代合法 gate', () => {
+  const timers = createFakeTimers();
+  const service = new PresentationService({
+    store: new PresentationStore(),
+    setTimer: timers.setTimer,
+    clearTimer: timers.clearTimer,
+  });
+
+  service.startProgram(createProgram(6));
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started')),
+    false,
+    'started 不得自行建立 gate',
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'pending')),
+    true,
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started')),
+    false,
+    'pending 後仍必須先 ready',
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'ready')),
+    true,
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started', {
+      layoutGeneration: 2,
+    })),
+    false,
+    '其他 layout 的 started 不得取代目前合法 gate',
+  );
+  assert.equal(
+    service.reportPageProgress(createProgress(service, 'started')),
+    true,
+  );
+  assert.equal(timers.active().length, 1);
+
+  const staleStarted = createProgress(service, 'started');
+  assert.equal(service.invalidateCurrentPageLayout(), true);
+  assert.equal(timers.active().length, 0);
+  assert.equal(service.reportPageProgress(staleStarted), false);
+  assert.equal(
+    service.reportPageProgress({ ...staleStarted, unexpected: true }),
+    false,
+  );
+  assert.equal(
+    service.reportPageProgress({
+      ...staleStarted,
+      revision: staleStarted.revision + 1,
+    }),
+    false,
   );
 });

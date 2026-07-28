@@ -42,6 +42,8 @@ export const SETTINGS_LIMITS = Object.freeze({
   FONT_SIZE_STEP_REM: 0.25,
   MINIMUM_FONT_SIZE_PERCENT: 50,
   MAXIMUM_FONT_SIZE_PERCENT: 200,
+  MINIMUM_STANDBY_CLOCK_SIZE_PERCENT: 50,
+  MAXIMUM_STANDBY_CLOCK_SIZE_PERCENT: 300,
   MINIMUM_LINE_SPACING_PERCENT: 0,
   MAXIMUM_LINE_SPACING_PERCENT: 300,
   PERCENTAGE_STEP: 5,
@@ -55,6 +57,18 @@ export const SETTINGS_LIMITS = Object.freeze({
 
 const PLAYBACK_MODES = Object.freeze(['finite', 'continuous']);
 const STANDBY_BACKGROUND_MODES = Object.freeze(['fixed', 'slideshow']);
+const MESSAGE_BACKGROUND_PRESETS = Object.freeze([
+  'solid',
+  'obsidian',
+  'dark-marble',
+  'walnut',
+  'emerald-onyx',
+]);
+const PERCENTAGE_FIELD_LABELS = Object.freeze({
+  fontSizePercent: '字體大小',
+  lineSpacingPercent: '行距',
+  standbyClockSizePercent: '待機時間大小',
+});
 
 const RENDER_RESOLUTIONS = Object.freeze([
   'auto',
@@ -111,7 +125,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 7) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 9) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -212,7 +226,10 @@ function normalizeConfig(candidate) {
       'fontFamily',
       'fontSizePercent',
       'lineSpacingPercent',
+      'messageBackgroundPreset',
+      'messageLiquidEffectEnabled',
       'minimumFontSizeRem',
+      'standbyClockSizePercent',
     ])
   ) {
     return failure('appearance', '外觀設定格式不正確。');
@@ -228,6 +245,22 @@ function normalizeConfig(candidate) {
         '請輸入六位十六進位色碼，例如 #FFFFFF。',
       );
     }
+  }
+
+  if (!MESSAGE_BACKGROUND_PRESETS.includes(
+    appearance.messageBackgroundPreset,
+  )) {
+    return failure(
+      'appearance.messageBackgroundPreset',
+      '請選擇有效的訊息背景樣式。',
+    );
+  }
+
+  if (typeof appearance.messageLiquidEffectEnabled !== 'boolean') {
+    return failure(
+      'appearance.messageLiquidEffectEnabled',
+      '訊息字體倒酒效果開關格式不正確。',
+    );
   }
 
   if (
@@ -250,6 +283,11 @@ function normalizeConfig(candidate) {
       SETTINGS_LIMITS.MINIMUM_LINE_SPACING_PERCENT,
       SETTINGS_LIMITS.MAXIMUM_LINE_SPACING_PERCENT,
     ],
+    [
+      'standbyClockSizePercent',
+      SETTINGS_LIMITS.MINIMUM_STANDBY_CLOCK_SIZE_PERCENT,
+      SETTINGS_LIMITS.MAXIMUM_STANDBY_CLOCK_SIZE_PERCENT,
+    ],
   ]) {
     const value = appearance[field];
     if (
@@ -260,7 +298,7 @@ function normalizeConfig(candidate) {
     ) {
       return failure(
         `appearance.${field}`,
-        `${field === 'fontSizePercent' ? '字體大小' : '行距'}必須介於 ${minimum}% 至 ${maximum}%，並以 5% 遞增。`,
+        `${PERCENTAGE_FIELD_LABELS[field]}必須介於 ${minimum}% 至 ${maximum}%，並以 5% 遞增。`,
       );
     }
   }
@@ -387,7 +425,7 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 7,
+      configVersion: 9,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -400,11 +438,14 @@ function normalizeConfig(candidate) {
       },
       appearance: {
         backgroundColor: appearance.backgroundColor.toUpperCase(),
+        messageBackgroundPreset: appearance.messageBackgroundPreset,
         fontFamily: appearance.fontFamily,
         fontColor: appearance.fontColor.toUpperCase(),
         fontSizePercent: appearance.fontSizePercent,
         lineSpacingPercent: appearance.lineSpacingPercent,
+        messageLiquidEffectEnabled: appearance.messageLiquidEffectEnabled,
         minimumFontSizeRem,
+        standbyClockSizePercent: appearance.standbyClockSizePercent,
       },
       dateTime: {
         enabled: dateTime.enabled,
@@ -482,11 +523,14 @@ export function buildSettingsDraft({
   standbyBackgroundImagePaths,
   standbySlideDurationSeconds,
   backgroundColor,
+  messageBackgroundPreset,
   fontFamily,
   fontColor,
   minimumFontSizeRem,
   fontSizePercent,
+  standbyClockSizePercent,
   lineSpacingPercent,
+  messageLiquidEffectEnabled,
   inspectionBackgroundColor,
   releaseBackgroundColor,
   dateTimeEnabled,
@@ -521,6 +565,11 @@ export function buildSettingsDraft({
       '每張背景顯示秒數',
     ],
     [fontSizePercent, 'appearance.fontSizePercent', '字體大小'],
+    [
+      standbyClockSizePercent,
+      'appearance.standbyClockSizePercent',
+      '待機時間大小',
+    ],
     [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
     [pageDurationSeconds, 'playback.pageDurationSeconds', '每頁顯示秒數'],
     [roundCount, 'playback.roundCount', '整輪顯示次數'],
@@ -531,7 +580,7 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 7,
+    configVersion: 9,
     logo: {
       enabled: logoEnabled,
       path: logoPath,
@@ -544,11 +593,14 @@ export function buildSettingsDraft({
     },
     appearance: {
       backgroundColor,
+      messageBackgroundPreset,
       fontFamily,
       fontColor,
       minimumFontSizeRem: Number(minimumFontSizeRem),
       fontSizePercent: Number(fontSizePercent),
+      standbyClockSizePercent: Number(standbyClockSizePercent),
       lineSpacingPercent: Number(lineSpacingPercent),
+      messageLiquidEffectEnabled,
     },
     dateTime: {
       enabled: dateTimeEnabled,

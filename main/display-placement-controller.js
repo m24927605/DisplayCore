@@ -1,5 +1,9 @@
 'use strict';
 
+const {
+  applyDisplayFullscreenPlacement,
+} = require('./display-signage-mode');
+
 const DISPLAY_PLACEMENT_STATUSES = Object.freeze({
   PENDING: 'pending',
   APPLIED: 'applied',
@@ -33,6 +37,7 @@ class DisplayPlacementController {
     topologyService,
     getDisplayWindow = () => null,
     logger = console,
+    platform = process.platform,
     placementRetryAttempts = 3,
     placementRetryDelayMilliseconds = 150,
     waitForRetry = waitForDelay,
@@ -54,6 +59,7 @@ class DisplayPlacementController {
     this.topologyService = topologyService;
     this.getDisplayWindow = getDisplayWindow;
     this.logger = logger;
+    this.platform = platform;
     this.placementRetryAttempts = placementRetryAttempts;
     this.placementRetryDelayMilliseconds = placementRetryDelayMilliseconds;
     this.waitForRetry = waitForRetry;
@@ -129,7 +135,7 @@ class DisplayPlacementController {
 
   /**
    * 套用順序固定為退出全螢幕、移動／縮放、重新進入全螢幕。
-   * 這讓 Windows 能在負座標與混合 DPI 拓樸中把全螢幕放到正確螢幕。
+   * Windows 使用原生全螢幕；macOS signage 使用可可靠覆蓋選單列的簡易全螢幕。
    */
   applyToWindow(displayWindow) {
     if (this.disposed || !displayWindow) {
@@ -158,9 +164,9 @@ class DisplayPlacementController {
     }
 
     try {
-      displayWindow.setFullScreen(false);
-      displayWindow.setBounds(targetDisplay.bounds, false);
-      displayWindow.setFullScreen(true);
+      applyDisplayFullscreenPlacement(displayWindow, targetDisplay.bounds, {
+        platform: this.platform,
+      });
 
       this.lastPlacementByWindow.set(displayWindow, signature);
       this.setStatus({

@@ -1,5 +1,5 @@
 {
-  "configVersion": 7,
+  "configVersion": 9,
   "logo": {
     "enabled": false,
     "path": null,
@@ -12,11 +12,14 @@
   },
   "appearance": {
     "backgroundColor": "#000000",
-    "fontFamily": "Microsoft JhengHei UI, Microsoft JhengHei, sans-serif",
-    "fontColor": "#FFFFFF",
+    "fontFamily": "\"DisplayCore Source Han Serif TC\", \"Noto Serif TC\", serif",
+    "fontColor": "#F4F0E7",
     "minimumFontSizeRem": 2.5,
     "fontSizePercent": 100,
-    "lineSpacingPercent": 100
+    "lineSpacingPercent": 100,
+    "messageBackgroundPreset": "obsidian",
+    "messageLiquidEffectEnabled": true,
+    "standbyClockSizePercent": 100
   },
   "dateTime": {
     "enabled": true,

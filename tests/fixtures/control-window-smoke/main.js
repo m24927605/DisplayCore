@@ -332,16 +332,33 @@ function createTimerHarness() {
 function reportStaticDisplayReady(layoutGeneration, settingsRevision) {
   const snapshot = presentationService.getSnapshot();
   assert.equal(snapshot.mode, 'page');
+  const progress = {
+    rendererId: 1_001,
+    displayEpoch: presentationService.getDisplayEpoch(),
+    revision: snapshot.revision,
+    pageNumber: snapshot.pageNumber,
+    settingsRevision,
+    layoutGeneration,
+  };
   assert.equal(
     presentationService.reportPageProgress({
-      rendererId: 1_001,
+      ...progress,
       phase: 'ready',
-      displayEpoch: presentationService.getDisplayEpoch(),
-      revision: snapshot.revision,
-      pageNumber: snapshot.pageNumber,
-      settingsRevision,
-      layoutGeneration,
       marqueeCount: 0,
+    }),
+    true,
+  );
+  assert.equal(
+    presentationService.reportPageProgress({
+      ...progress,
+      phase: 'started',
+    }),
+    true,
+  );
+  assert.equal(
+    presentationService.reportPageProgress({
+      ...progress,
+      phase: 'complete',
     }),
     true,
   );
@@ -376,8 +393,18 @@ async function openPlaybackSettings(settingsManager) {
     logoSizeStep:
       document.getElementById('logo-size-percent-input').step,
     fontSizePercent: document.getElementById('font-size-percent-input').value,
+    messageBackgroundPreset:
+      document.getElementById('message-background-preset-select').value,
+    backgroundColorFieldHidden:
+      document.getElementById('background-color-field')?.hidden ?? null,
+    backgroundColorInputDisabled:
+      document.getElementById('background-color-input').disabled,
+    backgroundColorPickerDisabled:
+      document.getElementById('background-color-picker').disabled,
     lineSpacingPercent:
       document.getElementById('line-spacing-percent-input').value,
+    messageLiquidEffectEnabled:
+      document.getElementById('message-liquid-effect-enabled-input').checked,
     inspectionBackground:
       document.getElementById('inspection-background-color-input').value,
     releaseBackground:
@@ -413,7 +440,12 @@ async function openPlaybackSettings(settingsManager) {
     logoSizeMaximum: '1000',
     logoSizeStep: '5',
     fontSizePercent: '100',
+    messageBackgroundPreset: 'obsidian',
+    backgroundColorFieldHidden: true,
+    backgroundColorInputDisabled: true,
+    backgroundColorPickerDisabled: true,
     lineSpacingPercent: '100',
+    messageLiquidEffectEnabled: true,
     inspectionBackground: '#000000',
     releaseBackground: '#000000',
     standbyBackgroundMode: 'fixed',
@@ -433,6 +465,33 @@ async function openPlaybackSettings(settingsManager) {
       '3840x2160',
     ],
   });
+
+  await execute(`(() => {
+    const preset = document.getElementById('message-background-preset-select');
+    preset.value = 'solid';
+    preset.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('background-color-field').hidden === false &&
+      document.getElementById('background-color-input').disabled === false &&
+      document.getElementById('background-color-picker').disabled === false
+    )()`),
+    '自訂純色時顯示背景色欄位',
+  );
+  await execute(`(() => {
+    const preset = document.getElementById('message-background-preset-select');
+    preset.value = 'dark-marble';
+    preset.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('background-color-field').hidden === true &&
+      document.getElementById('background-color-input').disabled === true &&
+      document.getElementById('background-color-picker').disabled === true
+    )()`),
+    '材質背景時隱藏自訂純色欄位',
+  );
 
   // 原生檔案選擇取消後，焦點必須回到原按鈕，鍵盤操作才不會掉回 body。
   await execute(`(() => {
@@ -473,6 +532,13 @@ async function openPlaybackSettings(settingsManager) {
   await setInput('page-duration-input', '4');
   await setInput('round-count-input', '2');
   await setInput('logo-size-percent-input', '1000');
+  await execute(`(() => {
+    const toggle = document.getElementById(
+      'message-liquid-effect-enabled-input'
+    );
+    toggle.checked = false;
+    toggle.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
 
   // Regression: ISSUE-001 — 播放設定變更未被納入系統設定 dirty state。
   // Found by /qa on 2026-07-17
@@ -496,6 +562,17 @@ async function openPlaybackSettings(settingsManager) {
   assert.equal(settingsManager.getSnapshot().revision, 0);
 
   // 新錯誤必須取代先前的成功／取消狀態，避免同時顯示矛盾回饋。
+  await execute(`(() => {
+    const preset = document.getElementById('message-background-preset-select');
+    preset.value = 'solid';
+    preset.dispatchEvent(new Event('change', { bubbles: true }));
+  })()`);
+  await waitFor(
+    () => execute(
+      `document.getElementById('background-color-field').hidden === false`,
+    ),
+    '切回純色後才可編輯自訂背景色',
+  );
   await setInput('background-color-input', '#12345');
   await waitFor(
     () => execute(`document.getElementById('save-settings-button').disabled === false`),
@@ -544,6 +621,10 @@ async function openPlaybackSettings(settingsManager) {
     settingsManager.getSnapshot().config.display.renderResolution,
     'auto',
   );
+  assert.equal(
+    settingsManager.getSnapshot().config.appearance.messageLiquidEffectEnabled,
+    false,
+  );
   assert.deepEqual(settingsManager.getSnapshot().config.playback, {
     pageDurationSeconds: 4,
     repeatMode: 'finite',
@@ -584,6 +665,8 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('standby-slide-duration-input').value,
     logoSizePercent:
       document.getElementById('logo-size-percent-input').value,
+    messageLiquidEffectEnabled:
+      document.getElementById('message-liquid-effect-enabled-input').checked,
   }))()`), {
     pageDuration: '4',
     rounds: '2',
@@ -594,6 +677,7 @@ async function openPlaybackSettings(settingsManager) {
     standbyBackgroundSummary: '已選擇 1 張圖片',
     standbySlideDuration: '10',
     logoSizePercent: '1000',
+    messageLiquidEffectEnabled: false,
   });
 
   // Logo 大小與背景移除只改草稿；未儲存關閉必須一起恢復 baseline。

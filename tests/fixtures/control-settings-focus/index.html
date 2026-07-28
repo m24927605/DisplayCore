@@ -94,9 +94,16 @@
           </fieldset>
 
           <fieldset id="appearance-settings-fieldset">
-            <input id="background-color-picker" type="color" value="#000000">
-            <input id="background-color-input" type="text" value="#000000">
-            <p id="background-color-error" hidden></p>
+            <div id="background-color-field" hidden>
+              <input id="background-color-picker" type="color" value="#000000">
+              <input id="background-color-input" type="text" value="#000000">
+              <p id="background-color-error" hidden></p>
+            </div>
+            <select id="message-background-preset-select">
+              <option value="obsidian">黑曜石</option>
+              <option value="walnut">煙燻胡桃木</option>
+            </select>
+            <p id="message-background-preset-error" hidden></p>
             <select id="font-family-select">
               <option value="Arial, sans-serif">Arial</option>
             </select>
@@ -106,10 +113,21 @@
             <p id="font-color-error" hidden></p>
             <input id="font-size-percent-input" type="number" value="100">
             <p id="font-size-percent-error" hidden></p>
+            <input
+              id="standby-clock-size-percent-input"
+              type="number"
+              value="100"
+            >
+            <p id="standby-clock-size-percent-error" hidden></p>
             <input id="line-spacing-percent-input" type="number" value="100">
             <p id="line-spacing-percent-error" hidden></p>
             <input id="minimum-font-size-input" type="number" value="3">
             <p id="minimum-font-size-error" hidden></p>
+            <input
+              id="message-liquid-effect-enabled-input"
+              type="checkbox"
+              checked
+            >
             <input
               id="inspection-background-color-picker"
               type="color"
@@ -169,7 +187,7 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 7,
+        configVersion: 9,
         logo: Object.freeze({
           enabled: false,
           path: null,
@@ -182,11 +200,14 @@
         }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
+          messageBackgroundPreset: 'obsidian',
           fontFamily: 'Arial, sans-serif',
           fontColor: '#FFFFFF',
           minimumFontSizeRem: 3,
           fontSizePercent: 100,
+          standbyClockSizePercent: 100,
           lineSpacingPercent: 100,
+          messageLiquidEffectEnabled: true,
         }),
         dateTime: Object.freeze({ enabled: false, offsetSeconds: 0 }),
         emergency: Object.freeze({
@@ -261,6 +282,15 @@
         );
         const roundCount = document.getElementById('round-count-input');
         const logoSize = document.getElementById('logo-size-percent-input');
+        const messageBackground = document.getElementById(
+          'message-background-preset-select',
+        );
+        const standbyClockSize = document.getElementById(
+          'standby-clock-size-percent-input',
+        );
+        const messageLiquidEffect = document.getElementById(
+          'message-liquid-effect-enabled-input',
+        );
         const dirtyStatus = document.getElementById('settings-dirty-status');
         const closeButton = document.getElementById('settings-close-button');
         const saveButton = document.getElementById('save-settings-button');
@@ -268,6 +298,16 @@
         if (dirtyPlayback) {
           logoSize.value = '150';
           logoSize.dispatchEvent(new Event('input', { bubbles: true }));
+          messageBackground.value = 'walnut';
+          messageBackground.dispatchEvent(new Event('change', {
+            bubbles: true,
+          }));
+          standbyClockSize.value = '150';
+          standbyClockSize.dispatchEvent(new Event('input', { bubbles: true }));
+          messageLiquidEffect.checked = false;
+          messageLiquidEffect.dispatchEvent(new Event('change', {
+            bubbles: true,
+          }));
           pageDuration.value = '4';
           pageDuration.dispatchEvent(new Event('input', { bubbles: true }));
           roundCount.value = '2';
@@ -280,6 +320,7 @@
           dirtyStatus: dirtyStatus.textContent,
           closeButtonText: closeButton.textContent,
           saveDisabled: saveButton.disabled,
+          messageLiquidEffectEnabled: messageLiquidEffect.checked,
         };
 
         document.getElementById('settings-close-button').click();
@@ -300,6 +341,9 @@
             continuousChecked: repeatContinuous.checked,
             roundCount: roundCount.value,
             logoSizePercent: logoSize.value,
+            messageBackgroundPreset: messageBackground.value,
+            standbyClockSizePercent: standbyClockSize.value,
+            messageLiquidEffectEnabled: messageLiquidEffect.checked,
           },
         };
       }

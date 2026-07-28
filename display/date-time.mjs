@@ -1,4 +1,4 @@
-const SECOND_MILLISECONDS = 1_000;
+const MINUTE_MILLISECONDS = 60_000;
 const MINIMUM_CLOCK_OFFSET_SECONDS = -43_199;
 const MAXIMUM_CLOCK_OFFSET_SECONDS = 43_200;
 const SECONDS_PER_DAY = 86_400;
@@ -20,7 +20,7 @@ function isValidClockSettings(settings) {
   return true;
 }
 
-/** 以 Display 所在電腦的本機時區輸出固定 24 小時 HH:mm:ss。 */
+/** 以 Display 所在電腦的本機時區輸出固定 24 小時 HH:mm。 */
 export function formatDisplayDateTime(date, offsetSeconds = 0) {
   if (
     !(date instanceof Date) ||
@@ -39,7 +39,6 @@ export function formatDisplayDateTime(date, offsetSeconds = 0) {
   const parts = [
     Math.floor(adjustedSeconds / 3_600),
     Math.floor((adjustedSeconds % 3_600) / 60),
-    adjustedSeconds % 60,
   ];
   return parts
     .map((value) => String(value).padStart(2, '0'))
@@ -47,7 +46,7 @@ export function formatDisplayDateTime(date, offsetSeconds = 0) {
 }
 
 /**
- * 建立對齊整秒的本機 Clock。
+ * 建立對齊校正後整分鐘的本機 Clock。
  *
  * 使用遞迴 timeout 而非 interval；電腦睡眠喚醒後會以新的現在時間重新校準，
  * 不累積計時漂移。停用或切換 emergency/blank 時可立即停止 timer。
@@ -102,8 +101,12 @@ export function createDisplayClock({
       const text = formatDisplayDateTime(date, offsetSeconds);
       render(Object.freeze({ text, dateTime: text }));
 
-      const elapsedInSecond = date.getTime() % SECOND_MILLISECONDS;
-      const delay = Math.max(1, SECOND_MILLISECONDS - elapsedInSecond);
+      const adjustedMilliseconds =
+        date.getTime() + (offsetSeconds * 1_000);
+      const elapsedInMinute = (
+        (adjustedMilliseconds % MINUTE_MILLISECONDS) + MINUTE_MILLISECONDS
+      ) % MINUTE_MILLISECONDS;
+      const delay = Math.max(1, MINUTE_MILLISECONDS - elapsedInMinute);
       timer = setTimer(() => {
         timer = null;
         renderAndSchedule(expectedGeneration);

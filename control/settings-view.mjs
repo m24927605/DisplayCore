@@ -70,9 +70,16 @@ export function createSettingsView({
     removeStandbyBackgroundButton: document.getElementById(
       'remove-standby-background-button',
     ),
+    backgroundColorField: document.getElementById('background-color-field'),
     backgroundColorPicker: document.getElementById('background-color-picker'),
     backgroundColor: document.getElementById('background-color-input'),
     backgroundColorError: document.getElementById('background-color-error'),
+    messageBackgroundPreset: document.getElementById(
+      'message-background-preset-select',
+    ),
+    messageBackgroundPresetError: document.getElementById(
+      'message-background-preset-error',
+    ),
     fontFamily: document.getElementById('font-family-select'),
     fontFamilyError: document.getElementById('font-family-error'),
     fontColorPicker: document.getElementById('font-color-picker'),
@@ -82,8 +89,17 @@ export function createSettingsView({
     minimumFontSizeError: document.getElementById('minimum-font-size-error'),
     fontSizePercent: document.getElementById('font-size-percent-input'),
     fontSizePercentError: document.getElementById('font-size-percent-error'),
+    standbyClockSizePercent: document.getElementById(
+      'standby-clock-size-percent-input',
+    ),
+    standbyClockSizePercentError: document.getElementById(
+      'standby-clock-size-percent-error',
+    ),
     lineSpacingPercent: document.getElementById('line-spacing-percent-input'),
     lineSpacingPercentError: document.getElementById('line-spacing-percent-error'),
+    messageLiquidEffectEnabled: document.getElementById(
+      'message-liquid-effect-enabled-input',
+    ),
     inspectionBackgroundColorPicker: document.getElementById(
       'inspection-background-color-picker',
     ),
@@ -181,6 +197,10 @@ export function createSettingsView({
       elements.backgroundColor,
       elements.backgroundColorError,
     ],
+    'appearance.messageBackgroundPreset': [
+      elements.messageBackgroundPreset,
+      elements.messageBackgroundPresetError,
+    ],
     'appearance.fontFamily': [elements.fontFamily, elements.fontFamilyError],
     'appearance.fontColor': [elements.fontColor, elements.fontColorError],
     'appearance.minimumFontSizeRem': [
@@ -190,6 +210,10 @@ export function createSettingsView({
     'appearance.fontSizePercent': [
       elements.fontSizePercent,
       elements.fontSizePercentError,
+    ],
+    'appearance.standbyClockSizePercent': [
+      elements.standbyClockSizePercent,
+      elements.standbyClockSizePercentError,
     ],
     'appearance.lineSpacingPercent': [
       elements.lineSpacingPercent,
@@ -289,6 +313,7 @@ export function createSettingsView({
       }
     }
 
+    const messageBackgroundPreset = elements.messageBackgroundPreset.value;
     return buildSettingsDraft({
       baseline: state.baseline,
       logoEnabled: elements.logoEnabled.checked,
@@ -297,12 +322,17 @@ export function createSettingsView({
       standbyBackgroundMode: elements.standbyBackgroundMode.value,
       standbyBackgroundImagePaths: [...state.standbyBackgroundImagePaths],
       standbySlideDurationSeconds: elements.standbySlideDuration.value,
-      backgroundColor: elements.backgroundColor.value,
+      backgroundColor: messageBackgroundPreset === 'solid'
+        ? elements.backgroundColor.value
+        : state.baseline.appearance.backgroundColor,
+      messageBackgroundPreset,
       fontFamily: elements.fontFamily.value,
       fontColor: elements.fontColor.value,
       minimumFontSizeRem: elements.minimumFontSize.value,
       fontSizePercent: elements.fontSizePercent.value,
+      standbyClockSizePercent: elements.standbyClockSizePercent.value,
       lineSpacingPercent: elements.lineSpacingPercent.value,
+      messageLiquidEffectEnabled: elements.messageLiquidEffectEnabled.checked,
       inspectionBackgroundColor: elements.inspectionBackgroundColor.value,
       releaseBackgroundColor: elements.releaseBackgroundColor.value,
       dateTimeEnabled: elements.dateTimeEnabled.checked,
@@ -385,6 +415,13 @@ export function createSettingsView({
           : `已選擇 ${imageCount} 張圖片（固定顯示第 1 張）`;
   }
 
+  function renderMessageBackgroundControls() {
+    const usesCustomColor = elements.messageBackgroundPreset.value === 'solid';
+    elements.backgroundColorField.hidden = !usesCustomColor;
+    elements.backgroundColorPicker.disabled = !usesCustomColor;
+    elements.backgroundColor.disabled = !usesCustomColor;
+  }
+
   function renderConfig(config) {
     const currentSeconds = getCurrentSecondOfDay();
     if (currentSeconds === null) {
@@ -408,6 +445,9 @@ export function createSettingsView({
     elements.backgroundColor.value = config.appearance.backgroundColor;
     elements.backgroundColorPicker.value =
       config.appearance.backgroundColor.toLowerCase();
+    elements.messageBackgroundPreset.value =
+      config.appearance.messageBackgroundPreset;
+    renderMessageBackgroundControls();
     ensureFontOption(config.appearance.fontFamily);
     elements.fontFamily.value = config.appearance.fontFamily;
     elements.fontColor.value = config.appearance.fontColor;
@@ -418,9 +458,14 @@ export function createSettingsView({
     elements.fontSizePercent.value = String(
       config.appearance.fontSizePercent,
     );
+    elements.standbyClockSizePercent.value = String(
+      config.appearance.standbyClockSizePercent,
+    );
     elements.lineSpacingPercent.value = String(
       config.appearance.lineSpacingPercent,
     );
+    elements.messageLiquidEffectEnabled.checked =
+      config.appearance.messageLiquidEffectEnabled;
     elements.inspectionBackgroundColor.value =
       config.emergency.inspectionBackgroundColor;
     elements.inspectionBackgroundColorPicker.value =
@@ -628,7 +673,9 @@ export function createSettingsView({
       elements.fontFamily,
       elements.minimumFontSize,
       elements.fontSizePercent,
+      elements.standbyClockSizePercent,
       elements.lineSpacingPercent,
+      elements.messageLiquidEffectEnabled,
       elements.dateTimeEnabled,
       elements.renderResolution,
       elements.marqueeEnabled,
@@ -641,6 +688,11 @@ export function createSettingsView({
 
     elements.standbyBackgroundMode.addEventListener('change', () => {
       renderStandbyBackgroundControls();
+      handleDraftInput();
+    }, { signal });
+
+    elements.messageBackgroundPreset.addEventListener('change', () => {
+      renderMessageBackgroundControls();
       handleDraftInput();
     }, { signal });
 

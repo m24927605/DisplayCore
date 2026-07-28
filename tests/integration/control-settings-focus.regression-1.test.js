@@ -33,11 +33,13 @@ async function runElectronFixture() {
     if (
       clean?.restoredFocusId !== 'open-settings-button' ||
       clean?.preservedNewFocusId !== 'next-action-input' ||
+      clean?.beforeClose?.messageLiquidEffectEnabled !== true ||
       dirty?.restoredFocusId !== 'open-settings-button' ||
       dirty?.preservedNewFocusId !== 'next-action-input' ||
       dirty?.beforeClose?.dirtyStatus !== '有未儲存變更' ||
       dirty?.beforeClose?.closeButtonText !== '捨棄變更' ||
       dirty?.beforeClose?.saveDisabled !== false ||
+      dirty?.beforeClose?.messageLiquidEffectEnabled !== false ||
       dirty?.afterClose?.dirtyStatus !== '所有變更皆已儲存' ||
       dirty?.afterClose?.closeButtonText !== '關閉' ||
       dirty?.afterClose?.saveDisabled !== true ||
@@ -45,7 +47,10 @@ async function runElectronFixture() {
       dirty?.afterClose?.finiteChecked !== true ||
       dirty?.afterClose?.continuousChecked !== false ||
       dirty?.afterClose?.roundCount !== '1' ||
-      dirty?.afterClose?.logoSizePercent !== '100'
+      dirty?.afterClose?.logoSizePercent !== '100' ||
+      dirty?.afterClose?.messageBackgroundPreset !== 'obsidian' ||
+      dirty?.afterClose?.standbyClockSizePercent !== '100' ||
+      dirty?.afterClose?.messageLiquidEffectEnabled !== true
     ) {
       console.error(
         `[DisplayCore] 設定焦點結果不正確：${JSON.stringify(result)}。`,

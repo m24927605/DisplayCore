@@ -74,9 +74,9 @@ function isValidProgressReport(report) {
 /**
  * 管理 Main Process 唯一的翻頁 timer、Display 版面閘門與狀態發布。
  *
- * 每頁必須同時滿足兩個條件才可前進：Display 完成 layout 後開始計算的
+ * 每頁必須同時滿足兩個條件才可前進：Display 已放行頁面效果後開始計算的
  * 最短停留時間已到，以及目前 layout 的所有跑馬燈皆至少完成一輪。Display
- * 只能回報 pending／ready／complete，不能自行指定下一頁。
+ * 只能回報 pending／ready／started／complete，不能自行指定下一頁。
  */
 class PresentationService {
   constructor({
@@ -213,7 +213,7 @@ class PresentationService {
 
   /**
    * 接收經 Coordinator 授權後的 Display 版面回報。
-   * stale revision、舊 layout、未先 ready 的 complete 一律不改變狀態。
+   * stale revision、舊 layout、未先 ready 的 started／complete 一律不改變狀態。
    */
   reportPageProgress(report) {
     if (
@@ -252,8 +252,11 @@ class PresentationService {
     }
 
     if (!sameLayout) {
-      // complete 本身不能建立可信 layout；必須先收到 pending 或 ready。
-      if (report.phase === PAGE_PROGRESS_PHASES.COMPLETE) {
+      // started／complete 不能建立可信 layout；必須先收到 pending 或 ready。
+      if (
+        report.phase === PAGE_PROGRESS_PHASES.STARTED ||
+        report.phase === PAGE_PROGRESS_PHASES.COMPLETE
+      ) {
         return false;
       }
 
@@ -283,6 +286,15 @@ class PresentationService {
       return false;
     }
 
+    if (report.phase === PAGE_PROGRESS_PHASES.STARTED) {
+      if (gate.started) {
+        return true;
+      }
+
+      this.markStarted(gate);
+      return true;
+    }
+
     gate.traversalSatisfied = true;
     this.advanceIfSatisfied(gate);
     return true;
@@ -297,6 +309,7 @@ class PresentationService {
       settingsRevision: report.settingsRevision,
       layoutGeneration: report.layoutGeneration,
       ready: false,
+      started: false,
       marqueeCount: null,
       minimumElapsed: false,
       traversalSatisfied: false,
@@ -306,7 +319,14 @@ class PresentationService {
   markReady(gate, marqueeCount) {
     gate.ready = true;
     gate.marqueeCount = marqueeCount;
-    gate.traversalSatisfied = marqueeCount === 0;
+    // 所有頁面都等待 Renderer 的 complete。沒有跑馬燈時，complete 代表
+    // 酒液 100% 終幀（或靜態 fallback）已完成，Main timer 仍守住最短時間。
+    gate.traversalSatisfied = false;
+  }
+
+  /** Renderer 已同步放行所有頁面效果後，才開始計算實際停留時間。 */
+  markStarted(gate) {
+    gate.started = true;
 
     if (!this.store.shouldScheduleNextPage()) {
       return;
@@ -336,6 +356,7 @@ class PresentationService {
     if (
       this.disposed ||
       this.pageGate !== gate ||
+      !gate.started ||
       !gate.minimumElapsed ||
       !gate.traversalSatisfied ||
       !this.store.shouldScheduleNextPage()

@@ -29,11 +29,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v7 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v9 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 7);
+  assert.equal(CONFIG_VERSION, 9);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
@@ -98,7 +98,9 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 4 },
     { ...source, configVersion: 5 },
     { ...source, configVersion: 6 },
+    { ...source, configVersion: 7 },
     { ...source, configVersion: 8 },
+    { ...source, configVersion: 10 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -381,6 +383,133 @@ test('外觀設定限制色碼、字型、最小字級、字體比例與行距�
     });
     assert.equal(result.ok, false, JSON.stringify(partial));
     assert.match(result.error.field, /^appearance\./);
+  }
+});
+
+test('v9 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
+  const source = await readDefaultConfig();
+
+  assert.equal(source.configVersion, 9);
+  assert.equal(source.appearance.messageBackgroundPreset, 'obsidian');
+  assert.equal(source.appearance.standbyClockSizePercent, 100);
+
+  for (const messageBackgroundPreset of [
+    'solid',
+    'obsidian',
+    'dark-marble',
+    'walnut',
+    'emerald-onyx',
+  ]) {
+    for (const standbyClockSizePercent of [50, 100, 300]) {
+      const result = validateConfig({
+        ...source,
+        appearance: {
+          ...source.appearance,
+          messageBackgroundPreset,
+          standbyClockSizePercent,
+        },
+      });
+
+      assert.equal(
+        result.ok,
+        true,
+        `${messageBackgroundPreset}:${standbyClockSizePercent}`,
+      );
+      assert.equal(
+        result.value.appearance.messageBackgroundPreset,
+        messageBackgroundPreset,
+      );
+      assert.equal(
+        result.value.appearance.standbyClockSizePercent,
+        standbyClockSizePercent,
+      );
+      assert.equal(Object.isFrozen(result.value.appearance), true);
+    }
+  }
+
+  for (const partial of [
+    { messageBackgroundPreset: 'marble' },
+    { messageBackgroundPreset: '' },
+    { standbyClockSizePercent: 45 },
+    { standbyClockSizePercent: 305 },
+    { standbyClockSizePercent: 101 },
+    { standbyClockSizePercent: 100.5 },
+  ]) {
+    const result = validateConfig({
+      ...source,
+      appearance: { ...source.appearance, ...partial },
+    });
+
+    assert.equal(result.ok, false, JSON.stringify(partial));
+    assert.match(result.error.field, /^appearance\./);
+  }
+});
+
+test('v9 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
+  const source = await readDefaultConfig();
+
+  assert.equal(source.appearance.messageLiquidEffectEnabled, true);
+
+  for (const messageLiquidEffectEnabled of [true, false]) {
+    const result = validateConfig({
+      ...source,
+      appearance: {
+        ...source.appearance,
+        messageLiquidEffectEnabled,
+      },
+    });
+
+    assert.equal(result.ok, true, String(messageLiquidEffectEnabled));
+    assert.equal(
+      result.value.appearance.messageLiquidEffectEnabled,
+      messageLiquidEffectEnabled,
+    );
+    assert.equal(Object.isFrozen(result.value.appearance), true);
+  }
+
+  for (const messageLiquidEffectEnabled of [null, 0, 1, 'true', 'false']) {
+    const result = validateConfig({
+      ...source,
+      appearance: {
+        ...source.appearance,
+        messageLiquidEffectEnabled,
+      },
+    });
+
+    assert.equal(result.ok, false, JSON.stringify(messageLiquidEffectEnabled));
+    assert.equal(
+      result.error.field,
+      'appearance.messageLiquidEffectEnabled',
+      JSON.stringify(messageLiquidEffectEnabled),
+    );
+  }
+});
+
+test('v9 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
+  const source = await readDefaultConfig();
+  const {
+    messageBackgroundPreset: _messageBackgroundPreset,
+    ...missingPreset
+  } = source.appearance;
+  const {
+    standbyClockSizePercent: _standbyClockSizePercent,
+    ...missingClockSize
+  } = source.appearance;
+  const {
+    messageLiquidEffectEnabled: _messageLiquidEffectEnabled,
+    ...missingLiquidEffect
+  } = source.appearance;
+
+  for (const appearance of [
+    missingPreset,
+    missingClockSize,
+    missingLiquidEffect,
+    { ...source.appearance, unexpected: true },
+  ]) {
+    const result = validateConfig({ ...source, appearance });
+
+    assert.equal(result.ok, false, JSON.stringify(appearance));
+    assert.equal(result.error.field, 'appearance');
   }
 });
 

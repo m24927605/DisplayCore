@@ -91,9 +91,13 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
       backgroundColor: config.appearance.backgroundColor,
       fontFamily: config.appearance.fontFamily,
       fontColor: config.appearance.fontColor,
+      messageBackgroundPreset: config.appearance.messageBackgroundPreset,
       minimumFontSizeRem: config.appearance.minimumFontSizeRem,
       fontSizePercent: config.appearance.fontSizePercent,
       lineSpacingPercent: config.appearance.lineSpacingPercent,
+      messageLiquidEffectEnabled:
+        config.appearance.messageLiquidEffectEnabled,
+      standbyClockSizePercent: config.appearance.standbyClockSizePercent,
     },
     dateTime: {
       enabled: config.dateTime.enabled,

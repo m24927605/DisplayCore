@@ -364,12 +364,30 @@
           <fieldset id="appearance-settings-fieldset" class="settings-fieldset">
             <legend>顯示外觀</legend>
             <div class="settings-control-grid">
-              <div class="settings-field">
-                <label for="background-color-input">背景顏色</label>
+              <div class="settings-field settings-field-wide">
+                <label for="message-background-preset-select">訊息背景</label>
+                <select
+                  id="message-background-preset-select"
+                  aria-describedby="message-background-preset-help message-background-preset-error"
+                >
+                  <option value="solid">自訂純色</option>
+                  <option value="obsidian">黑曜石（推薦）</option>
+                  <option value="dark-marble">黑金大理石</option>
+                  <option value="walnut">煙燻胡桃木</option>
+                  <option value="emerald-onyx">深墨玉</option>
+                </select>
+                <small id="message-background-preset-help" class="settings-field-help">
+                  套用於一般訊息；待機背景與 555／888 不受影響。
+                </small>
+                <p id="message-background-preset-error" class="field-error" hidden></p>
+              </div>
+              <div id="background-color-field" class="settings-field" hidden>
+                <label for="background-color-input">自訂純色背景</label>
                 <div class="color-control">
-                  <input id="background-color-picker" type="color" aria-label="選擇背景顏色" value="#000000">
+                  <input id="background-color-picker" type="color" aria-label="選擇自訂純色背景" value="#000000">
                   <input id="background-color-input" type="text" value="#000000" autocomplete="off" spellcheck="false">
                 </div>
+                <small class="settings-field-help">選擇「自訂純色」時使用。</small>
                 <p id="background-color-error" class="field-error" hidden></p>
               </div>
               <div class="settings-field">
@@ -383,10 +401,8 @@
               <div class="settings-field settings-field-wide">
                 <label for="font-family-select">顯示字型</label>
                 <select id="font-family-select">
-                  <option value="Microsoft JhengHei UI, Microsoft JhengHei, sans-serif">微軟正黑體（建議）</option>
-                  <option value="Microsoft JhengHei, sans-serif">微軟正黑體</option>
-                  <option value="Arial, sans-serif">Arial</option>
-                  <option value="sans-serif">系統無襯線字體</option>
+                  <option value="&quot;DisplayCore Source Han Serif TC&quot;, &quot;Noto Serif TC&quot;, serif">典雅宋體（推薦）</option>
+                  <option value="&quot;Microsoft JhengHei UI&quot;, &quot;Microsoft JhengHei&quot;, sans-serif">現代正黑</option>
                 </select>
                 <p id="font-family-error" class="field-error" hidden></p>
               </div>
@@ -394,9 +410,17 @@
                 <label for="font-size-percent-input">顯示字體大小（%）</label>
                 <input id="font-size-percent-input" type="number" min="50" max="200" step="5" inputmode="numeric" aria-describedby="font-size-percent-help font-size-percent-error">
                 <small id="font-size-percent-help" class="settings-field-help">
-                  套用於一般訊息、待機時間，以及 555／888。
+                  套用於一般訊息與 555／888。
                 </small>
                 <p id="font-size-percent-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field settings-field-wide">
+                <label for="standby-clock-size-percent-input">待機時間大小（%）</label>
+                <input id="standby-clock-size-percent-input" type="number" min="50" max="300" step="5" inputmode="numeric" aria-describedby="standby-clock-size-percent-help standby-clock-size-percent-error">
+                <small id="standby-clock-size-percent-help" class="settings-field-help">
+                  只調整沒有訊息時的待機時間，不影響訊息頁右上角時間。
+                </small>
+                <p id="standby-clock-size-percent-error" class="field-error" hidden></p>
               </div>
               <div class="settings-field">
                 <label for="line-spacing-percent-input">行距（%）</label>
@@ -408,6 +432,16 @@
                 <input id="minimum-font-size-input" type="number" min="1" max="12" step="0.25" inputmode="decimal">
                 <p id="minimum-font-size-error" class="field-error" hidden></p>
               </div>
+              <label
+                class="settings-switch settings-field-wide"
+                for="message-liquid-effect-enabled-input"
+              >
+                <span>
+                  <strong>訊息字體倒酒效果</strong>
+                  <small>只套用於一般訊息；關閉後顯示固定白字。待機、營運訊息及 555／888 不受影響。</small>
+                </span>
+                <input id="message-liquid-effect-enabled-input" type="checkbox">
+              </label>
               <div class="settings-subheading settings-field-wide">
                 <strong>滿屏代碼背景</strong>
                 <small>字體大小使用上方同一設定；555 與 888 背景可分開調整。</small>
@@ -472,7 +506,7 @@
             </div>
             <div class="settings-switch-list">
               <label class="settings-switch" for="date-time-enabled-input">
-                <span><strong>訊息播放時顯示時間</strong><small>時間固定顯示為 24 小時 HH:mm:ss；一般訊息頁位於右上角並與 Logo 同列；待機畫面固定顯示時間。</small></span>
+                <span><strong>訊息播放時顯示時間</strong><small>時間固定顯示為 24 小時 HH:mm；一般訊息頁位於右上角並與 Logo 同列；待機畫面固定顯示時間。</small></span>
                 <input id="date-time-enabled-input" type="checkbox">
               </label>
               <label class="settings-switch" for="marquee-enabled-input">

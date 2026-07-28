@@ -318,7 +318,8 @@ function validateSaveSettingsPayload(payload) {
  * 驗證 Display 對目前版面的受限回報。
  *
  * Renderer 不得攜帶 next page、時間或 message；Main 只接受足以判斷目前
- * layout 是否 ready，以及所有跑馬燈是否已各完成一輪的最小欄位。
+ * layout 是否 ready、頁面效果是否 started，以及所有跑馬燈是否已各完成
+ * 一輪的最小欄位。
  */
 function validatePageProgressPayload(payload) {
   const ready = payload?.phase === PAGE_PROGRESS_PHASES.READY;

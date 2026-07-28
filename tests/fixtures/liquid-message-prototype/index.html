@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-Hant">
+  <head>
+    <meta charset="UTF-8">
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self'; font-src 'self'; connect-src 'none'; object-src 'none'; frame-src 'none'; base-uri 'none'; form-action 'none'"
+    >
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>DisplayCore 酒液文字原型</title>
+    <link rel="stylesheet" href="/display/display.css">
+    <link rel="stylesheet" href="/prototype.css">
+  </head>
+  <body>
+    <div class="display-render-surface">
+      <main
+        id="display-stage"
+        class="display-stage"
+        data-mode="page"
+        data-message-background="dark-marble"
+        aria-label="DisplayCore 酒液文字原型"
+      >
+        <section class="normal-layer has-chrome has-clock">
+          <header class="display-chrome">
+            <time id="display-clock" class="display-clock" datetime="20:18">
+              20:18
+            </time>
+          </header>
+          <section
+            id="page-layer"
+            class="page-layer"
+            data-layout="messages"
+            aria-label="一般訊息"
+          ></section>
+        </section>
+      </main>
+    </div>
+    <script type="module" src="/prototype.mjs"></script>
+  </body>
+</html>

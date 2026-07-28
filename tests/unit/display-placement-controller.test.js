@@ -77,6 +77,7 @@ class FakeWindow {
     this.destroyed = false;
     this.calls = [];
     this.throwOnBounds = false;
+    this.simpleFullscreen = true;
   }
 
   isDestroyed() {
@@ -85,6 +86,16 @@ class FakeWindow {
 
   setFullScreen(enabled) {
     this.calls.push({ method: 'setFullScreen', enabled });
+  }
+
+  setSimpleFullScreen(enabled) {
+    this.calls.push({ method: 'setSimpleFullScreen', enabled });
+    this.simpleFullscreen = enabled;
+  }
+
+  isSimpleFullScreen() {
+    this.calls.push({ method: 'isSimpleFullScreen' });
+    return this.simpleFullscreen;
   }
 
   setBounds(bounds, animate) {
@@ -100,6 +111,7 @@ function createController({
   topologyService,
   getDisplayWindow,
   logger,
+  platform = 'win32',
   placementRetryAttempts,
   placementRetryDelayMilliseconds,
   waitForRetry,
@@ -109,6 +121,7 @@ function createController({
     topologyService: topology,
     getDisplayWindow: getDisplayWindow || (() => null),
     logger,
+    platform,
     placementRetryAttempts,
     placementRetryDelayMilliseconds,
     waitForRetry,
@@ -116,6 +129,29 @@ function createController({
 
   return { controller, topology };
 }
+
+test('macOS Display 定位使用 simple fullscreen 並確認已成功進入', () => {
+  const window = new FakeWindow();
+  const topology = new FakeTopologyService();
+  const { controller } = createController({
+    topologyService: topology,
+    platform: 'darwin',
+  });
+  controller.initialize();
+
+  assert.equal(controller.applyToWindow(window), true);
+  assert.deepEqual(window.calls, [
+    { method: 'setSimpleFullScreen', enabled: false },
+    {
+      method: 'setBounds',
+      bounds: topology.target.bounds,
+      animate: false,
+    },
+    { method: 'setSimpleFullScreen', enabled: true },
+    { method: 'isSimpleFullScreen' },
+  ]);
+  assert.equal(controller.getStatus().status, DISPLAY_PLACEMENT_STATUSES.APPLIED);
+});
 
 test('全螢幕跨螢幕依序退出、套用原始 DIP bounds、再進入全螢幕', () => {
   const window = new FakeWindow();

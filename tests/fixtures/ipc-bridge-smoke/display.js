@@ -81,7 +81,7 @@ function isExpectedSettingsSnapshot(snapshot) {
       'revision',
       'standby',
     ]) &&
-    snapshot.configVersion === 7 &&
+    snapshot.configVersion === 9 &&
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'sizePercent', 'url']) &&
@@ -106,8 +106,12 @@ function isExpectedSettingsSnapshot(snapshot) {
       'fontFamily',
       'fontSizePercent',
       'lineSpacingPercent',
+      'messageBackgroundPreset',
+      'messageLiquidEffectEnabled',
       'minimumFontSizeRem',
+      'standbyClockSizePercent',
     ]) &&
+    snapshot.appearance.messageLiquidEffectEnabled === true &&
     hasExactKeys(snapshot.dateTime, ['enabled', 'offsetSeconds']) &&
     snapshot.dateTime.enabled === true &&
     snapshot.dateTime.offsetSeconds === 3_661 &&

@@ -153,7 +153,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 7);
+  assert.equal(config.configVersion, 9);
   assert.deepEqual(Object.keys(config.logo).sort(), [
     'enabled',
     'path',
@@ -171,6 +171,20 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
   assert.equal(typeof config.appearance.backgroundColor, 'string');
   assert.equal(typeof config.appearance.fontFamily, 'string');
   assert.equal(typeof config.appearance.fontColor, 'string');
+  assert.equal(config.appearance.messageBackgroundPreset, 'obsidian');
+  assert.equal(config.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(config.appearance.standbyClockSizePercent, 100);
+  assert.deepEqual(Object.keys(config.appearance).sort(), [
+    'backgroundColor',
+    'fontColor',
+    'fontFamily',
+    'fontSizePercent',
+    'lineSpacingPercent',
+    'messageBackgroundPreset',
+    'messageLiquidEffectEnabled',
+    'minimumFontSizeRem',
+    'standbyClockSizePercent',
+  ]);
   assert.deepEqual(Object.keys(config.dateTime).sort(), [
     'enabled',
     'offsetSeconds',

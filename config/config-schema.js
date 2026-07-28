@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 7;
+const CONFIG_VERSION = 9;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -15,6 +15,14 @@ const DISPLAY_SELECTION_MODES = Object.freeze({
 const STANDBY_BACKGROUND_MODES = Object.freeze({
   FIXED: 'fixed',
   SLIDESHOW: 'slideshow',
+});
+
+const MESSAGE_BACKGROUND_PRESETS = Object.freeze({
+  SOLID: 'solid',
+  OBSIDIAN: 'obsidian',
+  DARK_MARBLE: 'dark-marble',
+  WALNUT: 'walnut',
+  EMERALD_ONYX: 'emerald-onyx',
 });
 
 const CONFIG_LIMITS = Object.freeze({
@@ -32,6 +40,8 @@ const CONFIG_LIMITS = Object.freeze({
   FONT_SIZE_STEP_REM: 0.25,
   MINIMUM_FONT_SIZE_PERCENT: 50,
   MAXIMUM_FONT_SIZE_PERCENT: 200,
+  MINIMUM_STANDBY_CLOCK_SIZE_PERCENT: 50,
+  MAXIMUM_STANDBY_CLOCK_SIZE_PERCENT: 300,
   MINIMUM_LINE_SPACING_PERCENT: 0,
   MAXIMUM_LINE_SPACING_PERCENT: 300,
   PERCENTAGE_STEP: 5,
@@ -75,7 +85,10 @@ const APPEARANCE_KEYS = Object.freeze([
   'fontFamily',
   'fontSizePercent',
   'lineSpacingPercent',
+  'messageBackgroundPreset',
+  'messageLiquidEffectEnabled',
   'minimumFontSizeRem',
+  'standbyClockSizePercent',
 ]);
 const DATE_TIME_KEYS = Object.freeze(['enabled', 'offsetSeconds']);
 const EMERGENCY_KEYS = Object.freeze([
@@ -282,6 +295,24 @@ function validateAppearance(appearance) {
   }
 
   if (
+    !Object.values(MESSAGE_BACKGROUND_PRESETS).includes(
+      appearance.messageBackgroundPreset,
+    )
+  ) {
+    return validationFailure(
+      '訊息背景必須是純色、黑曜石、深色大理石、胡桃木或祖母綠縞瑪瑙。',
+      'appearance.messageBackgroundPreset',
+    );
+  }
+
+  if (typeof appearance.messageLiquidEffectEnabled !== 'boolean') {
+    return validationFailure(
+      '訊息字體倒酒效果開關格式不正確。',
+      'appearance.messageLiquidEffectEnabled',
+    );
+  }
+
+  if (
     typeof appearance.fontFamily !== 'string' ||
     appearance.fontFamily.trim().length === 0 ||
     appearance.fontFamily.length > CONFIG_LIMITS.MAX_FONT_FAMILY_LENGTH ||
@@ -304,6 +335,11 @@ function validateAppearance(appearance) {
       CONFIG_LIMITS.MINIMUM_LINE_SPACING_PERCENT,
       CONFIG_LIMITS.MAXIMUM_LINE_SPACING_PERCENT,
     ],
+    [
+      'standbyClockSizePercent',
+      CONFIG_LIMITS.MINIMUM_STANDBY_CLOCK_SIZE_PERCENT,
+      CONFIG_LIMITS.MAXIMUM_STANDBY_CLOCK_SIZE_PERCENT,
+    ],
   ]) {
     const value = appearance[field];
 
@@ -314,7 +350,13 @@ function validateAppearance(appearance) {
       value % CONFIG_LIMITS.PERCENTAGE_STEP !== 0
     ) {
       return validationFailure(
-        `${field === 'fontSizePercent' ? '字體大小' : '行距'}必須是 ${minimum}% 至 ${maximum}% 的整數，並以 ${CONFIG_LIMITS.PERCENTAGE_STEP}% 遞增。`,
+        `${
+          field === 'fontSizePercent'
+            ? '字體大小'
+            : field === 'lineSpacingPercent'
+              ? '行距'
+              : '待機時間大小'
+        }必須是 ${minimum}% 至 ${maximum}% 的整數，並以 ${CONFIG_LIMITS.PERCENTAGE_STEP}% 遞增。`,
         `appearance.${field}`,
       );
     }
@@ -343,7 +385,10 @@ function validateAppearance(appearance) {
       fontColor: appearance.fontColor.toUpperCase(),
       fontSizePercent: appearance.fontSizePercent,
       lineSpacingPercent: appearance.lineSpacingPercent,
+      messageBackgroundPreset: appearance.messageBackgroundPreset,
+      messageLiquidEffectEnabled: appearance.messageLiquidEffectEnabled,
       minimumFontSizeRem,
+      standbyClockSizePercent: appearance.standbyClockSizePercent,
     },
   };
 }
@@ -489,7 +534,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v7。 */
+/** 驗證、正規化並深層複製完整的 canonical config v9。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -546,6 +591,7 @@ module.exports = {
   CONFIG_LIMITS,
   CONFIG_VERSION,
   DISPLAY_SELECTION_MODES,
+  MESSAGE_BACKGROUND_PRESETS,
   PLAYBACK_MODES,
   RENDER_RESOLUTIONS,
   STANDBY_BACKGROUND_MODES,

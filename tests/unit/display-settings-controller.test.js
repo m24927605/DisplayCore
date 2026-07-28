@@ -12,9 +12,10 @@ function createSnapshot(
   backgroundColor = '#000000',
   backgroundImageUrls = [],
   logoSizePercent = 100,
+  messageLiquidEffectEnabled = true,
 ) {
   return {
-    configVersion: 7,
+    configVersion: 9,
     logo: { enabled: false, url: null, sizePercent: logoSizePercent },
     standby: {
       backgroundMode: backgroundImageUrls.length > 1 ? 'slideshow' : 'fixed',
@@ -25,9 +26,12 @@ function createSnapshot(
       backgroundColor,
       fontFamily: 'Microsoft JhengHei UI, sans-serif',
       fontColor: '#FFFFFF',
+      messageBackgroundPreset: 'solid',
       minimumFontSizeRem: 2.5,
       fontSizePercent: 100,
       lineSpacingPercent: 100,
+      messageLiquidEffectEnabled,
+      standbyClockSizePercent: 100,
     },
     dateTime: { enabled: false, offsetSeconds: 0 },
     emergency: {
@@ -138,6 +142,35 @@ test('快速設定事件只套用最高 revision，畸形資料保留最後有�
     [managedBackgroundUrl],
   );
   assert.equal(harness.applied[1].logo.sizePercent, 1_000);
+});
+
+test('設定事件依 revision 套用倒酒效果 true／false 並拒絕缺少或錯誤型別', async () => {
+  const { createDisplaySettingsController } = await loadModule();
+  const harness = createHarness();
+  const controller = createDisplaySettingsController(harness);
+  assert.equal(await controller.start(), true);
+
+  harness.emit(createSnapshot(1, '#111111', [], 100, false));
+  harness.emit(createSnapshot(2, '#222222', [], 100, true));
+
+  const missing = createSnapshot(3);
+  delete missing.appearance.messageLiquidEffectEnabled;
+  harness.emit(missing);
+
+  const wrongType = createSnapshot(4);
+  wrongType.appearance.messageLiquidEffectEnabled = 'false';
+  harness.emit(wrongType);
+
+  assert.deepEqual(
+    harness.applied.map(({ revision }) => revision),
+    [0, 1, 2],
+  );
+  assert.deepEqual(
+    harness.applied.map(
+      ({ appearance }) => appearance.messageLiquidEffectEnabled,
+    ),
+    [true, false, true],
+  );
 });
 
 test('畸形待機背景 URL 不覆蓋最後有效設定', async () => {

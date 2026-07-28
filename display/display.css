@@ -1,3 +1,26 @@
+@font-face {
+  font-family: "DisplayCore Source Han Serif TC";
+  font-style: normal;
+  font-weight: 600;
+  font-display: block;
+  src: url("../assets/fonts/SourceHanSerifTC-SemiBold.otf") format("opentype");
+}
+
+@font-face {
+  font-family: "DisplayCore GFS Didot";
+  font-style: normal;
+  font-weight: 400;
+  font-display: block;
+  src: url("../assets/fonts/GFSDidot-Regular.ttf") format("truetype");
+}
+
+/* WAAPI 僅保存可 seek 的本頁液位；實際曲面由 Canvas 物理模型逐幀繪製。 */
+@property --message-liquid-level {
+  syntax: "<percentage>";
+  inherits: true;
+  initial-value: 0%;
+}
+
 :root {
   color-scheme: dark;
   color: #ffffff;
@@ -10,6 +33,12 @@
     "Microsoft JhengHei",
     "Noto Sans TC",
     sans-serif;
+  --display-numeral-font-family:
+    "DisplayCore GFS Didot",
+    Didot,
+    "Bodoni 72",
+    "Bodoni MT",
+    serif;
   --logo-outline: rgb(255 255 255 / 10%);
   --logo-size-scale: 1;
   --logo-page-size-scale: 1;
@@ -25,6 +54,7 @@
   --chrome-gap: clamp(0.5rem, 1.5cqh, 3rem);
   --message-font-scale: 1;
   --message-line-spacing-scale: 1;
+  --standby-clock-size-scale: 1;
   --row-gap: clamp(
     0rem,
     calc(1.25cqh * var(--message-line-spacing-scale)),
@@ -60,6 +90,9 @@ body {
     "Microsoft JhengHei",
     sans-serif;
   cursor: none;
+  font-kerning: normal;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
   pointer-events: none;
   touch-action: none;
   user-select: none;
@@ -94,6 +127,7 @@ body {
 
 .display-stage {
   display: grid;
+  position: relative;
   inline-size: 100%;
   block-size: 100%;
   overflow: hidden;
@@ -101,6 +135,46 @@ body {
   background: var(--display-background);
   place-items: stretch;
   isolation: isolate;
+}
+
+/*
+ * 四種一般訊息背景使用隨程式封裝的 4K 真實材質照片。每張圖片都經過
+ * 低彩度與暗部校正，保留石材／木材的天然微細節，同時維持白字可讀性。
+ */
+.display-stage[data-mode="page"]:not([data-message-background="solid"]) {
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+}
+
+.display-stage[data-mode="page"][data-message-background="obsidian"] {
+  background-color: #343a40;
+  background-image: url("../assets/message-backgrounds/obsidian.jpg");
+}
+
+.display-stage[data-mode="page"][data-message-background="dark-marble"] {
+  background-color: #3a3939;
+  background-image: url("../assets/message-backgrounds/dark-marble.jpg");
+}
+
+.display-stage[data-mode="page"][data-message-background="walnut"] {
+  background-color: #4a2d1d;
+  background-image: url("../assets/message-backgrounds/walnut.jpg");
+}
+
+.display-stage[data-mode="page"][data-message-background="emerald-onyx"] {
+  background-color: #164735;
+  background-image: url("../assets/message-backgrounds/emerald-onyx.jpg");
+}
+
+.display-stage[data-mode="page"]:not([data-message-background="solid"])::after {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  content: "";
+  background:
+    linear-gradient(rgb(0 0 0 / 14%), rgb(0 0 0 / 14%)),
+    radial-gradient(ellipse at center, transparent 60%, rgb(0 0 0 / 6%) 100%);
 }
 
 /* 緊急代碼保持白字，背景則依 Main 傳來的 tone 使用各自設定。 */
@@ -127,6 +201,7 @@ body {
   padding-inline: var(--display-safe-inline);
   overflow: hidden;
   isolation: isolate;
+  z-index: 1;
 }
 
 /* 待機背景不參與 Grid 排版；圖片與遮罩永遠位於內容下方。 */
@@ -140,7 +215,7 @@ body {
 .standby-background-layer::after {
   position: absolute;
   inset: 0;
-  z-index: 2;
+  z-index: 3;
   content: "";
   background: var(--standby-scrim);
 }
@@ -153,15 +228,36 @@ body {
   block-size: 100%;
   object-fit: cover;
   object-position: center;
+  z-index: 0;
 }
 
-/* 舊圖由單一連續沙丘面風蝕成來源圖粒；新圖固定在下層逐步顯露。 */
+/* 舊圖由單一連續沙丘面風蝕；新圖固定在下層逐步顯露。 */
 .standby-sand-transition {
   position: absolute;
   inset: 0;
   z-index: 1;
   inline-size: 100%;
   block-size: 100%;
+}
+
+/*
+ * 圖片沙粒以受控透明度越過背景壓暗層；粒子本身是水平微砂而非圓點，
+ * 因此能看清中右風核，又不會把亮色來源放大成白色飄雪。
+ */
+.standby-sand-particles {
+  z-index: 4;
+  opacity: 0.8;
+  image-rendering: auto;
+}
+
+/*
+ * GPU 舊圖會在 shader 內套用與待機背景相同的遮罩；Canvas 因此可位於
+ * 遮罩上方，讓真正離面的圖片砂粒保持清楚，仍位於 Logo 與時間下方。
+ */
+.standby-background-layer[data-sand-renderer="webgl"]
+  .standby-sand-particles {
+  z-index: 4;
+  opacity: 1;
 }
 
 .display-chrome,
@@ -279,33 +375,32 @@ body {
   justify-self: end;
   z-index: 2;
   color: inherit;
+  font-family: var(--display-numeral-font-family);
   font-size: clamp(
     2.5rem,
     calc(8cqmin * var(--message-font-scale)),
     14rem
   );
-  font-weight: 800;
+  font-weight: 600;
   font-variant-numeric: tabular-nums;
   letter-spacing: 0.025em;
   line-height: 1;
   text-align: end;
+  text-shadow: 0 0.04em 0.2em rgb(0 0 0 / 48%);
   white-space: nowrap;
 }
 
 .display-stage[data-mode="blank"] .display-clock {
   grid-column: 1;
   justify-self: center;
-  font-size: clamp(
-    4rem,
-    calc(14cqmin * var(--message-font-scale)),
-    24rem
-  );
-  font-weight: 800;
-  letter-spacing: 0.04em;
+  font-size: max(2.5rem, calc(14cqmin * var(--standby-clock-size-scale)));
+  font-weight: 600;
+  letter-spacing: 0.055em;
   text-align: center;
 }
 
 .page-layer {
+  --message-liquid-level: 0%;
   display: grid;
   grid-template-rows: repeat(var(--row-count, 1), minmax(0, 1fr));
   gap: var(--row-gap);
@@ -314,6 +409,7 @@ body {
   min-inline-size: 0;
   min-block-size: 0;
   overflow: hidden;
+  color: #ffffff;
   font-size: clamp(
     2.5rem,
     calc(10cqmin * var(--message-font-scale)),
@@ -330,16 +426,19 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: flex-start;
+  position: relative;
   min-inline-size: 0;
   min-block-size: 0;
   overflow: hidden;
   color: inherit;
   font: inherit;
-  font-weight: 800;
-  letter-spacing: 0.015em;
+  font-weight: 600;
+  letter-spacing: 0.035em;
   line-height: 1.08;
   text-align: left;
+  text-shadow: 0 0.04em 0.2em rgb(0 0 0 / 48%);
   white-space: nowrap;
+  isolation: isolate;
 }
 
 .message-row[data-alignment="center"] {
@@ -348,11 +447,218 @@ body {
   text-align: center;
 }
 
-.message-text {
-  display: block;
+.message-text,
+.marquee-message {
+  display: inline-grid;
+  position: relative;
+  z-index: 1;
   flex: 0 0 auto;
   min-inline-size: max-content;
   white-space: nowrap;
+}
+
+/* 字框、SVG 與隱藏排版文字共享同一個 grid box，避免中英數字形漂移。 */
+.message-vessel {
+  display: inline-grid;
+  position: relative;
+  isolation: isolate;
+}
+
+.message-glyph-layer {
+  display: block;
+  position: relative;
+  grid-area: 1 / 1;
+  z-index: 1;
+  min-inline-size: max-content;
+  white-space: nowrap;
+}
+
+/* 尺寸層只維持精準排版，不產生任何可見像素。 */
+.message-glyph-sizing {
+  visibility: hidden;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+}
+
+/* 無期限一般訊息與置中營運訊息維持清楚的白色實心字。 */
+.message-glyph-shell {
+  z-index: 3;
+  color: #ffffff;
+  -webkit-text-fill-color: #ffffff;
+  -webkit-text-stroke-color: #ffffff;
+  -webkit-text-stroke-width: 0.03em;
+  paint-order: stroke fill;
+}
+
+/* 一般訊息加強遠距辨識；置中的營運訊息維持原本較細緻的字重。 */
+.message-row[data-alignment="left"] .message-glyph-shell {
+  -webkit-text-stroke-width: 0.04em;
+}
+
+.message-liquid-svg {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  pointer-events: none;
+  shape-rendering: geometricPrecision;
+}
+
+/*
+ * 動態酒液改由每個 vessel 的單一 Canvas 2D 合成。字形 alpha 已在 sync
+ * rasterize 並快取，逐幀不再讓 Chromium 重建 4K SVG mask。
+ */
+.message-liquid-canvas {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  inline-size: 100%;
+  block-size: 100%;
+  overflow: hidden;
+  contain: strict;
+  image-rendering: auto;
+  pointer-events: none;
+}
+
+/*
+ * 唯一的 100% deadline 以相同 HTML 排版路徑呈現滿杯酒體。它平時完全
+ * hidden，僅狀態邊界切換一次；飽和 ruby→burgundy 保留細筆畫的酒色。
+ */
+.message-liquid-endpoint {
+  z-index: 2;
+  visibility: hidden;
+  color: transparent;
+  background: linear-gradient(
+    180deg,
+    #d02b68 0%,
+    #b31655 36%,
+    #94103f 67%,
+    #780735 100%
+  );
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-width: 0;
+  text-shadow: none;
+  pointer-events: none;
+}
+
+/*
+ * SVG paint nodes 僅保留作 canonical QA signature；正式畫面絕不 rasterize
+ * 這組動態 mask。純白 outline 不在此 group 內，仍由 SVG 清晰顯示。
+ */
+.message-liquid-paint {
+  display: none !important;
+}
+
+/*
+ * 有限且靠左的一般訊息才成為透明盛酒容器。白框永遠位於最上層；
+ * body、refraction 與 meniscus 由 Canvas cached glyph alpha 嚴格裁切。
+ */
+[data-liquid-effect="active"] .message-liquid-svg {
+  display: block;
+}
+
+[data-liquid-effect="active"] .message-liquid-canvas {
+  display: block;
+}
+
+/*
+ * 舊版逐像素 QA 會把 signature path 改成洋紅色；只在該明確 sentinel
+ * 存在時暫時顯示 SVG paint 並隱藏 Canvas，維持既有驗收工具相容性。
+ */
+.message-vessel:has(
+  .message-liquid-body[style*="rgb(255, 0, 255)"]
+) .message-liquid-canvas {
+  display: none;
+}
+
+.message-liquid-paint:has(
+  .message-liquid-body[style*="rgb(255, 0, 255)"]
+) {
+  display: inline !important;
+}
+
+/* QA 以隱藏 SVG、顯示獨立 HTML shell 建立字形參考 mask。 */
+.message-vessel:has(
+  .message-liquid-svg[style*="visibility: hidden"]
+) .message-liquid-canvas {
+  visibility: hidden;
+}
+
+[data-liquid-effect="active"] .message-glyph-shell {
+  z-index: 3;
+  visibility: hidden;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+  -webkit-text-stroke-color: #ffffff;
+  text-shadow: none;
+}
+
+/* mask 與此固定白框皆 clone 自同一 canonical SVG glyph。 */
+.message-liquid-outline-glyph {
+  fill: none;
+  stroke: #ffffff;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  pointer-events: none;
+}
+
+.message-liquid-body {
+  opacity: 1;
+}
+
+.message-liquid-refraction {
+  mix-blend-mode: screen;
+  opacity: 0.42;
+}
+
+.message-liquid-meniscus {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+/*
+ * 寬暖色層只保留在液面下方，提供透明酒體的厚度與折射；最上方仍由細亮
+ * meniscus 描出弧面。兩者共用同一物理 path，不會變成另一條進度動畫。
+ */
+.message-liquid-meniscus-depth {
+  fill: none;
+  mix-blend-mode: screen;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-liquid-svg {
+    display: none !important;
+  }
+
+  .message-liquid-canvas {
+    display: none !important;
+  }
+
+  [data-liquid-effect="active"] .message-glyph-shell {
+    visibility: visible;
+    color: #ffffff;
+    -webkit-text-fill-color: #ffffff;
+    -webkit-text-stroke-color: #ffffff;
+  }
+}
+/* 僅替訊息中的 0～9 切換 Didot；中文與花名仍沿用管理員設定字型。 */
+.message-number {
+  font-family: var(--display-numeral-font-family);
+  font-weight: 400;
+  font-variant-numeric: lining-nums tabular-nums;
 }
 
 .message-row.is-compressed .message-text {
@@ -371,11 +677,15 @@ body {
 .marquee-track {
   display: flex;
   flex: 0 0 auto;
+  position: relative;
+  z-index: 1;
   inline-size: max-content;
   animation-name: display-marquee;
   animation-duration: var(--marquee-duration, 12s);
   animation-timing-function: linear;
   animation-iteration-count: infinite;
+  /* Main 接受 ready 前保持在首幀，與酒液在同一播放週期起跑。 */
+  animation-play-state: paused;
 }
 
 .is-marquee .marquee-track {
@@ -393,8 +703,8 @@ body {
   display: grid;
   position: absolute;
   inset: 0;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  grid-template-rows: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(3, minmax(0, 1fr));
   gap: clamp(0.25rem, 0.8cqmin, 2rem);
   padding: clamp(0.25rem, 0.8cqmin, 2rem);
   overflow: hidden;
@@ -411,14 +721,17 @@ body {
   place-items: center;
   overflow: hidden;
   color: #ffffff;
+  background: rgb(255 255 255 / 2.5%);
+  box-shadow: inset 0 0 0 max(0.0625rem, 0.08cqmin) rgb(255 255 255 / 12%);
+  font-family: var(--display-numeral-font-family);
   font-size: clamp(
-    2rem,
-    calc(6.5cqmin * var(--message-font-scale)),
-    18rem
+    4rem,
+    calc(10cqmin + (8cqmin * var(--message-font-scale))),
+    26cqh
   );
-  font-weight: 900;
+  font-weight: 800;
   font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
+  letter-spacing: 0;
   line-height: 1;
   white-space: nowrap;
 }

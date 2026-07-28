@@ -70,6 +70,7 @@ test('IPC v2 channel、角色與顯示列舉皆固定且不可修改', () => {
   assert.deepEqual(PAGE_PROGRESS_PHASES, {
     PENDING: 'pending',
     READY: 'ready',
+    STARTED: 'started',
     COMPLETE: 'complete',
   });
   assert.equal(
@@ -148,6 +149,10 @@ test('Display 頁面進度只接受目前版面雙閘門需要的 exact payload'
     phase: 'ready',
     marqueeCount: 2,
   });
+  const started = validatePageProgressPayload({
+    ...common,
+    phase: 'started',
+  });
   const complete = validatePageProgressPayload({
     ...common,
     phase: 'complete',
@@ -161,6 +166,10 @@ test('Display 頁面進度只接受目前版面雙閘門需要的 exact payload'
     ok: true,
     value: { ...common, phase: 'ready', marqueeCount: 2 },
   });
+  assert.deepEqual(started, {
+    ok: true,
+    value: { ...common, phase: 'started' },
+  });
   assert.deepEqual(complete, {
     ok: true,
     value: { ...common, phase: 'complete' },
@@ -171,6 +180,7 @@ test('Display 頁面進度只接受目前版面雙閘門需要的 exact payload'
     {},
     { ...common, phase: 'unknown' },
     { ...common, phase: 'pending', marqueeCount: 0 },
+    { ...common, phase: 'started', marqueeCount: 0 },
     { ...common, phase: 'complete', marqueeCount: 1 },
     { ...common, phase: 'ready' },
     { ...common, phase: 'ready', marqueeCount: -1 },
@@ -368,7 +378,7 @@ test('緊急操作只接受獨立白名單代碼，Main 不從一般 message 推
   }
 });
 
-test('設定儲存接受完整 v7 Logo、待機背景與播放偏好與目前 revision', () => {
+test('設定儲存接受完整 v9 Logo、待機背景、質感外觀與播放偏好', () => {
   const finiteConfig = structuredClone(defaultConfig);
   finiteConfig.playback = {
     pageDurationSeconds: 8,

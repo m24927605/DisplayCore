@@ -83,7 +83,7 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV7(
+function hasExpectedConfigV9(
   config,
   offsetSeconds,
   renderResolution,
@@ -98,7 +98,7 @@ function hasExpectedConfigV7(
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 7 &&
+    config.configVersion === 9 &&
     hasExactKeys(config.logo, ['enabled', 'path', 'sizePercent']) &&
     config.logo.sizePercent === logoSizePercent &&
     hasExactKeys(config.standby, [
@@ -111,6 +111,7 @@ function hasExpectedConfigV7(
     JSON.stringify(config.standby.backgroundImagePaths) ===
       JSON.stringify(standbyBackgroundImagePaths) &&
     config.standby.slideDurationSeconds === standbySlideDurationSeconds &&
+    config.appearance?.messageLiquidEffectEnabled === true &&
     config.dateTime?.enabled === true &&
     config.dateTime?.offsetSeconds === offsetSeconds &&
     hasExactKeys(config.playback, [
@@ -142,7 +143,7 @@ function isExpectedSettingsSnapshot(
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV7(
+    hasExpectedConfigV9(
       snapshot.config,
       offsetSeconds,
       renderResolution,
@@ -154,7 +155,7 @@ function isExpectedSettingsSnapshot(
       standbyBackgroundImagePaths,
       standbySlideDurationSeconds,
     ) &&
-    hasExpectedConfigV7(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
+    hasExpectedConfigV9(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
   );
 }
 

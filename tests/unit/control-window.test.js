@@ -173,6 +173,11 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.match(html, /id="repeat-mode-fieldset"[^>]+aria-describedby="repeat-error"/);
   assert.match(html, /id="round-count-input"[^>]+min="1"[^>]+max="999"/);
   assert.match(html, /id="round-count-input"[^>]+aria-describedby="round-count-error"/);
+  assert.match(
+    html,
+    /<div[^>]+id="background-color-field"[^>]+class="settings-field"/,
+    '自訂純色控制必須有可整體隱藏的欄位容器',
+  );
 
   for (const inputId of [
     'logo-enabled-input',
@@ -182,11 +187,14 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'standby-background-summary',
     'standby-slide-duration-input',
     'background-color-input',
+    'message-background-preset-select',
     'font-family-select',
+    'standby-clock-size-percent-input',
     'font-color-input',
     'minimum-font-size-input',
     'font-size-percent-input',
     'line-spacing-percent-input',
+    'message-liquid-effect-enabled-input',
     'inspection-background-color-input',
     'release-background-color-input',
     'date-time-enabled-input',
@@ -234,9 +242,28 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.match(html, /待機畫面固定顯示時間/);
   assert.match(html, /一般訊息頁位於右上角並與 Logo 同列/);
   assert.doesNotMatch(html, /待機歡迎畫面/);
-  assert.match(html, /時間固定顯示為 24 小時 HH:mm:ss/);
-  assert.match(html, /套用於一般訊息、待機時間，以及 555／888/);
+  assert.match(html, /時間固定顯示為 24 小時 HH:mm；/);
+  assert.match(html, /套用於一般訊息與 555／888/);
+  assert.match(html, /黑曜石（推薦）/);
+  assert.match(html, /黑金大理石/);
+  assert.match(html, /煙燻胡桃木/);
+  assert.match(html, /深墨玉/);
+  assert.match(html, /典雅宋體（推薦）/);
   assert.match(html, /營運訊息縮字下限（rem）/);
+  assert.match(
+    html,
+    /<label[^>]+class="settings-switch settings-field-wide"[^>]+for="message-liquid-effect-enabled-input"[\s\S]*?<strong>訊息字體倒酒效果<\/strong>[\s\S]*?<input[^>]+id="message-liquid-effect-enabled-input"[^>]+type="checkbox"/,
+    '倒酒效果必須沿用既有簡潔開關，不新增獨立設定區塊',
+  );
+  assert.match(
+    html,
+    /訊息字體倒酒效果[\s\S]*?只套用於一般訊息；關閉後顯示固定白字。待機、營運訊息及 555／888 不受影響/,
+  );
+  assert.ok(
+    html.indexOf('id="message-liquid-effect-enabled-input"') <
+      html.indexOf('<strong>滿屏代碼背景</strong>'),
+    '一般訊息的倒酒開關必須位於 555／888 設定之前，避免誤認會套用緊急畫面',
+  );
   assert.match(html, /一般訊息過長時使用；關閉則水平壓縮/);
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
   for (const resolution of [

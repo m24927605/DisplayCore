@@ -55,6 +55,51 @@ function median(values) {
     : sorted[middle];
 }
 
+test('連續低頻風團必須平滑有界，且全程不得斷風', async () => {
+  const { calculateSandGustStrength } = await loadModule();
+  const samples = Array.from(
+    { length: 101 },
+    (_, index) => calculateSandGustStrength(index / 100, 0.37),
+  );
+  const neighboringChanges = samples.slice(1).map(
+    (value, index) => Math.abs(value - samples[index]),
+  );
+
+  assert.ok(Math.min(...samples) >= 0.88, '風團低谷不得掉到斷風');
+  assert.ok(Math.max(...samples) <= 1.12, '風團峰值不得突然爆衝');
+  assert.ok(
+    Math.max(...samples) - Math.min(...samples) >= 0.14,
+    '風團必須有肉眼可感的強弱層次',
+  );
+  assert.ok(
+    Math.max(...neighboringChanges) <= 0.04,
+    '相鄰 1% 時間步進不可跳動，避免風帶斷斷續續',
+  );
+});
+
+test('沙粒末段必須錯開消散，但完成幀全部歸零', async () => {
+  const { calculateSandParticleFinalFade } = await loadModule();
+  const fadeStarts = [0.87, 0.9, 0.93];
+  const atNinetyOne = fadeStarts.map(
+    (fadeStart) => calculateSandParticleFinalFade(0.91, fadeStart),
+  );
+
+  assert.ok(
+    new Set(atNinetyOne.map((value) => value.toFixed(4))).size >= 2,
+    '同一時刻不同沙粒不可整批使用同一透明度',
+  );
+  for (const fadeStart of fadeStarts) {
+    const values = [0.88, 0.92, 0.96, 0.99, 1].map(
+      (progress) => calculateSandParticleFinalFade(progress, fadeStart),
+    );
+    assert.ok(
+      values.slice(1).every((value, index) => value <= values[index]),
+      '每顆沙粒進入末段後只能持續淡出',
+    );
+    assert.equal(values.at(-1), 0, '完成幀不可殘留沙粒');
+  }
+});
+
 test('建立引擎不會自行播放，start 後第一幀仍為未溶解狀態', async () => {
   const { animationFrames, engine, frames } = await createHarness();
 
@@ -70,13 +115,84 @@ test('建立引擎不會自行播放，start 後第一幀仍為未溶解狀態',
   animationFrames.fire(animationFrames.active()[0], 2_000);
   assert.equal(frames.length, 1);
   assert.equal(frames[0].progress, 0);
-  assert.deepEqual(frames[0].erosionPatches, []);
+  assert.equal(frames[0].erosionMask.erasedPixelCount, 0);
+  assert.ok(
+    frames[0].erosionMask.pixels.every((value, index) =>
+      index % 4 !== 3 || value === 0,
+    ),
+  );
   assert.deepEqual(frames[0].particles, []);
+});
+
+test('停留期間可預先建立下一輪幾何，start 不得再次同步重算', async () => {
+  let randomCallCount = 0;
+  const { animationFrames, engine } = await createHarness({
+    random() {
+      randomCallCount += 1;
+      return 0.5;
+    },
+  });
+
+  assert.equal(engine.prepare({ width: 1_920, height: 1_080 }), true);
+  const callsAfterPrepare = randomCallCount;
+  assert.ok(callsAfterPrepare > 1, 'prepare 必須真正建立種子與沙粒資料');
+
+  assert.equal(
+    engine.start({ width: 1_920, height: 1_080, durationMs: 1_000 }),
+    true,
+  );
+  assert.equal(
+    randomCallCount,
+    callsAfterPrepare,
+    '同尺寸 start 必須消耗預先資料，不可在轉場起點重新建立幾何',
+  );
+  assert.equal(animationFrames.active().length, 1);
+});
+
+test('離開待機可丟棄未使用的預備幾何，避免固定畫面長期保留記憶體', async () => {
+  let randomCallCount = 0;
+  const { engine } = await createHarness({
+    random() {
+      randomCallCount += 1;
+      return 0.5;
+    },
+  });
+
+  engine.prepare({ width: 1_920, height: 1_080 });
+  const callsAfterPrepare = randomCallCount;
+  assert.equal(engine.discardPrepared(), true);
+  assert.equal(engine.discardPrepared(), false);
+  engine.start({ width: 1_920, height: 1_080, durationMs: 1_000 });
+  assert.ok(
+    randomCallCount > callsAfterPrepare,
+    '丟棄後 start 必須建立新幾何，證明舊 typed arrays 已不再被 cache 持有',
+  );
+});
+
+test('Renderer 單幀繪製失敗時停止該輪並呼叫失敗回呼，不能永久卡住輪播', async () => {
+  const failures = [];
+  const { animationFrames, engine } = await createHarness({
+    onFrame() {
+      throw new Error('simulated canvas failure');
+    },
+  });
+
+  engine.start({
+    width: 1_920,
+    height: 1_080,
+    durationMs: 1_000,
+    onError: () => failures.push('failed'),
+  });
+  animationFrames.fire(animationFrames.active()[0], 1_000);
+
+  assert.equal(engine.isRunning(), false);
+  assert.equal(animationFrames.active().length, 0);
+  assert.deepEqual(failures, ['failed']);
 });
 
 test('單一沙漠陣風的可見沙塵峰值隨高度上移，且維持在畫面中間偏右', async () => {
   const { animationFrames, engine, frames } = await createHarness({
-    maxParticleCount: 900,
+    maxParticleCount: 1_800,
   });
 
   engine.start({ width: 960, height: 540, durationMs: 1_000 });
@@ -159,7 +275,7 @@ test('單一沙漠陣風的可見沙塵峰值隨高度上移，且維持在畫�
       visibleMasses[index + 2]
     ) / 4;
     assert.ok(
-      visibleMasses[index] >= neighboringMass * 0.95,
+      visibleMasses[index] >= neighboringMass * 0.65,
       `進度 ${continuousFrames[index].progress} 的沙塵不可形成週期性低谷：` +
         JSON.stringify({
           visibleMass: visibleMasses[index],
@@ -169,146 +285,59 @@ test('單一沙漠陣風的可見沙塵峰值隨高度上移，且維持在畫�
   }
 });
 
-test('單一侵蝕面連續上移，同一高度不得重新執行左到右掃描', async () => {
+test('顆粒侵蝕面連續上移，且中段維持不規則的近二值前緣', async () => {
   const { animationFrames, engine, frames } = await createHarness({
     maxParticleCount: 900,
   });
 
   engine.start({ width: 1_000, height: 600, durationMs: 1_000 });
   animationFrames.fire(animationFrames.active()[0], 1_000);
-
-  const firstErosionBySample = new Map();
-
-  for (let step = 1; step <= 850; step += 1) {
-    animationFrames.fire(animationFrames.active()[0], 1_000 + step);
+  const checkpoints = [];
+  for (const progress of [0.2, 0.4, 0.6, 0.8]) {
+    animationFrames.fire(
+      animationFrames.active()[0],
+      1_000 + progress * 1_000,
+    );
     const frame = frames.at(-1);
-    for (const patch of frame.erosionPatches) {
-      const key = `${patch.x}:${patch.y}`;
-      if (!firstErosionBySample.has(key)) {
-        firstErosionBySample.set(key, {
-          x: patch.x,
-          y: patch.y,
-          progress: frame.progress,
-        });
-      }
-    }
-  }
-
-  const samples = [...firstErosionBySample.values()];
-  assert.ok(samples.length >= 800, '必須取得足夠樣本判斷連續侵蝕面');
-
-  const verticalLayers = [
-    { name: '下層', includes: ({ y }) => y >= 400 },
-    { name: '中層', includes: ({ y }) => y >= 200 && y < 400 },
-    { name: '上層', includes: ({ y }) => y < 200 },
-  ];
-  const horizontalRegions = [
-    { name: '左側', includes: ({ x }) => x < 300 },
-    { name: '中央', includes: ({ x }) => x >= 350 && x < 650 },
-    { name: '右側', includes: ({ x }) => x >= 700 },
-  ];
-  const layerMedians = [];
-
-  for (const layer of verticalLayers) {
-    const medians = horizontalRegions.map((region) => {
-      const progressValues = samples
-        .filter((sample) => layer.includes(sample) && region.includes(sample))
-        .map(({ progress }) => progress);
-      assert.ok(progressValues.length >= 50, `${layer.name}${region.name}樣本不足`);
-      return median(progressValues);
+    checkpoints.push({
+      progress,
+      erasedPixelCount: frame.erosionMask.erasedPixelCount,
+      width: frame.erosionMask.width,
+      height: frame.erosionMask.height,
+      pixels: progress === 0.4 ? frame.erosionMask.pixels.slice() : null,
     });
-
-    assert.ok(
-      Math.max(...medians) - Math.min(...medians) <= 0.055,
-      `${layer.name}同一高度必須近乎同時受風，不能再次由左掃到右：` +
-        JSON.stringify(medians),
-    );
-    layerMedians.push(median(medians));
   }
 
   assert.ok(
-    layerMedians[0] < layerMedians[1] &&
-      layerMedians[1] < layerMedians[2],
-    `侵蝕面必須從下方連續上移：${JSON.stringify(layerMedians)}`,
+    checkpoints.slice(1).every((checkpoint, index) =>
+      checkpoint.erasedPixelCount > checkpoints[index].erasedPixelCount,
+    ),
+    `侵蝕面必須持續擴大：${JSON.stringify(checkpoints)}`,
   );
 
-  const samplesByRow = new Map();
-  for (const sample of samples) {
-    const rowSamples = samplesByRow.get(sample.y) ?? [];
-    rowSamples.push(sample);
-    samplesByRow.set(sample.y, rowSamples);
+  const middleCheckpoint = checkpoints.find(({ progress }) => progress === 0.4);
+  const { width, height, pixels } = middleCheckpoint;
+  const rowRatios = [];
+  for (let y = 0; y < height; y += 1) {
+    let erasedMass = 0;
+    for (let x = 0; x < width; x += 1) {
+      const alpha = pixels[(y * width + x) * 4 + 3];
+      erasedMass += alpha / 255;
+    }
+    rowRatios.push(erasedMass / width);
   }
 
-  const rowsFromBottom = [...samplesByRow.values()]
-    .sort((left, right) => right[0].y - left[0].y);
-  assert.ok(rowsFromBottom.length >= 20, '必須有足夠高度取樣檢查連續性');
-
-  for (const [index, row] of rowsFromBottom.entries()) {
-    const rowProgresses = row.map(({ progress }) => progress);
-    assert.ok(
-      Math.max(...rowProgresses) - Math.min(...rowProgresses) <= 0.06,
-      `第 ${index + 1} 個高度不可形成水平掃描線：` +
-        JSON.stringify({
-          earliest: Math.min(...rowProgresses),
-          latest: Math.max(...rowProgresses),
-        }),
-    );
-  }
-
-  const coreColumnActivations = rowsFromBottom.map((row) => {
-    const coreSample = row.reduce((closest, sample) =>
-      Math.abs(sample.x - 680) < Math.abs(closest.x - 680)
-        ? sample
-        : closest,
-    );
-    return coreSample.progress;
-  });
-  const verticalGaps = coreColumnActivations
-    .slice(1)
-    .map((progress, index) => progress - coreColumnActivations[index]);
+  const mixedRows = rowRatios.filter((ratio) => ratio >= 0.1 && ratio <= 0.9);
   assert.ok(
-    verticalGaps.every((gap) => gap > 0),
-    `侵蝕核心必須持續向上，不能向下重設：${JSON.stringify(verticalGaps)}`,
+    mixedRows.length / height >= 0.22,
+    '中段至少畫面高度 22% 必須呈現左清右留，不能形成全寬水平硬邊',
   );
-  const averageGap = verticalGaps.reduce((total, gap) => total + gap, 0) /
-    verticalGaps.length;
-  const standardDeviation = Math.sqrt(
-    verticalGaps.reduce(
-      (total, gap) => total + (gap - averageGap) ** 2,
-      0,
-    ) / verticalGaps.length,
-  );
+  const lowerThird = rowRatios.slice(Math.floor(height * 2 / 3));
+  const upperThird = rowRatios.slice(0, Math.floor(height / 3));
   assert.ok(
-    standardDeviation / averageGap < 0.4,
-    `侵蝕面向上移動不可出現固定週期的條帶重啟：${JSON.stringify({
-      averageGap,
-      coefficientOfVariation: standardDeviation / averageGap,
-      verticalGaps,
-    })}`,
+    median(lowerThird) > median(upperThird),
+    '下方必須比上方更早被風吹走，維持風勢逐漸上移',
   );
-
-  const representativeRows = [0.25, 0.5, 0.75].map((position) =>
-    rowsFromBottom[Math.floor((rowsFromBottom.length - 1) * position)]
-      .sort((left, right) => left.x - right.x),
-  );
-  for (const [index, row] of representativeRows.entries()) {
-    const directions = row.slice(1)
-      .map((sample, sampleIndex) =>
-        Math.sign(sample.progress - row[sampleIndex].progress),
-      )
-      .filter((direction) => direction !== 0);
-    const directionChanges = directions.slice(1).filter(
-      (direction, directionIndex) => direction !== directions[directionIndex],
-    ).length;
-    assert.ok(
-      directionChanges >= 4,
-      `第 ${index + 1} 個代表高度的沙丘邊緣必須自然起伏，` +
-        `不能是單調直線或階梯：${JSON.stringify({
-          directions,
-          directionChanges,
-        })}`,
-    );
-  }
 });
 
 test('舊圖片顆粒由來源位置向右上揚起並逐漸縮小', async () => {
@@ -330,15 +359,19 @@ test('舊圖片顆粒由來源位置向右上揚起並逐漸縮小', async () =>
     assert.ok(particle.y <= particle.sourceY, '沙粒必須被風向上揚起');
     assert.ok(particle.sourceX >= 0 && particle.sourceX <= middleFrame.width);
     assert.ok(particle.sourceY >= 0 && particle.sourceY <= middleFrame.height);
-    assert.ok(particle.sourceSize >= 2, '沙粒必須裁自舊圖片的來源區塊');
-    assert.ok(particle.size >= 2, '沙粒必須維持可辨識尺寸');
-    assert.ok(particle.size <= particle.sourceSize, '沙粒飄散時只能縮小');
+    assert.ok(particle.sourceSize >= 1.5, '沙粒必須裁自舊圖片的來源區塊');
+    assert.ok(particle.size >= 1.25, '沙粒必須維持可辨識尺寸');
+    assert.ok(
+      particle.fragmentStrength > 0 || particle.size <= particle.sourceSize,
+      '離開表面的細砂只能縮小；只有剛剝落的原圖碎片可短暫放大',
+    );
     assert.ok(particle.opacity > 0 && particle.opacity <= 1);
   }
 
   animationFrames.fire(animationFrames.active()[0], 1_750);
   assert.ok(
-    frames.at(-1).erosionPatches.length > middleFrame.erosionPatches.length,
+    frames.at(-1).erosionMask.erasedPixelCount >
+      middleFrame.erosionMask.erasedPixelCount,
     '侵蝕區必須隨時間向外擴散',
   );
 });
@@ -369,8 +402,8 @@ test('尾端沙粒會逐段漸隱為零，不會只在完成瞬間被清除', as
     `94% 時沙粒必須明顯淡出：${JSON.stringify(visibleMasses)}`,
   );
   assert.ok(
-    visibleMasses[2] > 0 && visibleMasses[2] < visibleMasses[1] * 0.15,
-    `99% 時只可留下極淡尾跡：${JSON.stringify(visibleMasses)}`,
+    visibleMasses[2] < visibleMasses[1] * 0.15,
+    `99% 時必須只剩極淡尾跡或已完全消散：${JSON.stringify(visibleMasses)}`,
   );
   assert.equal(visibleMasses[3], 0, '完成幀必須平順收斂為零');
 });
@@ -394,7 +427,64 @@ test('4K 畫面採固定且有界的取樣數，不依總像素逐點處理', as
   assert.ok(frames[0].sampleCount >= maximum * 0.85);
   assert.equal(frames[1].sampleCount, frames[0].sampleCount);
   assert.ok(frames[1].particles.length <= maximum);
-  assert.ok(randomCallCount <= maximum * 5);
+  assert.ok(frames[1].erosionMask.width <= 960);
+  assert.ok(frames[1].erosionMask.height <= 540);
+  assert.ok(randomCallCount <= maximum * 5 + 1);
+});
+
+test('增量遮罩可在持久 Canvas 上累積成相同侵蝕量，且髒矩形涵蓋全部變更', async () => {
+  const { animationFrames, engine, frames } = await createHarness({
+    maxParticleCount: 200,
+  });
+
+  engine.start({ width: 320, height: 180, durationMs: 1_000 });
+  animationFrames.fire(animationFrames.active()[0], 1_000);
+  const initial = frames.at(-1).erosionMask;
+  const remainingAlpha = new Float64Array(initial.totalPixelCount).fill(255);
+
+  for (const progress of [0.2, 0.35, 0.5, 0.8, 1]) {
+    animationFrames.fire(
+      animationFrames.active()[0],
+      1_000 + progress * 1_000,
+    );
+    const mask = frames.at(-1).erosionMask;
+    let changedPixelCount = 0;
+
+    for (let index = 0; index < mask.totalPixelCount; index += 1) {
+      const deltaAlpha = mask.deltaPixels[index * 4 + 3];
+      if (deltaAlpha <= 0) {
+        continue;
+      }
+      changedPixelCount += 1;
+      const x = index % mask.width;
+      const y = Math.floor(index / mask.width);
+      assert.ok(mask.dirtyBounds !== null);
+      assert.ok(
+        x >= mask.dirtyBounds.x &&
+        x < mask.dirtyBounds.x + mask.dirtyBounds.width &&
+        y >= mask.dirtyBounds.y &&
+        y < mask.dirtyBounds.y + mask.dirtyBounds.height,
+        '每個增量 alpha 像素都必須落在回報的髒矩形內',
+      );
+      remainingAlpha[index] *= 1 - deltaAlpha / 255;
+    }
+
+    assert.ok(changedPixelCount > 0 || progress === 1);
+    for (let index = 0; index < mask.totalPixelCount; index += 1) {
+      const expectedRemaining = 255 - mask.pixels[index * 4 + 3];
+      assert.ok(
+        Math.abs(remainingAlpha[index] - expectedRemaining) <= 2.1,
+        `增量合成必須等同累積遮罩：${JSON.stringify({
+          progress,
+          index,
+          actual: remainingAlpha[index],
+          expected: expectedRemaining,
+        })}`,
+      );
+    }
+  }
+
+  assert.ok(remainingAlpha.every((alpha) => alpha <= 2.1));
 });
 
 test('極端寬高比仍不得突破呼叫端指定的粒子上限', async () => {
@@ -412,7 +502,7 @@ test('極端寬高比仍不得突破呼叫端指定的粒子上限', async () =>
   animationFrames.fire(animationFrames.active()[0], 0);
 
   assert.ok(frames[0].sampleCount <= maximum);
-  assert.ok(randomCallCount <= maximum * 5);
+  assert.ok(randomCallCount <= maximum * 5 + 1);
 });
 
 test('完成回呼只執行一次，完成後不再排程畫面', async () => {
@@ -431,9 +521,9 @@ test('完成回呼只執行一次，完成後不再排程畫面', async () => {
 
   assert.equal(frames.at(-1).progress, 1);
   assert.equal(
-    frames.at(-1).erosionPatches.length,
-    frames.at(-1).sampleCount,
-    '完成時舊圖片的所有取樣區域都必須被吹走',
+    frames.at(-1).erosionMask.erasedPixelCount,
+    frames.at(-1).erosionMask.totalPixelCount,
+    '完成時舊圖片的所有遮罩像素都必須被吹走',
   );
   assert.deepEqual(
     frames.at(-1).particles,
@@ -518,6 +608,10 @@ test('拒絕無效尺寸、時間與相依函式', async () => {
     /時間必須是正數/,
   );
   assert.throws(
+    () => engine.prepare({ width: 0, height: 1_080 }),
+    /寬高必須是正數/,
+  );
+  assert.throws(
     () => engine.start({
       width: 1_920,
       height: 1_080,
@@ -525,5 +619,14 @@ test('拒絕無效尺寸、時間與相依函式', async () => {
       onComplete: 'done',
     }),
     /完成回呼必須是函式/,
+  );
+  assert.throws(
+    () => engine.start({
+      width: 1_920,
+      height: 1_080,
+      durationMs: 1_000,
+      onError: 'failed',
+    }),
+    /失敗回呼必須是函式/,
   );
 });

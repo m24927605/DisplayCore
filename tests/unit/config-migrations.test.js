@@ -143,13 +143,109 @@ function createV6Config() {
   };
 }
 
-test('合法 v1 設定保留舊值並由 v7 預設補上新欄位', () => {
+function createV7Config() {
+  return {
+    configVersion: 7,
+    logo: {
+      enabled: false,
+      path: null,
+      sizePercent: 275,
+    },
+    standby: {
+      backgroundMode: 'slideshow',
+      backgroundImagePaths: [
+        'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
+      ],
+      slideDurationSeconds: 12,
+    },
+    appearance: {
+      backgroundColor: '#102030',
+      fontFamily: 'Arial, sans-serif',
+      fontColor: '#f0e0d0',
+      minimumFontSizeRem: 4.25,
+      fontSizePercent: 175,
+      lineSpacingPercent: 125,
+    },
+    dateTime: { enabled: true, offsetSeconds: 123 },
+    emergency: {
+      inspectionBackgroundColor: '#520000',
+      releaseBackgroundColor: '#004220',
+    },
+    marquee: { enabled: false },
+    playback: {
+      pageDurationSeconds: 8,
+      repeatMode: 'finite',
+      roundCount: 4,
+    },
+    display: {
+      selectionMode: 'auto',
+      defaultDisplayId: null,
+      fullscreen: true,
+      renderResolution: '1920x1080',
+    },
+  };
+}
+
+/** v8 已具備材質背景與待機時間大小，但還沒有訊息字體倒酒開關。 */
+function createV8Config() {
+  const legacy = structuredClone(defaultConfig);
+  legacy.configVersion = 8;
+  legacy.appearance.backgroundColor = '#203040';
+  legacy.appearance.fontColor = '#E0D0C0';
+  legacy.appearance.messageBackgroundPreset = 'walnut';
+  legacy.appearance.standbyClockSizePercent = 185;
+  legacy.playback.pageDurationSeconds = 11;
+  delete legacy.appearance.messageLiquidEffectEnabled;
+  return legacy;
+}
+
+test('canonical v8 嚴格遷移為 v9，只補上預設訊息字體倒酒開關', () => {
+  const { migrateStoredConfig } = require('../../config/config-migrations');
+  const legacy = createV8Config();
+  const result = migrateStoredConfig(legacy, defaultConfig);
+
+  assert.equal(defaultConfig.configVersion, 9);
+  assert.equal(defaultConfig.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.deepEqual(result.value, {
+    ...legacy,
+    configVersion: 9,
+    appearance: {
+      ...legacy.appearance,
+      messageLiquidEffectEnabled: true,
+    },
+  });
+  assert.equal(Object.isFrozen(result.value), true);
+  assert.equal(Object.isFrozen(result.value.appearance), true);
+});
+
+test('canonical v7 外觀嚴格遷移為 v9 並維持原有純色視覺比例', () => {
+  const { migrateStoredConfig } = require('../../config/config-migrations');
+  const legacy = createV7Config();
+  const result = migrateStoredConfig(legacy, defaultConfig);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.equal(result.value.configVersion, 9);
+  assert.deepEqual(result.value.appearance, {
+    ...legacy.appearance,
+    backgroundColor: '#102030',
+    fontColor: '#F0E0D0',
+    messageBackgroundPreset: 'solid',
+    messageLiquidEffectEnabled: true,
+    standbyClockSizePercent: legacy.appearance.fontSizePercent,
+  });
+  assert.equal(Object.isFrozen(result.value.appearance), true);
+});
+
+test('合法 v1 設定保留舊值並由 v9 預設補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV1Config(), defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 7);
+  assert.equal(result.value.configVersion, 9);
   assert.deepEqual(result.value, {
     ...defaultConfig,
     logo: {
@@ -163,6 +259,8 @@ test('合法 v1 設定保留舊值並由 v7 預設補上新欄位', () => {
       fontFamily: 'Arial, sans-serif',
       fontColor: '#FEDCBA',
       minimumFontSizeRem: 3.25,
+      messageBackgroundPreset: 'solid',
+      standbyClockSizePercent: 100,
     },
     dateTime: { enabled: true, offsetSeconds: 0 },
     marquee: { enabled: false },
@@ -176,7 +274,7 @@ test('合法 v1 設定保留舊值並由 v7 預設補上新欄位', () => {
   });
 });
 
-test('合法 v2 設定嚴格遷移為 v7，保留舊值並只補上新欄位', () => {
+test('合法 v2 設定嚴格遷移為 v9，保留舊值並只補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV2Config(), defaultConfig);
 
@@ -196,6 +294,9 @@ test('合法 v2 設定嚴格遷移為 v7，保留舊值並只補上新欄位', (
       minimumFontSizeRem: 3.5,
       fontSizePercent: 125,
       lineSpacingPercent: 150,
+      messageBackgroundPreset: 'solid',
+      messageLiquidEffectEnabled: true,
+      standbyClockSizePercent: 125,
     },
     dateTime: { enabled: false, offsetSeconds: 0 },
     emergency: {
@@ -213,7 +314,7 @@ test('合法 v2 設定嚴格遷移為 v7，保留舊值並只補上新欄位', (
   });
 });
 
-test('合法 v3 設定嚴格遷移為 v7，只補上預設播放、待機與 Logo 尺寸', () => {
+test('合法 v3 設定嚴格遷移為 v9，只補上預設播放、待機與 Logo 尺寸', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV3Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -222,7 +323,7 @@ test('合法 v3 設定嚴格遷移為 v7，只補上預設播放、待機與 Log
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 7,
+    configVersion: 9,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -231,6 +332,9 @@ test('合法 v3 設定嚴格遷移為 v7，只補上預設播放、待機與 Log
       ...legacy.appearance,
       backgroundColor: '#345CDE',
       fontColor: '#DCBA87',
+      messageBackgroundPreset: 'solid',
+      messageLiquidEffectEnabled: true,
+      standbyClockSizePercent: legacy.appearance.fontSizePercent,
     },
     emergency: {
       inspectionBackgroundColor: '#6F1C1C',
@@ -241,7 +345,7 @@ test('合法 v3 設定嚴格遷移為 v7，只補上預設播放、待機與 Log
   });
 });
 
-test('合法 v4 設定嚴格遷移為 v7，保留所有舊值並補待機與 Logo 尺寸', () => {
+test('合法 v4 設定嚴格遷移為 v9，保留所有舊值並補待機與 Logo 尺寸', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV4Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -250,7 +354,7 @@ test('合法 v4 設定嚴格遷移為 v7，保留所有舊值並補待機與 Log
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 7,
+    configVersion: 9,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -259,6 +363,9 @@ test('合法 v4 設定嚴格遷移為 v7，保留所有舊值並補待機與 Log
       ...legacy.appearance,
       backgroundColor: '#456DEF',
       fontColor: '#CBA987',
+      messageBackgroundPreset: 'solid',
+      messageLiquidEffectEnabled: true,
+      standbyClockSizePercent: legacy.appearance.fontSizePercent,
     },
     emergency: {
       inspectionBackgroundColor: '#5F1B1B',
@@ -270,7 +377,7 @@ test('合法 v4 設定嚴格遷移為 v7，保留所有舊值並補待機與 Log
   assert.equal(Object.isFrozen(result.value.standby), true);
 });
 
-test('合法 v5 設定嚴格遷移為 v7，保留單張背景並補上預設 Logo 尺寸', () => {
+test('合法 v5 設定嚴格遷移為 v9，保留單張背景並補上預設 Logo 尺寸', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV5Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -279,7 +386,7 @@ test('合法 v5 設定嚴格遷移為 v7，保留單張背景並補上預設 Log
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 7,
+    configVersion: 9,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -288,6 +395,9 @@ test('合法 v5 設定嚴格遷移為 v7，保留單張背景並補上預設 Log
       ...legacy.appearance,
       backgroundColor: '#456DEF',
       fontColor: '#CBA987',
+      messageBackgroundPreset: 'solid',
+      messageLiquidEffectEnabled: true,
+      standbyClockSizePercent: legacy.appearance.fontSizePercent,
     },
     emergency: {
       inspectionBackgroundColor: '#5F1B1B',
@@ -306,15 +416,21 @@ test('合法 v5 設定嚴格遷移為 v7，保留單張背景並補上預設 Log
   );
 });
 
-test('合法 v6 設定嚴格遷移為 v7，保留 Logo 尺寸與單張背景', () => {
+test('合法 v6 設定嚴格遷移為 v9，保留 Logo 尺寸與單張背景', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV6Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 7);
+  assert.equal(result.value.configVersion, 9);
   assert.equal(result.value.logo.sizePercent, 175);
+  assert.equal(result.value.appearance.messageBackgroundPreset, 'solid');
+  assert.equal(result.value.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(
+    result.value.appearance.standbyClockSizePercent,
+    legacy.appearance.fontSizePercent,
+  );
   assert.deepEqual(result.value.standby, {
     backgroundMode: 'fixed',
     backgroundImagePaths: [legacy.standby.backgroundImagePath],
@@ -322,17 +438,17 @@ test('合法 v6 設定嚴格遷移為 v7，保留 Logo 尺寸與單張背景', (
   });
 });
 
-test('canonical v7 設定不會被誤判為遷移資料', () => {
+test('canonical v9 設定不會被誤判為遷移資料', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(defaultConfig, defaultConfig);
 
-  assert.equal(defaultConfig.configVersion, 7);
+  assert.equal(defaultConfig.configVersion, 9);
   assert.equal(result.ok, true);
   assert.equal(result.migrated, false);
   assert.deepEqual(result.value, defaultConfig);
 });
 
-test('遷移拒絕畸形 v1 至 v6、未知欄位與未知版本', () => {
+test('遷移拒絕畸形 v1 至 v8、未知欄位與未知版本', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const v1 = createV1Config();
   const v2 = createV2Config();
@@ -340,6 +456,8 @@ test('遷移拒絕畸形 v1 至 v6、未知欄位與未知版本', () => {
   const v4 = createV4Config();
   const v5 = createV5Config();
   const v6 = createV6Config();
+  const v7 = createV7Config();
+  const v8 = createV8Config();
 
   for (const candidate of [
     { ...v1, unexpected: true },
@@ -363,9 +481,24 @@ test('遷移拒絕畸形 v1 至 v6、未知欄位與未知版本', () => {
     { ...v5, configVersion: 6 },
     { ...v6, unexpected: true },
     { ...v6, logo: { ...v6.logo, unexpected: true } },
+    {
+      ...v6,
+      appearance: { ...v6.appearance, messageBackgroundPreset: 'solid' },
+    },
     { ...v6, standby: { ...v6.standby, unexpected: true } },
     { ...v6, standby: { backgroundImagePath: '/tmp/background.png' } },
     { ...v6, configVersion: 7 },
+    { ...v7, unexpected: true },
+    { ...v7, appearance: { ...v7.appearance, unexpected: true } },
+    { ...v7, appearance: { ...v7.appearance, fontSizePercent: 101 } },
+    { ...v7, configVersion: 8 },
+    { ...v8, unexpected: true },
+    { ...v8, appearance: { ...v8.appearance, unexpected: true } },
+    {
+      ...v8,
+      appearance: { ...v8.appearance, messageLiquidEffectEnabled: true },
+    },
+    { ...v8, configVersion: 9 },
     { ...defaultConfig, configVersion: 99 },
   ]) {
     assert.equal(migrateStoredConfig(candidate, defaultConfig).ok, false);

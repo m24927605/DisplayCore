@@ -17,10 +17,10 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV7Config() {
+function createV9Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 7,
+    configVersion: 9,
     logo: { enabled: false, path: null, sizePercent: 100 },
     standby: {
       backgroundMode: 'fixed',
@@ -36,7 +36,7 @@ function createV7Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV7Config();
+  const config = createV9Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
@@ -54,9 +54,12 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
     backgroundColor: '#102030',
     fontFamily: 'Noto Sans TC, sans-serif',
     fontColor: '#F4F5F6',
+    messageBackgroundPreset: 'walnut',
     minimumFontSizeRem: 3.25,
     fontSizePercent: 125,
     lineSpacingPercent: 150,
+    messageLiquidEffectEnabled: false,
+    standbyClockSizePercent: 175,
   };
   config.dateTime = { enabled: true, offsetSeconds: -3661 };
   config.emergency = {
@@ -81,7 +84,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 7,
+    configVersion: 9,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -99,9 +102,12 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
       backgroundColor: '#102030',
       fontFamily: 'Noto Sans TC, sans-serif',
       fontColor: '#F4F5F6',
+      messageBackgroundPreset: 'walnut',
       minimumFontSizeRem: 3.25,
       fontSizePercent: 125,
       lineSpacingPercent: 150,
+      messageLiquidEffectEnabled: false,
+      standbyClockSizePercent: 175,
     },
     dateTime: { enabled: true, offsetSeconds: -3661 },
     emergency: {
@@ -140,7 +146,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
 });
 
 test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
-  const config = createV7Config();
+  const config = createV9Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
@@ -157,16 +163,49 @@ test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
     backgroundImageUrls: [],
     slideDurationSeconds: 10,
   });
+  assert.equal(projected.appearance.messageLiquidEffectEnabled, true);
+});
+
+test('Display 投影完整保留管理員啟用或停用訊息倒酒效果的布林值', () => {
+  for (const enabled of [true, false]) {
+    const config = createV9Config();
+    config.appearance.messageLiquidEffectEnabled = enabled;
+
+    const projected = createDisplaySettingsSnapshot(
+      createManagerSnapshot(config, enabled ? 4 : 5),
+    );
+
+    assert.equal(
+      projected.appearance.messageLiquidEffectEnabled,
+      enabled,
+    );
+  }
+});
+
+test('Display 投影拒絕缺少或非布林的訊息倒酒效果設定', () => {
+  const missing = createV9Config();
+  delete missing.appearance.messageLiquidEffectEnabled;
+
+  for (const candidate of [missing, ...['true', 1, null].map((value) => {
+    const config = createV9Config();
+    config.appearance.messageLiquidEffectEnabled = value;
+    return config;
+  })]) {
+    assert.throws(
+      () => createDisplaySettingsSnapshot(createManagerSnapshot(candidate)),
+      { name: 'TypeError', message: 'Display 設定 snapshot 格式不正確。' },
+    );
+  }
 });
 
 test('投影拒絕不合法 revision、設定內容與非受管理圖片識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV7Config(), -1),
-    createManagerSnapshot(createV7Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV7Config(), unknown: true }, 0),
+    createManagerSnapshot(createV9Config(), -1),
+    createManagerSnapshot(createV9Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV9Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV7Config(),
+        ...createV9Config(),
         logo: {
           enabled: true,
           path: 'logos/operator-logo.png',
@@ -177,9 +216,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV7Config(),
+        ...createV9Config(),
         standby: {
-          ...createV7Config().standby,
+          ...createV9Config().standby,
           backgroundImagePaths: ['C:\\private\\background.png'],
         },
       },
@@ -187,9 +226,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV7Config(),
+        ...createV9Config(),
         standby: {
-          ...createV7Config().standby,
+          ...createV9Config().standby,
           backgroundImagePaths: [
             'standby-backgrounds/operator-background.png',
           ],
@@ -199,9 +238,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV7Config(),
+        ...createV9Config(),
         display: {
-          ...createV7Config().display,
+          ...createV9Config().display,
           renderResolution: '1280x720',
         },
       },
@@ -209,9 +248,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV7Config(),
+        ...createV9Config(),
         playback: {
-          ...createV7Config().playback,
+          ...createV9Config().playback,
           pageDurationSeconds: 0,
         },
       },
@@ -227,13 +266,32 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
 
 test('投影拒絕超界、非 5% 步進與非整數 Logo 大小', () => {
   for (const sizePercent of [49, 1_001, 101, 100.5, '100']) {
-    const config = createV7Config();
+    const config = createV9Config();
     config.logo.sizePercent = sizePercent;
 
     assert.throws(
       () => createDisplaySettingsSnapshot(createManagerSnapshot(config)),
       { name: 'TypeError', message: 'Display 設定 snapshot 格式不正確。' },
       String(sizePercent),
+    );
+  }
+});
+
+test('投影拒絕未知訊息背景與無效待機時間大小', () => {
+  for (const appearancePatch of [
+    { messageBackgroundPreset: 'gold' },
+    { standbyClockSizePercent: 45 },
+    { standbyClockSizePercent: 305 },
+    { standbyClockSizePercent: 101 },
+    { standbyClockSizePercent: '100' },
+  ]) {
+    const config = createV9Config();
+    config.appearance = { ...config.appearance, ...appearancePatch };
+
+    assert.throws(
+      () => createDisplaySettingsSnapshot(createManagerSnapshot(config)),
+      { name: 'TypeError', message: 'Display 設定 snapshot 格式不正確。' },
+      JSON.stringify(appearancePatch),
     );
   }
 });

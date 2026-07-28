@@ -15,7 +15,10 @@ const APPEARANCE_KEYS = Object.freeze([
   'fontFamily',
   'fontSizePercent',
   'lineSpacingPercent',
+  'messageBackgroundPreset',
+  'messageLiquidEffectEnabled',
   'minimumFontSizeRem',
+  'standbyClockSizePercent',
 ]);
 const DATE_TIME_KEYS = Object.freeze(['enabled', 'offsetSeconds']);
 const EMERGENCY_KEYS = Object.freeze([
@@ -50,6 +53,8 @@ const FONT_SIZE_STEP_REM = 0.25;
 const MAXIMUM_FONT_FAMILY_LENGTH = 200;
 const MINIMUM_FONT_SIZE_PERCENT = 50;
 const MAXIMUM_FONT_SIZE_PERCENT = 200;
+const MINIMUM_STANDBY_CLOCK_SIZE_PERCENT = 50;
+const MAXIMUM_STANDBY_CLOCK_SIZE_PERCENT = 300;
 const MINIMUM_LINE_SPACING_PERCENT = 0;
 const MAXIMUM_LINE_SPACING_PERCENT = 300;
 const PERCENTAGE_STEP = 5;
@@ -61,6 +66,13 @@ const LOGO_SIZE_PERCENT_STEP = 5;
 const MAXIMUM_STANDBY_BACKGROUND_COUNT = 20;
 const MINIMUM_STANDBY_SLIDE_DURATION_SECONDS = 1;
 const MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS = 3_600;
+const MESSAGE_BACKGROUND_PRESETS = Object.freeze([
+  'solid',
+  'obsidian',
+  'dark-marble',
+  'walnut',
+  'emerald-onyx',
+]);
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -135,6 +147,7 @@ function isValidAppearance(appearance) {
   if (
     !OPAQUE_HEX_COLOR.test(appearance.backgroundColor) ||
     !OPAQUE_HEX_COLOR.test(appearance.fontColor) ||
+    typeof appearance.messageLiquidEffectEnabled !== 'boolean' ||
     typeof appearance.fontFamily !== 'string' ||
     appearance.fontFamily.trim().length === 0 ||
     appearance.fontFamily.length > MAXIMUM_FONT_FAMILY_LENGTH ||
@@ -147,6 +160,7 @@ function isValidAppearance(appearance) {
   const stepRatio = minimumFontSize / FONT_SIZE_STEP_REM;
   const fontSizePercent = appearance.fontSizePercent;
   const lineSpacingPercent = appearance.lineSpacingPercent;
+  const standbyClockSizePercent = appearance.standbyClockSizePercent;
 
   return (
     Number.isFinite(minimumFontSize) &&
@@ -157,10 +171,17 @@ function isValidAppearance(appearance) {
     fontSizePercent >= MINIMUM_FONT_SIZE_PERCENT &&
     fontSizePercent <= MAXIMUM_FONT_SIZE_PERCENT &&
     fontSizePercent % PERCENTAGE_STEP === 0 &&
+    MESSAGE_BACKGROUND_PRESETS.includes(
+      appearance.messageBackgroundPreset,
+    ) &&
     Number.isSafeInteger(lineSpacingPercent) &&
     lineSpacingPercent >= MINIMUM_LINE_SPACING_PERCENT &&
     lineSpacingPercent <= MAXIMUM_LINE_SPACING_PERCENT &&
-    lineSpacingPercent % PERCENTAGE_STEP === 0
+    lineSpacingPercent % PERCENTAGE_STEP === 0 &&
+    Number.isSafeInteger(standbyClockSizePercent) &&
+    standbyClockSizePercent >= MINIMUM_STANDBY_CLOCK_SIZE_PERCENT &&
+    standbyClockSizePercent <= MAXIMUM_STANDBY_CLOCK_SIZE_PERCENT &&
+    standbyClockSizePercent % PERCENTAGE_STEP === 0
   );
 }
 
@@ -189,7 +210,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 7 &&
+    candidate.configVersion === 9 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -233,9 +254,15 @@ function cloneSettings(candidate) {
       backgroundColor: candidate.appearance.backgroundColor,
       fontFamily: candidate.appearance.fontFamily,
       fontColor: candidate.appearance.fontColor,
+      messageBackgroundPreset:
+        candidate.appearance.messageBackgroundPreset,
+      messageLiquidEffectEnabled:
+        candidate.appearance.messageLiquidEffectEnabled,
       minimumFontSizeRem: candidate.appearance.minimumFontSizeRem,
       fontSizePercent: candidate.appearance.fontSizePercent,
       lineSpacingPercent: candidate.appearance.lineSpacingPercent,
+      standbyClockSizePercent:
+        candidate.appearance.standbyClockSizePercent,
     },
     dateTime: {
       enabled: candidate.dateTime.enabled,
@@ -254,7 +281,7 @@ function cloneSettings(candidate) {
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 7,
+  configVersion: 9,
   logo: { enabled: false, url: null, sizePercent: 100 },
   standby: {
     backgroundMode: 'fixed',
@@ -263,11 +290,15 @@ export const SAFE_DISPLAY_SETTINGS = freezeSettings({
   },
   appearance: {
     backgroundColor: '#000000',
-    fontFamily: 'Microsoft JhengHei UI, Microsoft JhengHei, sans-serif',
-    fontColor: '#FFFFFF',
+    fontFamily:
+      '"DisplayCore Source Han Serif TC", "Noto Serif TC", serif',
+    fontColor: '#F4F0E7',
+    messageBackgroundPreset: 'obsidian',
+    messageLiquidEffectEnabled: false,
     minimumFontSizeRem: 2.5,
     fontSizePercent: 100,
     lineSpacingPercent: 100,
+    standbyClockSizePercent: 100,
   },
   dateTime: { enabled: false, offsetSeconds: 0 },
   emergency: {

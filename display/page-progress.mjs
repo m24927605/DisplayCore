@@ -13,9 +13,9 @@ function isAuthoritativelyRejected(response) {
  * 封裝 Display 對 Main 的最小版面進度回報。
  *
  * 每次 begin 都建立新的 layoutGeneration 並取消舊 DOM listener；只有目前
- * token 能進入 ready。若有多列跑馬燈，必須每一列都收到第一次
- * animationiteration 後才回報 complete。暫時 IPC 失敗會以有上限的退避
- * 間隔重試，換頁、refit 或 dispose 會取消所有舊重試。
+ * token 能進入 ready。Main 接受 started 後才同步啟動頁面效果；跑馬燈
+ * traversal 與酒液 100% 終幀都滿足後，才回報 complete。暫時 IPC 失敗
+ * 會以有上限的退避間隔重試，換頁、refit 或 dispose 會取消所有舊重試。
  */
 export function createPageProgressReporter({
   report,
@@ -23,12 +23,18 @@ export function createPageProgressReporter({
   clearTimer = (handle) => globalThis.clearTimeout(handle),
   initialLayoutGeneration = 0,
   onLayoutGeneration = () => {},
+  onPendingAccepted = () => {},
+  onStartedAccepted = () => {},
+  onTraversalComplete = () => {},
 }) {
   if (
     typeof report !== 'function' ||
     typeof setTimer !== 'function' ||
     typeof clearTimer !== 'function' ||
     typeof onLayoutGeneration !== 'function' ||
+    typeof onPendingAccepted !== 'function' ||
+    typeof onStartedAccepted !== 'function' ||
+    typeof onTraversalComplete !== 'function' ||
     !Number.isSafeInteger(initialLayoutGeneration) ||
     initialLayoutGeneration < 0 ||
     initialLayoutGeneration >= Number.MAX_SAFE_INTEGER
@@ -39,6 +45,46 @@ export function createPageProgressReporter({
   let layoutGeneration = initialLayoutGeneration;
   let active = null;
   let disposed = false;
+
+  function finalizeTraversal(token) {
+    if (
+      disposed ||
+      active?.token !== token ||
+      active.traversalFinalized
+    ) {
+      return;
+    }
+
+    active.traversalFinalized = true;
+    try {
+      onTraversalComplete(token);
+    } catch {
+      // 裝飾性終幀故障不得阻止可讀內容正常換頁。
+    }
+  }
+
+  /**
+   * Renderer 的跑馬燈與酒液終幀都完成後，才回報同一個 complete。
+   * Main 仍保有最短停留 timer 的最終決定權，Display 不自行翻頁。
+   */
+  function requestCompletion(token) {
+    if (
+      disposed ||
+      active?.token !== token ||
+      active.completeRequested ||
+      !active.effectsStarted ||
+      !active.traversalSatisfied ||
+      !active.liquidCompletionSatisfied
+    ) {
+      return false;
+    }
+
+    active.completeRequested = true;
+    active.controller.abort();
+    finalizeTraversal(token);
+    sendWithRetry('complete', token, undefined);
+    return true;
+  }
 
   function operationIsCurrent(operation) {
     return Boolean(
@@ -72,11 +118,34 @@ export function createPageProgressReporter({
 
     if (isAccepted(response)) {
       active.operations.delete(operation.phase);
-      if (operation.phase === 'ready') {
-        active.readyAccepted = true;
-        if (active.completeRequested) {
-          sendWithRetry('complete', operation.token, undefined);
+      if (operation.phase === 'pending') {
+        try {
+          onPendingAccepted(operation.token);
+        } catch {
+          // pending 已使 Main 舊 timer 失效；排版故障時保持 fail closed。
         }
+        return;
+      }
+
+      if (operation.phase === 'ready') {
+        sendWithRetry('started', operation.token, undefined);
+        return;
+      }
+
+      if (operation.phase === 'started') {
+        let effectsStarted = false;
+        try {
+          effectsStarted = onStartedAccepted(operation.token) !== false;
+        } catch {
+          // 效果未能啟動時不宣告 complete，讓 Main fail closed、不提早翻頁。
+        }
+
+        if (!effectsStarted) {
+          return;
+        }
+
+        active.effectsStarted = true;
+        requestCompletion(operation.token);
       }
       return;
     }
@@ -179,15 +248,18 @@ export function createPageProgressReporter({
         controller: new AbortController(),
         operations: new Map(),
         ready: false,
-        readyAccepted: false,
+        effectsStarted: false,
         completed: false,
         completeRequested: false,
+        liquidCompletionSatisfied: true,
+        traversalSatisfied: false,
+        traversalFinalized: false,
       };
       sendWithRetry('pending', token, undefined);
       return token;
     },
 
-    ready(token, tracks) {
+    ready(token, tracks, { liquidCompletionRequired = false } = {}) {
       if (disposed || active?.token !== token) {
         return false;
       }
@@ -199,11 +271,13 @@ export function createPageProgressReporter({
       const uniqueTracks = [...new Set(tracks)];
       if (uniqueTracks.some(
         (track) => typeof track?.addEventListener !== 'function',
-      )) {
+      ) || typeof liquidCompletionRequired !== 'boolean') {
         return false;
       }
 
       active.ready = true;
+      active.traversalSatisfied = uniqueTracks.length === 0;
+      active.liquidCompletionSatisfied = !liquidCompletionRequired;
       sendWithRetry('ready', token, uniqueTracks.length);
 
       if (uniqueTracks.length === 0) {
@@ -229,16 +303,38 @@ export function createPageProgressReporter({
             }
 
             active.completed = true;
-            active.completeRequested = true;
-            active.controller.abort();
-            if (active.readyAccepted) {
-              sendWithRetry('complete', token, undefined);
-            }
+            active.traversalSatisfied = true;
+            requestCompletion(token);
           },
           { signal: active.controller.signal },
         );
       }
 
+      return true;
+    },
+
+    /** 酒液 Renderer 已畫出同一 layout 的精確 100% 終幀。 */
+    liquidComplete(tokenOrRevision, layoutGeneration = null) {
+      const tokenMatches = Boolean(
+        active && (
+          active.token === tokenOrRevision ||
+          (
+            Number.isSafeInteger(tokenOrRevision) &&
+            active.token.revision === tokenOrRevision &&
+            active.token.layoutGeneration === layoutGeneration
+          )
+        )
+      );
+      if (disposed || !tokenMatches || !active.ready) {
+        return false;
+      }
+
+      if (active.liquidCompletionSatisfied) {
+        return true;
+      }
+
+      active.liquidCompletionSatisfied = true;
+      requestCompletion(active.token);
       return true;
     },
 

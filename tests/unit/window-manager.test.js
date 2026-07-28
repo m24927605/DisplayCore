@@ -117,6 +117,7 @@ function createManager({
   onDisplayUnavailable = () => {},
   onRecoveryFailed = () => {},
   configureDisplayWindow = null,
+  platform = 'win32',
 } = {}) {
   const hardenedWebContents = [];
   const projectRoot = path.resolve(__dirname, '..', '..');
@@ -134,6 +135,7 @@ function createManager({
     onDisplayUnavailable,
     onRecoveryFailed,
     configureDisplayWindow,
+    platform,
     windowedDisplay: false,
   });
 
@@ -182,6 +184,18 @@ test('WindowManager 建立並載入安全的 Control 與 Display Window', async 
   assert.equal(manager.getControlWindow(), controlWindow);
   assert.equal(manager.getDisplayWindow(), displayWindow);
   assert.equal(manager.hasWindows(), true);
+});
+
+test('macOS Display 使用 pop-up-menu 置頂層級，避免選單列覆蓋 signage', async () => {
+  const { manager } = createManager({ platform: 'darwin' });
+
+  await manager.createWindows();
+  const [, displayWindow] = FakeBrowserWindow.instances;
+
+  assert.deepEqual(displayWindow.alwaysOnTopCall, {
+    enabled: true,
+    level: 'pop-up-menu',
+  });
 });
 
 test('託管輸出在 Display 載入與顯示前完成定位及全螢幕切換', async () => {

@@ -4,6 +4,7 @@ const {
   createControlWindowOptions,
   createDisplayWindowOptions,
 } = require('./window-options');
+const { getDisplayAlwaysOnTopLevel } = require('./display-signage-mode');
 
 /**
  * 集中管理 Control 與 Display 兩個 BrowserWindow 的建立與生命週期。
@@ -28,6 +29,7 @@ class WindowManager {
    * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} [dependencies.configureDisplayWindow]
    * @param {boolean} dependencies.windowedDisplay
    * @param {boolean} dependencies.controlDevTools
+   * @param {NodeJS.Platform|string} dependencies.platform
    */
   constructor({
     BrowserWindow,
@@ -45,6 +47,7 @@ class WindowManager {
     configureDisplayWindow = null,
     windowedDisplay = false,
     controlDevTools = false,
+    platform = process.platform,
   }) {
     this.BrowserWindow = BrowserWindow;
     this.session = session;
@@ -61,6 +64,7 @@ class WindowManager {
     this.configureDisplayWindow = configureDisplayWindow;
     this.windowedDisplay = windowedDisplay;
     this.controlDevTools = controlDevTools;
+    this.platform = platform;
 
     this.controlWindow = null;
     this.displayWindow = null;
@@ -163,7 +167,10 @@ class WindowManager {
       this.hardenWebContents(displayWindow.webContents);
 
       controlWindow.setAlwaysOnTop(true, 'pop-up-menu');
-      displayWindow.setAlwaysOnTop(true, 'floating');
+      displayWindow.setAlwaysOnTop(
+        true,
+        getDisplayAlwaysOnTopLevel(this.platform),
+      );
       displayWindow.setIgnoreMouseEvents(true);
 
       await Promise.all([

@@ -41,6 +41,7 @@ const PLAYBACK_MODES = Object.freeze({
 const PAGE_PROGRESS_PHASES = Object.freeze({
   PENDING: 'pending',
   READY: 'ready',
+  STARTED: 'started',
   COMPLETE: 'complete',
 });
 

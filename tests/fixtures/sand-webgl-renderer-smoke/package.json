@@ -1,0 +1,5 @@
+{
+  "name": "displaycore-sand-webgl-renderer-smoke",
+  "private": true,
+  "main": "main.js"
+}

@@ -6,13 +6,19 @@ const test = require('node:test');
 const currentDefaultConfig = require('../../config.json');
 const { validateConfig } = require('../../config/config-schema');
 
-// Control Renderer 測試固定宣告完整 v7 契約，不依賴遷移測試的 fixture。
+// Control Renderer 測試固定宣告完整 v9 契約，不依賴遷移測試的 fixture。
 const defaultConfig = structuredClone({
   ...currentDefaultConfig,
-  configVersion: 7,
+  configVersion: 9,
   logo: {
     ...currentDefaultConfig.logo,
     sizePercent: 100,
+  },
+  appearance: {
+    ...currentDefaultConfig.appearance,
+    messageBackgroundPreset: 'obsidian',
+    messageLiquidEffectEnabled: true,
+    standbyClockSizePercent: 100,
   },
 });
 
@@ -40,11 +46,14 @@ function createValidDraftInput(overrides = {}) {
     standbyBackgroundImagePaths: [],
     standbySlideDurationSeconds: '10',
     backgroundColor: '#000000',
+    messageBackgroundPreset: 'obsidian',
     fontFamily: defaultConfig.appearance.fontFamily,
     fontColor: '#FFFFFF',
     minimumFontSizeRem: '2.5',
     fontSizePercent: '100',
+    standbyClockSizePercent: '100',
     lineSpacingPercent: '100',
+    messageLiquidEffectEnabled: true,
     inspectionBackgroundColor: '#000000',
     releaseBackgroundColor: '#000000',
     dateTimeEnabled: true,
@@ -102,7 +111,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
     createSnapshot({ notice: { code: 'INVALID_USER_CONFIG' } }),
     createSnapshot({ config: { ...defaultConfig, unknown: true } }),
     createSnapshot({
-      config: { ...defaultConfig, configVersion: 6 },
+      config: { ...defaultConfig, configVersion: 8 },
     }),
     createSnapshot({
       config: {
@@ -129,7 +138,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含 Logo 大小、多張待機背景、playback v7、顯示外觀、校時及解析度', async () => {
+test('設定草稿包含 Logo 大小、多張待機背景、playback v9、倒酒開關、質感背景、待機時間、校時及解析度', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -151,11 +160,14 @@ test('設定草稿包含 Logo 大小、多張待機背景、playback v7、顯示
     ],
     standbySlideDurationSeconds: '8',
     backgroundColor: '#102a3c',
+    messageBackgroundPreset: 'dark-marble',
     fontFamily: 'Arial, sans-serif',
     fontColor: '#f0e0d0',
     minimumFontSizeRem: '3.25',
     fontSizePercent: '125',
+    standbyClockSizePercent: '185',
     lineSpacingPercent: '150',
+    messageLiquidEffectEnabled: false,
     inspectionBackgroundColor: '#7f1d1d',
     releaseBackgroundColor: '#14532d',
     dateTimeEnabled: true,
@@ -169,7 +181,7 @@ test('設定草稿包含 Logo 大小、多張待機背景、playback v7、顯示
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 7,
+    configVersion: 9,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
@@ -185,11 +197,14 @@ test('設定草稿包含 Logo 大小、多張待機背景、playback v7、顯示
     },
     appearance: {
       backgroundColor: '#102A3C',
+      messageBackgroundPreset: 'dark-marble',
       fontFamily: 'Arial, sans-serif',
       fontColor: '#F0E0D0',
       minimumFontSizeRem: 3.25,
       fontSizePercent: 125,
+      standbyClockSizePercent: 185,
       lineSpacingPercent: 150,
+      messageLiquidEffectEnabled: false,
     },
     dateTime: { enabled: true, offsetSeconds: 3_661 },
     emergency: {
@@ -242,6 +257,7 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { standbySlideDurationSeconds: '3601' },
     { standbySlideDurationSeconds: 10 },
     { backgroundColor: '#000' },
+    { messageBackgroundPreset: 'blue-gradient' },
     { fontColor: 'white' },
     { fontFamily: '   ' },
     { minimumFontSizeRem: '2.6' },
@@ -250,6 +266,13 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { minimumFontSizeRem: '12.25' },
     { fontSizePercent: '45' },
     { fontSizePercent: '101' },
+    { standbyClockSizePercent: '45' },
+    { standbyClockSizePercent: '305' },
+    { standbyClockSizePercent: '101' },
+    { standbyClockSizePercent: 100 },
+    { messageLiquidEffectEnabled: 'true' },
+    { messageLiquidEffectEnabled: 1 },
+    { messageLiquidEffectEnabled: null },
     { lineSpacingPercent: '-5' },
     { lineSpacingPercent: '305' },
     { inspectionBackgroundColor: 'red' },
@@ -301,6 +324,77 @@ test('Logo 大小只接受 50% 至 1000% 且以 5% 遞增的十進位整數', as
 
     assert.equal(result.ok, false, logoSizePercent);
     assert.equal(result.error.field, 'logo.sizePercent', logoSizePercent);
+  }
+});
+
+test('訊息背景只接受五種固定預設，待機時間大小接受 50% 至 300%', async () => {
+  const { buildSettingsDraft } = await loadModule();
+
+  for (const messageBackgroundPreset of [
+    'solid',
+    'obsidian',
+    'dark-marble',
+    'walnut',
+    'emerald-onyx',
+  ]) {
+    const result = buildSettingsDraft(createValidDraftInput({
+      messageBackgroundPreset,
+      standbyClockSizePercent: '300',
+    }));
+
+    assert.equal(result.ok, true, messageBackgroundPreset);
+    assert.equal(
+      result.config.appearance.messageBackgroundPreset,
+      messageBackgroundPreset,
+    );
+    assert.equal(result.config.appearance.standbyClockSizePercent, 300);
+  }
+
+  for (const standbyClockSizePercent of ['49', '101', '305', '1e2']) {
+    const result = buildSettingsDraft(createValidDraftInput({
+      standbyClockSizePercent,
+    }));
+    assert.equal(result.ok, false, standbyClockSizePercent);
+    assert.equal(
+      result.error.field,
+      'appearance.standbyClockSizePercent',
+      standbyClockSizePercent,
+    );
+  }
+});
+
+test('訊息字體倒酒效果草稿預設開啟，且只接受明確 boolean 開關', async () => {
+  const { buildSettingsDraft } = await loadModule();
+
+  for (const messageLiquidEffectEnabled of [true, false]) {
+    const result = buildSettingsDraft(createValidDraftInput({
+      messageLiquidEffectEnabled,
+    }));
+
+    assert.equal(result.ok, true, String(messageLiquidEffectEnabled));
+    assert.equal(
+      result.config.appearance.messageLiquidEffectEnabled,
+      messageLiquidEffectEnabled,
+    );
+  }
+
+  assert.equal(
+    createValidDraftInput().messageLiquidEffectEnabled,
+    true,
+    'Control 新草稿預設必須沿用 config.json 的啟用狀態',
+  );
+
+  for (const messageLiquidEffectEnabled of [undefined, null, 0, 1, 'true']) {
+    const result = buildSettingsDraft(createValidDraftInput({
+      messageLiquidEffectEnabled,
+    }));
+
+    assert.equal(result.ok, false, String(messageLiquidEffectEnabled));
+    assert.equal(
+      result.error.field,
+      'appearance.messageLiquidEffectEnabled',
+      String(messageLiquidEffectEnabled),
+    );
   }
 });
 
@@ -374,6 +468,9 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   const changedRoundCount = structuredClone(defaultConfig);
   const changedStandbyBackground = structuredClone(defaultConfig);
   const changedLogoSize = structuredClone(defaultConfig);
+  const changedMessageBackground = structuredClone(defaultConfig);
+  const changedStandbyClockSize = structuredClone(defaultConfig);
+  const changedMessageLiquidEffect = structuredClone(defaultConfig);
   changed.marquee.enabled = false;
   changedTime.dateTime.offsetSeconds = 1;
   changedResolution.display.renderResolution = '1920x1080';
@@ -385,6 +482,9 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
     'standby-backgrounds/0123456789abcdef01234567.png',
   ];
   changedLogoSize.logo.sizePercent = 125;
+  changedMessageBackground.appearance.messageBackgroundPreset = 'walnut';
+  changedStandbyClockSize.appearance.standbyClockSizePercent = 150;
+  changedMessageLiquidEffect.appearance.messageLiquidEffectEnabled = false;
 
   assert.equal(settingsEqual(defaultConfig, same), true);
   assert.equal(settingsEqual(defaultConfig, changed), false);
@@ -395,5 +495,8 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   assert.equal(settingsEqual(defaultConfig, changedRoundCount), false);
   assert.equal(settingsEqual(defaultConfig, changedStandbyBackground), false);
   assert.equal(settingsEqual(defaultConfig, changedLogoSize), false);
+  assert.equal(settingsEqual(defaultConfig, changedMessageBackground), false);
+  assert.equal(settingsEqual(defaultConfig, changedStandbyClockSize), false);
+  assert.equal(settingsEqual(defaultConfig, changedMessageLiquidEffect), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
 });

@@ -168,6 +168,7 @@ test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報�
   await api.getSettings();
   await api.reportPageProgress('pending', 7, 2, 4, 9, 11);
   await api.reportPageProgress('ready', 7, 2, 4, 9, 11, 3);
+  await api.reportPageProgress('started', 7, 2, 4, 9, 11);
   await api.reportPageProgress('complete', 7, 2, 4, 9, 11);
   assert.equal(
     harness.invocations[0].channel,
@@ -204,6 +205,17 @@ test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報�
           displayEpoch: 9,
           layoutGeneration: 11,
           marqueeCount: 3,
+        },
+      },
+      {
+        channel: IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+        payload: {
+          phase: 'started',
+          revision: 7,
+          pageNumber: 2,
+          settingsRevision: 4,
+          displayEpoch: 9,
+          layoutGeneration: 11,
         },
       },
       {

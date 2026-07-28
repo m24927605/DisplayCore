@@ -10,6 +10,7 @@ const {
   BrowserWindow,
   ipcMain,
   net,
+  nativeImage,
   protocol,
   session,
 } = require('electron');
@@ -46,15 +47,53 @@ const { createDisplayWindowOptions } = require(
 
 const DISPLAY_URL = 'displaycore://app/display/index.html';
 const CONTROL_URL = 'displaycore://app/control/index.html';
-const TIMEOUT_MS = 20_000;
+// 輸出多張 4K／Retina compositor 截圖會額外經過 GPU readback 與 PNG 編碼。
+const TIMEOUT_MS = process.env.DISPLAYCORE_VISUAL_QA_DIRECTORY?.trim()
+  ? 60_000
+  : 45_000;
 const LOGO_BYTES = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAcAAAAHCAYAAADEUlfTAAAAGUlEQVR4nGNgQID/SBgDYJX8jwdTIEmegwDYmyDgo5Y0vwAAAABJRU5ErkJggg==',
   'base64',
 );
-const STANDBY_BACKGROUND_BYTES = Buffer.from(
-  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
-  'base64',
-);
+
+/** 建立具明暗與色差的離線測試背景，讓真實截圖能看見圖片顆粒沙塵。 */
+function createStandbyBackgroundBytes(variant) {
+  const width = 640;
+  const height = 360;
+  const bitmap = Buffer.alloc(width * height * 4);
+
+  for (let y = 0; y < height; y += 1) {
+    const normalizedY = y / (height - 1);
+    for (let x = 0; x < width; x += 1) {
+      const normalizedX = x / (width - 1);
+      const dune = Math.sin(normalizedX * Math.PI * 3.2 + normalizedY * 2.1);
+      const ripple = Math.sin(normalizedX * 42 + normalizedY * 13) * 0.5 + 0.5;
+      const grain = ((x * 37 + y * 61 + variant * 97) % 29) / 28;
+      const horizon = Math.max(0, normalizedY - 0.28) / 0.72;
+      const offset = (y * width + x) * 4;
+      const red = variant === 1
+        ? 118 + horizon * 105 + dune * 18 + ripple * 12
+        : 28 + horizon * 45 + ripple * 8;
+      const green = variant === 1
+        ? 66 + horizon * 74 + dune * 13 + grain * 10
+        : 82 + horizon * 74 + dune * 15 + grain * 12;
+      const blue = variant === 1
+        ? 38 + horizon * 35 + grain * 8
+        : 94 + horizon * 72 + dune * 18 + ripple * 10;
+
+      // Electron bitmap 採 BGRA；明顯色差可驗證砂粒確實取自上一張圖片。
+      bitmap[offset] = Math.max(0, Math.min(255, Math.round(blue)));
+      bitmap[offset + 1] = Math.max(0, Math.min(255, Math.round(green)));
+      bitmap[offset + 2] = Math.max(0, Math.min(255, Math.round(red)));
+      bitmap[offset + 3] = 255;
+    }
+  }
+
+  return nativeImage.createFromBitmap(bitmap, { width, height }).toPNG();
+}
+
+const STANDBY_BACKGROUND_BYTES = createStandbyBackgroundBytes(1);
+const SECOND_STANDBY_BACKGROUND_BYTES = createStandbyBackgroundBytes(2);
 
 let displayWindow = null;
 let coordinator = null;
@@ -63,6 +102,12 @@ let settingsManager = null;
 let completed = false;
 let timeout = null;
 let runtimeDataRoot = null;
+
+// 這套 smoke workflow 專門量測 Canvas2D fallback 的 alpha 分佈。
+// 明確關閉 WebGL，避免有 GPU 的機器改走正式 WebGL canvas，
+// 導致測試對已隱藏的 2D canvas 做出錯誤斷言。
+app.disableHardwareAcceleration();
+app.commandLine.appendSwitch('disable-webgl');
 
 registerAppScheme(protocol);
 
@@ -127,6 +172,151 @@ function execute(source) {
   return displayWindow.webContents.executeJavaScript(source, true);
 }
 
+/** 由實際 Chromium CSS 引擎解析顏色，避免綁死 rgb()／color(srgb) 序列化。 */
+function resolveComputedBackgroundColor(expression) {
+  return execute(`(() => {
+    const probe = document.createElement('span');
+    probe.style.backgroundColor = ${JSON.stringify(expression)};
+    document.body.append(probe);
+    const color = getComputedStyle(probe).backgroundColor;
+    probe.remove();
+    return color;
+  })()`);
+}
+
+/** 僅在人工視覺 QA 時輸出截圖；一般測試不建立額外檔案。 */
+async function captureVisualQa(fileName) {
+  const visualQaDirectory =
+    process.env.DISPLAYCORE_VISUAL_QA_DIRECTORY?.trim();
+  if (!visualQaDirectory) {
+    return;
+  }
+
+  await execute(`new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  })`);
+  // capturePage 讀取 compositor frame；額外等待可避免截到前一個材質。
+  await new Promise((resolve) => setTimeout(resolve, 120));
+  await fileSystem.mkdir(visualQaDirectory, { recursive: true });
+  const image = await displayWindow.webContents.capturePage();
+  await fileSystem.writeFile(
+    path.join(visualQaDirectory, fileName),
+    image.toPNG(),
+  );
+}
+
+/**
+ * 擷取實際 Electron compositor 右側無文字區的訊息背景；固定抽樣同時限制
+ * Retina／4K 成本。全幅文字對比另由共用遮罩與三列實際截圖驗證。
+ */
+async function captureMessageBackgroundStatisticsSample() {
+  await execute(`new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  })`);
+  const image = await displayWindow.webContents.capturePage();
+
+  const { width, height } = image.getSize();
+  const bitmap = image.toBitmap();
+  const startX = Math.floor(width * 0.75);
+  const startY = 0;
+  const step = Math.max(4, Math.floor(Math.min(width, height) / 180));
+  let count = 0;
+  let redTotal = 0;
+  let greenTotal = 0;
+  let blueTotal = 0;
+  let lumaTotal = 0;
+  let squaredLumaTotal = 0;
+  let maximumLuma = 0;
+  const sampledLumas = [];
+  const signatureColumns = 24;
+  const signatureRows = 12;
+  const signatureTotals = new Array(signatureColumns * signatureRows).fill(0);
+  const signatureCounts = new Array(signatureColumns * signatureRows).fill(0);
+
+  for (let y = startY; y < height; y += step) {
+    for (let x = startX; x < width; x += step) {
+      const offset = ((y * width) + x) * 4;
+      const blue = bitmap[offset];
+      const green = bitmap[offset + 1];
+      const red = bitmap[offset + 2];
+      const luma = (red * 0.2126) + (green * 0.7152) + (blue * 0.0722);
+      count += 1;
+      redTotal += red;
+      greenTotal += green;
+      blueTotal += blue;
+      lumaTotal += luma;
+      squaredLumaTotal += luma * luma;
+      maximumLuma = Math.max(maximumLuma, luma);
+      sampledLumas.push(luma);
+      const signatureColumn = Math.min(
+        signatureColumns - 1,
+        Math.floor(
+          ((x - startX) / Math.max(1, width - startX)) * signatureColumns,
+        ),
+      );
+      const signatureRow = Math.min(
+        signatureRows - 1,
+        Math.floor(
+          ((y - startY) / Math.max(1, height - startY)) * signatureRows,
+        ),
+      );
+      const signatureIndex =
+        (signatureRow * signatureColumns) + signatureColumn;
+      signatureTotals[signatureIndex] += luma;
+      signatureCounts[signatureIndex] += 1;
+    }
+  }
+
+  const averageLuma = lumaTotal / count;
+  sampledLumas.sort((first, second) => first - second);
+  return Object.freeze({
+    averageRed: redTotal / count,
+    averageGreen: greenTotal / count,
+    averageBlue: blueTotal / count,
+    averageLuma,
+    lumaDeviation: Math.sqrt(
+      Math.max(0, (squaredLumaTotal / count) - (averageLuma ** 2)),
+    ),
+    lumaP95: sampledLumas[Math.floor((sampledLumas.length - 1) * 0.95)],
+    lumaP99: sampledLumas[Math.floor((sampledLumas.length - 1) * 0.99)],
+    maximumLuma,
+    spatialLuma: signatureTotals.map((total, index) =>
+      total / Math.max(1, signatureCounts[index])),
+  });
+}
+
+/**
+ * 判斷 Electron compositor 是否已交付不同的材質影格。
+ * DOM／圖片解碼完成不代表 capturePage 已同步到同一影格，因此測試必須等待
+ * 真正的像素改變，不能依賴任意固定毫秒數。
+ */
+function hasMessageBackgroundFrameChanged(previous, current) {
+  if (!previous) {
+    return true;
+  }
+
+  const averageChannelDistance =
+    Math.abs(current.averageRed - previous.averageRed) +
+    Math.abs(current.averageGreen - previous.averageGreen) +
+    Math.abs(current.averageBlue - previous.averageBlue);
+  const spatialDistance = current.spatialLuma.reduce(
+    (total, value, index) =>
+      total + Math.abs(value - previous.spatialLuma[index]),
+    0,
+  ) / current.spatialLuma.length;
+
+  return averageChannelDistance > 0.01 || spatialDistance > 0.01;
+}
+
+async function captureMessageBackgroundStatistics(previous = null) {
+  return waitFor(async () => {
+    const current = await captureMessageBackgroundStatisticsSample();
+    return hasMessageBackgroundFrameChanged(previous, current)
+      ? current
+      : false;
+  }, 'Electron compositor 套用最新訊息材質影格');
+}
+
 function createDelayedReadFileSystem(delayedFileName) {
   let started = false;
   let released = false;
@@ -171,6 +361,259 @@ async function waitForRevision(revision, fitted = true) {
         ${fitted ? `stage.dataset.fittedRevision === '${revision}'` : 'true'};
     })()`),
     `Display revision ${revision}`,
+  );
+}
+
+/**
+ * 暫停並 seek 目前頁面的 WAAPI 液位時鐘，再以指定的物理時間直接繪製
+ * SVG 酒液影格。液位與波相位可以分開取樣，避免測試等待真實秒數。
+ */
+async function sampleMessageLiquid(progress, timePhase = progress) {
+  if (!Number.isFinite(progress) || progress < 0 || progress > 1) {
+    throw new RangeError('訊息酒液取樣進度必須介於 0～1。');
+  }
+  if (
+    !Number.isFinite(timePhase) ||
+    timePhase < 0 ||
+    timePhase > 1
+  ) {
+    throw new RangeError('倒酒物理時間相位必須介於 0～1。');
+  }
+
+  return waitFor(
+    () => execute(`(async () => {
+      const { renderMessageLiquidFrame } = await import(
+        './message-liquid-svg.mjs'
+      );
+      const pageLayer = document.getElementById('page-layer');
+      const clock = document.getElementById('display-clock');
+      const logo = document.getElementById('display-logo');
+      const animations = pageLayer.getAnimations();
+      const animation = animations.find((candidate) =>
+        candidate.effect.getKeyframes().some((keyframe) =>
+          Object.hasOwn(keyframe, '--message-liquid-level')
+        )
+      );
+      if (!animation) {
+        return false;
+      }
+
+      animation.pause();
+      try {
+        await animation.ready;
+      } catch {
+        return false;
+      }
+      const duration = animation.effect.getComputedTiming().duration;
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return false;
+      }
+      animation.currentTime = duration * ${progress};
+      pageLayer.style.setProperty(
+        '--message-liquid-level',
+        '${Number((progress * 100).toFixed(6))}%'
+      );
+      await new Promise((resolve) => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+      });
+      const renderedCount = renderMessageLiquidFrame(pageLayer, {
+        progress: ${progress},
+        timeMilliseconds: duration * ${timePhase},
+        durationMilliseconds: duration,
+      });
+
+      const rows = [...document.querySelectorAll('.message-row')];
+      const toRect = (element) => {
+        if (!element) {
+          return null;
+        }
+        const rect = element.getBoundingClientRect();
+        return {
+          height: rect.height,
+          left: rect.left,
+          top: rect.top,
+          width: rect.width,
+        };
+      };
+      const nearlyEqual = (first, second) =>
+        first !== null && second !== null &&
+        Math.abs(first.height - second.height) <= 0.5 &&
+        Math.abs(first.left - second.left) <= 0.5 &&
+        Math.abs(first.top - second.top) <= 0.5 &&
+        Math.abs(first.width - second.width) <= 0.5;
+      const overlayAligned = (vesselRect, overlayRect) => {
+        if (vesselRect === null || overlayRect === null) {
+          return false;
+        }
+
+        const vesselBottom = vesselRect.top + vesselRect.height;
+        const overlayBottom = overlayRect.top + overlayRect.height;
+        const maximumOutlineOverflow = Math.max(
+          4,
+          vesselRect.height * 0.15
+        );
+        return (
+          Math.abs(vesselRect.left - overlayRect.left) <= 0.5 &&
+          Math.abs(vesselRect.width - overlayRect.width) <= 0.5 &&
+          overlayRect.top <= vesselRect.top + 0.5 &&
+          overlayBottom >= vesselBottom - 0.5 &&
+          overlayRect.height - vesselRect.height <= maximumOutlineOverflow
+        );
+      };
+
+      return {
+        animationCount: animations.length,
+        computedLiquidLevel: getComputedStyle(pageLayer)
+          .getPropertyValue('--message-liquid-level').trim(),
+        effectKeyframes: animation.effect.getKeyframes(),
+        inlineLiquidLevel: pageLayer.style
+          .getPropertyValue('--message-liquid-level'),
+        liquidPropertySupported: CSS.supports(
+          '--message-liquid-level', '50%'
+        ),
+        clockAnimationCount: clock.getAnimations({ subtree: true }).length,
+        clockColor: getComputedStyle(clock).color,
+        clockFillColor: getComputedStyle(clock)
+          .getPropertyValue('-webkit-text-fill-color'),
+        clockStrokeWidth: getComputedStyle(clock)
+          .getPropertyValue('-webkit-text-stroke-width'),
+        duration,
+        renderedCount,
+        requestedProgress: ${progress},
+        requestedTimePhase: ${timePhase},
+        liquidRows: rows.map((row) => {
+          const sizing = row.querySelector('.message-glyph-sizing');
+          const shell = row.querySelector('.message-glyph-shell');
+          const vessel = row.querySelector('.message-vessel');
+          const svg = vessel?.querySelector('.message-liquid-svg') ?? null;
+          const mask = svg?.querySelector('.message-liquid-mask') ?? null;
+          const canonicalGlyph = svg?.querySelector(
+            '.message-liquid-canonical-glyph'
+          ) ?? null;
+          const maskGlyph = mask?.querySelector(
+            '.message-liquid-mask-glyph'
+          ) ?? null;
+          const outlineGlyph = svg?.querySelector(
+            '.message-liquid-outline-glyph'
+          ) ?? null;
+          const paint = svg?.querySelector('.message-liquid-paint') ?? null;
+          const body = paint?.querySelector('.message-liquid-body') ?? null;
+          const refraction = paint?.querySelector(
+            '.message-liquid-refraction'
+          ) ?? null;
+          const meniscus = paint?.querySelector(
+            '.message-liquid-meniscus'
+          ) ?? null;
+          const sizingRect = toRect(sizing);
+          const shellRect = toRect(shell);
+          const vesselRect = toRect(vessel);
+          const svgRect = toRect(svg);
+          const beforeStyle = getComputedStyle(vessel, '::before');
+          const afterStyle = getComputedStyle(vessel, '::after');
+          const maskId = mask?.id ?? null;
+          const expectedMaskUrl = maskId === null
+            ? null
+            : 'url(#' + maskId + ')';
+          const paintMask = paint?.getAttribute('mask') ?? null;
+          const bodyPaintMask = body?.closest('.message-liquid-paint')
+            ?.getAttribute('mask') ?? null;
+          const refractionPaintMask = refraction
+            ?.closest('.message-liquid-paint')?.getAttribute('mask') ?? null;
+          const meniscusPaintMask = meniscus
+            ?.closest('.message-liquid-paint')?.getAttribute('mask') ?? null;
+          const viewBox = svg?.viewBox?.baseVal ?? null;
+          const readGlyphRuns = (glyph) => [
+            ...(glyph?.querySelectorAll('.message-liquid-glyph-run') ?? [])
+          ].map((text) => ({
+            fontFamily: text.style.getPropertyValue('font-family'),
+            isNumber: text.classList.contains('message-liquid-glyph-number'),
+            lengthAdjust: text.getAttribute('lengthAdjust'),
+            text: text.textContent,
+            textLength: text.getAttribute('textLength'),
+            x: text.getAttribute('x'),
+            y: text.getAttribute('y'),
+          }));
+          const canonicalRuns = readGlyphRuns(canonicalGlyph);
+          const maskRuns = readGlyphRuns(maskGlyph);
+          const outlineRuns = readGlyphRuns(outlineGlyph);
+          return {
+            effect: row.dataset.liquidEffect,
+            geometryAligned:
+              nearlyEqual(sizingRect, shellRect) &&
+              (svg === null || overlayAligned(vesselRect, svgRect)),
+            svgCount: vessel?.querySelectorAll('.message-liquid-svg').length ?? 0,
+            svgDisplay: svg === null ? 'none' : getComputedStyle(svg).display,
+            svgNamespace: svg?.namespaceURI ?? null,
+            svgViewBox: svg?.getAttribute('viewBox') ?? null,
+            viewBoxWidth: viewBox?.width ?? 0,
+            viewBoxHeight: viewBox?.height ?? 0,
+            maskCount: svg?.querySelectorAll('.message-liquid-mask').length ?? 0,
+            maskId,
+            maskType: mask?.getAttribute('mask-type') ?? null,
+            foreignObjectCount: mask?.querySelectorAll('foreignObject').length ?? 0,
+            canonicalGlyphCount: svg?.querySelectorAll(
+              '.message-liquid-canonical-glyph'
+            ).length ?? 0,
+            maskGlyphCount: mask?.querySelectorAll(
+              '.message-liquid-mask-glyph'
+            ).length ?? 0,
+            outlineGlyphCount: svg?.querySelectorAll(
+              '.message-liquid-outline-glyph'
+            ).length ?? 0,
+            canonicalText: canonicalGlyph?.textContent ?? null,
+            maskText: maskGlyph?.textContent ?? null,
+            outlineText: outlineGlyph?.textContent ?? null,
+            sizingText: sizing?.textContent ?? null,
+            canonicalRuns,
+            maskRuns,
+            outlineRuns,
+            sizingNumberTexts: [...(sizing?.querySelectorAll(
+              '.message-number'
+            ) ?? [])].map((span) => span.textContent),
+            outlineFill: outlineGlyph?.getAttribute('fill') ?? null,
+            outlineStroke: outlineGlyph?.getAttribute('stroke') ?? null,
+            outlineStrokeWidth: Number(
+              outlineGlyph?.getAttribute('stroke-width') ?? 0
+            ),
+            outlineAnimationName: outlineGlyph === null
+              ? null
+              : getComputedStyle(outlineGlyph).animationName,
+            paintMask,
+            expectedMaskUrl,
+            bodyPaintMask,
+            refractionPaintMask,
+            meniscusPaintMask,
+            bodyPath: body?.getAttribute('d') ?? '',
+            refractionPath: refraction?.getAttribute('d') ?? '',
+            meniscusPath: meniscus?.getAttribute('d') ?? '',
+            bodyOpacity: Number(body?.getAttribute('opacity') ?? 0),
+            refractionOpacity: Number(
+              refraction?.getAttribute('opacity') ?? 0
+            ),
+            meniscusOpacity: Number(
+              meniscus?.getAttribute('opacity') ?? 0
+            ),
+            outsideBeforeAnimationName: beforeStyle.animationName,
+            outsideBeforeContent: beforeStyle.content,
+            outsideAfterAnimationName: afterStyle.animationName,
+            outsideAfterContent: afterStyle.content,
+            rect: shellRect,
+            shellFillColor: getComputedStyle(shell)
+              .getPropertyValue('-webkit-text-fill-color'),
+            shellStrokeColor: getComputedStyle(shell)
+              .getPropertyValue('-webkit-text-stroke-color'),
+            shellStrokeWidth: getComputedStyle(shell)
+              .getPropertyValue('-webkit-text-stroke-width'),
+            shellVisibility: getComputedStyle(shell).visibility,
+            sizingFillColor: getComputedStyle(sizing)
+              .getPropertyValue('-webkit-text-fill-color'),
+            vesselRect,
+          };
+        }),
+        logoAnimationCount: logo.getAnimations({ subtree: true }).length,
+      };
+    })()`),
+    `一般訊息酒液高度 ${progress}`,
   );
 }
 
@@ -296,22 +739,22 @@ async function verifyDisplayedClockOffset(expectedOffsetSeconds, description) {
   const measurement = await waitFor(
     () => execute(`(() => {
       const text = document.getElementById('display-clock').textContent;
-      const match = /^(\\d{2}):(\\d{2}):(\\d{2})$/.exec(text);
+      const match = /^(\\d{2}):(\\d{2})$/.exec(text);
       if (!match) {
         return false;
       }
 
-      const displayedSeconds =
-        Number(match[1]) * 3600 + Number(match[2]) * 60 + Number(match[3]);
+      const displayedMinutes = Number(match[1]) * 60 + Number(match[2]);
       const now = new Date();
       const localSeconds =
         now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
       const expectedSeconds =
         (localSeconds + ${expectedOffsetSeconds} + 86400) % 86400;
-      const absoluteDifference = Math.abs(displayedSeconds - expectedSeconds);
+      const expectedMinutes = Math.floor(expectedSeconds / 60);
+      const absoluteDifference = Math.abs(displayedMinutes - expectedMinutes);
       const circularDifference = Math.min(
         absoluteDifference,
-        86400 - absoluteDifference,
+        1440 - absoluteDifference,
       );
 
       return circularDifference <= 1 ? {
@@ -323,7 +766,7 @@ async function verifyDisplayedClockOffset(expectedOffsetSeconds, description) {
     description,
   );
 
-  assert.match(measurement.text, /^\d{2}:\d{2}:\d{2}$/);
+  assert.match(measurement.text, /^\d{2}:\d{2}$/);
   assert.equal(measurement.dateTime, measurement.text);
   assert.ok(measurement.circularDifference <= 1);
 }
@@ -412,7 +855,7 @@ async function verifyStandbyPresentation(
   assert.ok(inspection.logoCenterError < 1);
   assert.ok(inspection.clockCenterError < 1);
   assert.equal(inspection.logoAboveClock, true);
-  assert.match(inspection.clockText, /^\d{2}:\d{2}:\d{2}$/);
+  assert.match(inspection.clockText, /^\d{2}:\d{2}$/);
   assert.ok(
     Math.abs(inspection.clockFontSize - inspection.expectedClockFontSize) <= 1,
     `待機時鐘未使用原歡迎文字 14cqmin 大字級：${JSON.stringify(inspection)}`,
@@ -906,6 +1349,22 @@ async function showAndMeasurePage(messages, description) {
       firstRowAlignItems: getComputedStyle(firstRow).alignItems,
       firstRowJustifyContent: getComputedStyle(firstRow).justifyContent,
       firstRowTextAlign: getComputedStyle(firstRow).textAlign,
+      firstRowLiquidEffect: firstRow.dataset.liquidEffect,
+      firstRowLiquidDisplay: (() => {
+        const svg = firstRow.querySelector('.message-liquid-svg');
+        return svg === null ? 'none' : getComputedStyle(svg).display;
+      })(),
+      firstRowShellFillColor: getComputedStyle(
+        firstRow.querySelector('.message-glyph-shell')
+      ).getPropertyValue('-webkit-text-fill-color'),
+      liquidAnimationCount: page.getAnimations().filter((animation) =>
+        animation.effect.getKeyframes().some((keyframe) =>
+          Object.hasOwn(keyframe, '--message-liquid-level')
+        )
+      ).length,
+      inlineLiquidLevel: page.style.getPropertyValue(
+        '--message-liquid-level'
+      ),
       marquee: firstRow.classList.contains('is-marquee'),
       marqueeTrackCount: firstRow.querySelectorAll('.marquee-track').length,
     };
@@ -1008,8 +1467,473 @@ async function verifyFixedMessageLayout() {
   assert.equal(operation.firstRowAlignItems, 'center');
   assert.equal(operation.firstRowJustifyContent, 'center');
   assert.equal(operation.firstRowTextAlign, 'center');
+  assert.equal(operation.firstRowLiquidEffect, 'static');
+  assert.equal(operation.firstRowLiquidDisplay, 'none');
+  assert.equal(operation.firstRowShellFillColor, 'rgb(255, 255, 255)');
+  assert.equal(operation.liquidAnimationCount, 0);
+  assert.equal(operation.inlineLiquidLevel, '');
   assert.ok(Math.abs(operation.firstTextCenterX - operation.pageCenterX) <= 1);
   assert.ok(Math.abs(operation.firstTextCenterY - operation.pageCenterY) <= 1);
+}
+
+/** 無結束點的一般訊息沒有可換算的倒數，必須保持白色實心字。 */
+async function verifyContinuousMessageIsStatic() {
+  presentationService.startProgram({
+    messages: [{ message: 'Nancy聯絡櫃台', alignment: 'left' }],
+    pageDurationSeconds: 3,
+    repeat: { mode: 'continuous' },
+  });
+  const revision = presentationService.getSnapshot().revision;
+  await waitForRevision(revision);
+
+  const inspection = await execute(`(() => {
+    const page = document.getElementById('page-layer');
+    const row = document.querySelector('.message-row');
+    const liquidSvg = row.querySelector('.message-liquid-svg');
+    const shell = row.querySelector('.message-glyph-shell');
+    return {
+      message: row.dataset.message,
+      liquidEffect: row.dataset.liquidEffect,
+      liquidDisplay: liquidSvg === null
+        ? 'none'
+        : getComputedStyle(liquidSvg).display,
+      shellFillColor: getComputedStyle(shell)
+        .getPropertyValue('-webkit-text-fill-color'),
+      shellStrokeColor: getComputedStyle(shell)
+        .getPropertyValue('-webkit-text-stroke-color'),
+      liquidAnimationCount: page.getAnimations().filter((animation) =>
+        animation.effect.getKeyframes().some((keyframe) =>
+          Object.hasOwn(keyframe, '--message-liquid-level')
+        )
+      ).length,
+      inlineLiquidLevel: page.style.getPropertyValue(
+        '--message-liquid-level'
+      ),
+    };
+  })()`);
+
+  assert.deepEqual(inspection, {
+    message: 'Nancy聯絡櫃台',
+    liquidEffect: 'static',
+    liquidDisplay: 'none',
+    shellFillColor: 'rgb(255, 255, 255)',
+    shellStrokeColor: 'rgb(255, 255, 255)',
+    liquidAnimationCount: 0,
+    inlineLiquidLevel: '',
+  });
+}
+
+/** WAAPI 異常時不得留下透明字腔；Display 必須立即退回白色實心字。 */
+async function verifyLiquidAnimationFailureFallback() {
+  await execute(`(() => {
+    const page = document.getElementById('page-layer');
+    window.__displayCoreOriginalPageAnimate = page.animate;
+    page.animate = () => {
+      throw new Error('synthetic WAAPI failure');
+    };
+  })()`);
+
+  try {
+    presentationService.startProgram({
+      messages: [{ message: '001聯絡櫃台', alignment: 'left' }],
+      pageDurationSeconds: 3,
+      repeat: { mode: 'finite', rounds: 1 },
+    });
+    const revision = presentationService.getSnapshot().revision;
+    const inspection = await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        const page = document.getElementById('page-layer');
+        const row = document.querySelector('.message-row');
+        const liquidSvg = row?.querySelector('.message-liquid-svg');
+        const shell = row?.querySelector('.message-glyph-shell');
+        const vessel = row?.querySelector('.message-vessel');
+        if (
+          stage.dataset.revision !== '${revision}' ||
+          row?.dataset.liquidEffect !== 'static'
+        ) {
+          return false;
+        }
+        return {
+          liquidDisplay: liquidSvg === null
+            ? 'none'
+            : getComputedStyle(liquidSvg).display,
+          liquidSvgCount: row?.querySelectorAll('.message-liquid-svg').length,
+          shellFillColor: getComputedStyle(shell)
+            .getPropertyValue('-webkit-text-fill-color'),
+          shellStrokeColor: getComputedStyle(shell)
+            .getPropertyValue('-webkit-text-stroke-color'),
+          outsideBeforeContent: getComputedStyle(vessel, '::before').content,
+          animationCount: page.getAnimations().length,
+          inlineLiquidLevel: page.style.getPropertyValue(
+            '--message-liquid-level'
+          ),
+        };
+      })()`),
+      'WAAPI 失敗時退回白色實心訊息',
+    );
+
+    assert.deepEqual(inspection, {
+      liquidDisplay: 'none',
+      liquidSvgCount: 0,
+      shellFillColor: 'rgb(255, 255, 255)',
+      shellStrokeColor: 'rgb(255, 255, 255)',
+      outsideBeforeContent: 'none',
+      animationCount: 0,
+      inlineLiquidLevel: '',
+    });
+
+    const fallbackTimer = presentationService.timerHandle;
+    assert.ok(
+      fallbackTimer,
+      'WAAPI 降級後仍須以 started 建立 finite 頁面 timer',
+    );
+    assert.equal(fallbackTimer.delay, 3_000);
+    fallbackTimer.cleared = true;
+    fallbackTimer.callback();
+    assert.equal(presentationService.getSnapshot().mode, 'blank');
+    assert.equal(presentationService.getSnapshot().revision, revision + 1);
+  } finally {
+    await execute(`(() => {
+      const page = document.getElementById('page-layer');
+      page.animate = window.__displayCoreOriginalPageAnimate;
+      delete window.__displayCoreOriginalPageAnimate;
+    })()`);
+  }
+}
+
+async function setReducedMotionPreference(value) {
+  await displayWindow.webContents.debugger.sendCommand(
+    'Emulation.setEmulatedMedia',
+    {
+      features: [{
+        name: 'prefers-reduced-motion',
+        value,
+      }],
+    },
+  );
+  await waitFor(
+    () => execute(
+      `matchMedia('(prefers-reduced-motion: reduce)').matches === ` +
+      `${value === 'reduce'}`,
+    ),
+    `prefers-reduced-motion = ${value}`,
+  );
+}
+
+/** 降低動態時不得建立 SVG 流體，透明字腔必須安全恢復為白色實心字。 */
+async function verifyLiquidReducedMotionFallback() {
+  await setReducedMotionPreference('reduce');
+
+  try {
+    presentationService.startProgram({
+      messages: [{ message: 'Nancy聯絡櫃台', alignment: 'left' }],
+      pageDurationSeconds: 3,
+      repeat: { mode: 'finite', rounds: 1 },
+    });
+    const revision = presentationService.getSnapshot().revision;
+    await waitForRevision(revision);
+
+    const inspection = await execute(`(() => {
+      const page = document.getElementById('page-layer');
+      const row = document.querySelector('.message-row');
+      const vessel = row.querySelector('.message-vessel');
+      const svg = vessel.querySelector('.message-liquid-svg');
+      const shell = vessel.querySelector('.message-glyph-shell');
+      return {
+        liquidEffect: row.dataset.liquidEffect,
+        svgCount: vessel.querySelectorAll('.message-liquid-svg').length,
+        svgHidden: svg === null || getComputedStyle(svg).display === 'none',
+        shellFillColor: getComputedStyle(shell)
+          .getPropertyValue('-webkit-text-fill-color'),
+        shellStrokeColor: getComputedStyle(shell)
+          .getPropertyValue('-webkit-text-stroke-color'),
+        outsideBeforeContent: getComputedStyle(vessel, '::before').content,
+        animationCount: page.getAnimations().length,
+        inlineLiquidLevel: page.style.getPropertyValue(
+          '--message-liquid-level'
+        ),
+      };
+    })()`);
+
+    assert.deepEqual(inspection, {
+      liquidEffect: 'static',
+      svgCount: 0,
+      svgHidden: true,
+      shellFillColor: 'rgb(255, 255, 255)',
+      shellStrokeColor: 'rgb(255, 255, 255)',
+      outsideBeforeContent: 'none',
+      animationCount: 0,
+      inlineLiquidLevel: '',
+    });
+  } finally {
+    presentationService.clearPresentation();
+    await setReducedMotionPreference('no-preference');
+  }
+}
+
+/**
+ * 播放途中切換系統降低動態時，必須立即停止酒液時鐘並退回固定白字。
+ * Main 已開始的頁面 timer 不屬於裝飾效果，不得因媒體偏好變更而重設；
+ * 切回一般動態後也只允許下一個新頁重新建立酒液。
+ */
+async function verifyLiquidRuntimeReducedMotionFallback(timers) {
+  await setReducedMotionPreference('no-preference');
+
+  const inspectLiquidState = () => execute(`(() => {
+    const page = document.getElementById('page-layer');
+    const row = document.querySelector('.message-row');
+    const vessel = row?.querySelector('.message-vessel');
+    const svg = vessel?.querySelector('.message-liquid-svg');
+    const shell = vessel?.querySelector('.message-glyph-shell');
+    const liquidAnimationCount = page.getAnimations().filter((animation) =>
+      animation.effect.getKeyframes().some((keyframe) =>
+        Object.hasOwn(keyframe, '--message-liquid-level')
+      )
+    ).length;
+    return {
+      liquidEffect: row?.dataset.liquidEffect ?? null,
+      svgCount: vessel?.querySelectorAll('.message-liquid-svg').length ?? 0,
+      svgDisplay: svg === null || svg === undefined
+        ? 'none'
+        : getComputedStyle(svg).display,
+      shellFillColor: shell
+        ? getComputedStyle(shell).getPropertyValue('-webkit-text-fill-color')
+        : null,
+      shellStrokeColor: shell
+        ? getComputedStyle(shell).getPropertyValue('-webkit-text-stroke-color')
+        : null,
+      liquidAnimationCount,
+      inlineLiquidLevel: page.style.getPropertyValue(
+        '--message-liquid-level'
+      ),
+    };
+  })()`);
+
+  try {
+    presentationService.startProgram({
+      messages: [{ message: 'Nancy聯絡櫃台', alignment: 'left' }],
+      pageDurationSeconds: 3_600,
+      repeat: { mode: 'finite', rounds: 1 },
+    });
+    const revision = presentationService.getSnapshot().revision;
+    await waitForRevision(revision);
+
+    const running = await waitFor(async () => {
+      const state = await inspectLiquidState();
+      return state.liquidEffect === 'active' &&
+        state.svgCount === 1 &&
+        state.svgDisplay === 'block' &&
+        state.liquidAnimationCount === 1
+        ? state
+        : false;
+    }, '播放中的訊息酒液');
+    assert.equal(running.inlineLiquidLevel, '0%');
+
+    // native SVG text 第一次使用內嵌 Didot 時可能完成一次 FontFaceSet loading；
+    // 等該合法 refit 穩定後才量測媒體偏好切換本身是否碰觸 Main timer。
+    await execute(`document.fonts.ready.then(() => new Promise((resolve) => {
+      requestAnimationFrame(() => requestAnimationFrame(resolve));
+    }))`);
+    let stableTimer = null;
+    let stableTimerSince = 0;
+    await waitFor(async () => {
+      const state = await inspectLiquidState();
+      const candidate = presentationService.timerHandle;
+      if (
+        state.liquidEffect !== 'active' ||
+        state.svgCount !== 1 ||
+        state.liquidAnimationCount !== 1 ||
+        !candidate ||
+        candidate.cleared
+      ) {
+        stableTimer = null;
+        stableTimerSince = 0;
+        return false;
+      }
+      if (candidate !== stableTimer) {
+        stableTimer = candidate;
+        stableTimerSince = Date.now();
+        return false;
+      }
+      return Date.now() - stableTimerSince >= 300 &&
+        state.liquidEffect === 'active' &&
+        state.svgCount === 1 &&
+        state.liquidAnimationCount === 1;
+    }, '內嵌字型完成後至少 300ms 不再 refit 的穩定酒液 layout');
+
+    const pageTimer = stableTimer;
+    const timerHandleCount = timers.handles.length;
+    assert.ok(pageTimer, '播放開始後 Main 必須已有 started timer');
+    assert.equal(pageTimer.cleared, false);
+    assert.equal(pageTimer.delay, 3_600_000);
+
+    await setReducedMotionPreference('reduce');
+    const reduced = await waitFor(async () => {
+      const state = await inspectLiquidState();
+      return state.liquidEffect === 'static' &&
+        state.svgCount === 0 &&
+        state.liquidAnimationCount === 0 &&
+        state.inlineLiquidLevel === ''
+        ? state
+        : false;
+    }, '播放途中切換 reduce 後停止酒液並退回白字');
+
+    assert.deepEqual(reduced, {
+      liquidEffect: 'static',
+      svgCount: 0,
+      svgDisplay: 'none',
+      shellFillColor: 'rgb(255, 255, 255)',
+      shellStrokeColor: 'rgb(255, 255, 255)',
+      liquidAnimationCount: 0,
+      inlineLiquidLevel: '',
+    });
+    assert.equal(
+      presentationService.timerHandle,
+      pageTimer,
+      '降低動態只取消 Renderer 裝飾，不得重設 Main started timer',
+    );
+    assert.equal(pageTimer.cleared, false);
+    assert.equal(timers.handles.length, timerHandleCount);
+
+    await setReducedMotionPreference('no-preference');
+    await new Promise((resolve) => setTimeout(resolve, 120));
+    assert.deepEqual(
+      await inspectLiquidState(),
+      reduced,
+      '切回 no-preference 不得在同一頁重新啟動酒液',
+    );
+    assert.equal(presentationService.timerHandle, pageTimer);
+    assert.equal(pageTimer.cleared, false);
+    assert.equal(timers.handles.length, timerHandleCount);
+
+    presentationService.startProgram({
+      messages: [{ message: '002請至前廳', alignment: 'left' }],
+      pageDurationSeconds: 3_600,
+      repeat: { mode: 'finite', rounds: 1 },
+    });
+    const nextRevision = presentationService.getSnapshot().revision;
+    await waitForRevision(nextRevision);
+    const nextPage = await waitFor(async () => {
+      const state = await inspectLiquidState();
+      return state.liquidEffect === 'active' &&
+        state.svgCount === 1 &&
+        state.svgDisplay === 'block' &&
+        state.liquidAnimationCount === 1
+        ? state
+        : false;
+    }, '切回 no-preference 後的新頁重新啟動酒液');
+    assert.equal(nextPage.liquidEffect, 'active');
+    assert.equal(pageTimer.cleared, true, '換頁才應取消上一頁 timer');
+  } finally {
+    presentationService.clearPresentation();
+    await setReducedMotionPreference('no-preference');
+  }
+}
+
+/**
+ * 真實驗證管理員的訊息字體效果設定：關閉後立即清除 SVG／WAAPI 並顯示
+ * 固定白字；重新開啟時不從頁面中途重播，下一個新頁才由 0% 啟動。
+ */
+async function verifyMessageLiquidSettingToggle() {
+  const inspectLiquidState = () => execute(`(() => {
+    const stage = document.getElementById('display-stage');
+    const page = document.getElementById('page-layer');
+    const row = document.querySelector('.message-row');
+    const vessel = row?.querySelector('.message-vessel');
+    const shell = vessel?.querySelector('.message-glyph-shell');
+    return {
+      settingsRevision: Number(stage.dataset.settingsRevision),
+      fittedSettingsRevision: Number(stage.dataset.fittedSettingsRevision),
+      effect: row?.dataset.liquidEffect ?? null,
+      svgCount: vessel?.querySelectorAll('.message-liquid-svg').length ?? 0,
+      animationCount: page.getAnimations().filter((animation) =>
+        animation.effect.getKeyframes().some((keyframe) =>
+          Object.hasOwn(keyframe, '--message-liquid-level')
+        )
+      ).length,
+      inlineLiquidLevel: page.style.getPropertyValue(
+        '--message-liquid-level'
+      ),
+      shellFillColor: shell
+        ? getComputedStyle(shell).getPropertyValue('-webkit-text-fill-color')
+        : null,
+      shellStrokeColor: shell
+        ? getComputedStyle(shell).getPropertyValue('-webkit-text-stroke-color')
+        : null,
+    };
+  })()`);
+
+  presentationService.startProgram({
+    messages: [{ message: 'Nancy聯絡櫃台', alignment: 'left' }],
+    pageDurationSeconds: 3_600,
+    repeat: { mode: 'finite', rounds: 1 },
+  });
+  const initialPresentationRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(initialPresentationRevision);
+  const initial = await waitFor(async () => {
+    const state = await inspectLiquidState();
+    return state.effect === 'active' &&
+      state.svgCount === 1 &&
+      state.animationCount === 1
+      ? state
+      : false;
+  }, '設定預設啟用訊息倒酒效果');
+  assert.equal(initial.inlineLiquidLevel, '0%');
+
+  const disabledConfig = structuredClone(settingsManager.getSnapshot().config);
+  disabledConfig.appearance.messageLiquidEffectEnabled = false;
+  const disabledSettingsRevision = settingsManager.publish(disabledConfig).revision;
+  const disabled = await waitFor(async () => {
+    const state = await inspectLiquidState();
+    return state.settingsRevision === disabledSettingsRevision &&
+      state.fittedSettingsRevision === disabledSettingsRevision &&
+      state.effect === 'static' &&
+      state.svgCount === 0 &&
+      state.animationCount === 0 &&
+      state.inlineLiquidLevel === ''
+      ? state
+      : false;
+  }, '管理員關閉效果後立即停止酒液並退回白字');
+  assert.equal(disabled.shellFillColor, 'rgb(255, 255, 255)');
+  assert.equal(disabled.shellStrokeColor, 'rgb(255, 255, 255)');
+  assert.equal(
+    settingsManager.getSnapshot().config.appearance.messageLiquidEffectEnabled,
+    false,
+  );
+
+  const enabledConfig = structuredClone(settingsManager.getSnapshot().config);
+  enabledConfig.appearance.messageLiquidEffectEnabled = true;
+  const enabledSettingsRevision = settingsManager.publish(enabledConfig).revision;
+  const samePage = await waitFor(async () => {
+    const state = await inspectLiquidState();
+    return state.settingsRevision === enabledSettingsRevision &&
+      state.fittedSettingsRevision === enabledSettingsRevision &&
+      state.effect === 'static' &&
+      state.svgCount === 0 &&
+      state.animationCount === 0
+      ? state
+      : false;
+  }, '重新啟用後不在同一頁中途重播酒液');
+  assert.equal(samePage.inlineLiquidLevel, '');
+
+  presentationService.startProgram({
+    messages: [{ message: '002請至前廳', alignment: 'left' }],
+    pageDurationSeconds: 3_600,
+    repeat: { mode: 'finite', rounds: 1 },
+  });
+  const nextPresentationRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(nextPresentationRevision);
+  const nextPage = await waitFor(async () => {
+    const state = await inspectLiquidState();
+    return state.effect === 'active' &&
+      state.svgCount === 1 &&
+      state.animationCount === 1
+      ? state
+      : false;
+  }, '重新啟用後的新頁由 0% 啟動酒液');
+  assert.equal(nextPage.inlineLiquidLevel, '0%');
+  presentationService.clearPresentation();
 }
 
 /** 關閉 Logo 後，一般訊息的大時鐘仍必須固定在右上角。 */
@@ -1081,7 +2005,7 @@ async function verifyClockWithoutLogo() {
       const clock = clockElement.getBoundingClientRect();
       if (
         document.getElementById('display-stage').dataset.mode !== 'blank' ||
-        clockElement.hidden || !/^\\d{2}:\\d{2}:\\d{2}$/.test(clockElement.textContent)
+        clockElement.hidden || !/^\\d{2}:\\d{2}$/.test(clockElement.textContent)
       ) {
         return false;
       }
@@ -1101,6 +2025,352 @@ async function verifyClockWithoutLogo() {
   assert.ok(standbyClock.centerErrorX <= 1);
   assert.ok(standbyClock.centerErrorY <= 1);
   assert.ok(standbyClock.fontSize >= standbyClock.minimumLargeFontSize);
+
+  const independentClockConfig = structuredClone(
+    settingsManager.getSnapshot().config,
+  );
+  independentClockConfig.appearance.fontSizePercent = 50;
+  independentClockConfig.appearance.standbyClockSizePercent = 100;
+  const independentClockRevision = settingsManager.publish(
+    independentClockConfig,
+  ).revision;
+  const independentClockSize = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      if (stage.dataset.settingsRevision !== '${independentClockRevision}') {
+        return false;
+      }
+      return Number.parseFloat(
+        getComputedStyle(document.getElementById('display-clock')).fontSize
+      );
+    })()`),
+    '待機時間不受一般訊息字級影響',
+  );
+  assert.ok(
+    Math.abs(independentClockSize - standbyClock.fontSize) <= 0.5,
+    '一般訊息字級不得連動待機時間',
+  );
+
+  const enlargedClockConfig = structuredClone(
+    settingsManager.getSnapshot().config,
+  );
+  enlargedClockConfig.appearance.standbyClockSizePercent = 150;
+  const enlargedClockRevision = settingsManager.publish(
+    enlargedClockConfig,
+  ).revision;
+  const enlargedClockSize = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      if (stage.dataset.settingsRevision !== '${enlargedClockRevision}') {
+        return false;
+      }
+      return Number.parseFloat(
+        getComputedStyle(document.getElementById('display-clock')).fontSize
+      );
+    })()`),
+    '放大待機時間',
+  );
+  assert.ok(
+    enlargedClockSize >= standbyClock.fontSize * 1.4,
+    '待機時間大小設定必須獨立生效',
+  );
+
+  // 設定頁允許 50%～300%；每個代表性級距都必須真的放大，且不能溢出畫布。
+  const standbyClockMeasurements = [];
+  for (const percentage of [50, 100, 150, 200, 250, 300]) {
+    const rangeConfig = structuredClone(settingsManager.getSnapshot().config);
+    rangeConfig.appearance.standbyClockSizePercent = percentage;
+    const rangeRevision = settingsManager.publish(rangeConfig).revision;
+    const measurement = await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        if (stage.dataset.settingsRevision !== '${rangeRevision}') {
+          return false;
+        }
+        const stageBounds = stage.getBoundingClientRect();
+        const clockElement = document.getElementById('display-clock');
+        const clockBounds = clockElement.getBoundingClientRect();
+        return {
+          percentage: ${percentage},
+          fontSize: Number.parseFloat(getComputedStyle(clockElement).fontSize),
+          fitsInline:
+            clockBounds.left >= stageBounds.left - 0.5 &&
+            clockBounds.right <= stageBounds.right + 0.5,
+        };
+      })()`),
+      `待機時間 ${percentage}% 實際字級`,
+    );
+    standbyClockMeasurements.push(measurement);
+  }
+
+  for (let index = 1; index < standbyClockMeasurements.length; index += 1) {
+    assert.ok(
+      standbyClockMeasurements[index].fontSize >
+        standbyClockMeasurements[index - 1].fontSize * 1.1,
+      `待機時間級距未持續放大：${JSON.stringify(standbyClockMeasurements)}`,
+    );
+  }
+  assert.equal(
+    standbyClockMeasurements.every(({ fitsInline }) => fitsInline),
+    true,
+    `待機時間不得超出畫布：${JSON.stringify(standbyClockMeasurements)}`,
+  );
+
+  const resetClockConfig = structuredClone(settingsManager.getSnapshot().config);
+  resetClockConfig.appearance.standbyClockSizePercent = 100;
+  const resetClockRevision = settingsManager.publish(resetClockConfig).revision;
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.settingsRevision === ` +
+      `'${resetClockRevision}'`,
+    ),
+    '還原待機時間大小',
+  );
+}
+
+/** 驗證五種訊息背景、離線典雅宋體與材質只作用於一般訊息頁。 */
+async function verifyLuxuryMessageAppearance() {
+  presentationService.startProgram({
+    messages: [
+      { message: 'Nancy請至前廳', alignment: 'left' },
+      { message: '007請至櫃台', alignment: 'left' },
+      { message: 'Alexandra聯絡櫃台', alignment: 'left' },
+    ],
+    pageDurationSeconds: 3_600,
+    repeat: { mode: 'finite', rounds: 1 },
+  });
+  const pageRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(pageRevision);
+
+  const presets = [
+    'solid',
+    'obsidian',
+    'dark-marble',
+    'walnut',
+    'emerald-onyx',
+  ];
+  const materialAssetFileNames = Object.freeze({
+    obsidian: 'obsidian.jpg',
+    'dark-marble': 'dark-marble.jpg',
+    walnut: 'walnut.jpg',
+    'emerald-onyx': 'emerald-onyx.jpg',
+  });
+  const materialStatistics = new Map();
+  let previousBackgroundStatistics = null;
+
+  for (const preset of presets) {
+    const config = structuredClone(settingsManager.getSnapshot().config);
+    config.logo.enabled = false;
+    config.dateTime.enabled = false;
+    config.appearance.backgroundColor = '#102030';
+    config.appearance.fontColor = '#F4F0E7';
+    config.appearance.fontFamily =
+      '"DisplayCore Source Han Serif TC", "Noto Serif TC", serif';
+    config.appearance.fontSizePercent = 100;
+    config.appearance.messageBackgroundPreset = preset;
+    const settingsRevision = settingsManager.publish(config).revision;
+
+    const appearance = await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        if (
+          stage.dataset.mode !== 'page' ||
+          stage.dataset.settingsRevision !== '${settingsRevision}' ||
+          stage.dataset.messageBackground !== '${preset}' ||
+          stage.dataset.messageBackgroundState !== 'ready'
+        ) {
+          return false;
+        }
+        const style = getComputedStyle(stage);
+        const overlay = getComputedStyle(stage, '::after');
+        return {
+          backgroundColor: style.backgroundColor,
+          backgroundImage: style.backgroundImage,
+          overlayContent: overlay.content,
+          fontColor: style.color,
+          fontFamily: getComputedStyle(
+            document.querySelector('.message-row')
+          ).fontFamily,
+        };
+      })()`),
+      `訊息背景 ${preset}`,
+    );
+
+    assert.equal(appearance.fontColor, 'rgb(244, 240, 231)');
+    assert.match(appearance.fontFamily, /DisplayCore Source Han Serif TC/);
+    assert.equal(
+      await waitFor(
+        () => execute(
+          `document.fonts.check(` +
+          `'600 32px "DisplayCore Source Han Serif TC"', '高級會所')`,
+        ),
+        '內嵌繁體中文字型完成載入',
+      ),
+      true,
+    );
+    if (preset === 'solid') {
+      const previousLayoutGeneration = await execute(
+        `Number(document.getElementById('display-stage')` +
+        `.dataset.layoutGeneration)`,
+      );
+      await execute(`document.fonts.dispatchEvent(new Event('loadingdone'))`);
+      const fontRefit = await waitFor(
+        () => execute(`(() => {
+          const stage = document.getElementById('display-stage');
+          const layoutGeneration = Number(stage.dataset.layoutGeneration);
+          if (
+            stage.dataset.fittedSettingsRevision !== '${settingsRevision}' ||
+            layoutGeneration <= ${previousLayoutGeneration}
+          ) {
+            return false;
+          }
+          return {
+            layoutGeneration,
+            rowsProtected: [...document.querySelectorAll('.message-row')]
+              .every((row) => {
+                const text = row.querySelector('.message-text');
+                return !text || text.getBoundingClientRect().width <=
+                  row.getBoundingClientRect().width + 0.5;
+              }),
+          };
+        })()`),
+        '內嵌字型載入完成後重新量測訊息',
+      );
+      assert.equal(fontRefit.rowsProtected, true);
+    }
+    if (preset === 'solid') {
+      assert.equal(appearance.backgroundColor, 'rgb(16, 32, 48)');
+      assert.equal(appearance.backgroundImage, 'none');
+      assert.equal(appearance.overlayContent, 'none');
+      previousBackgroundStatistics =
+        await captureMessageBackgroundStatistics(previousBackgroundStatistics);
+    } else {
+      assert.equal(
+        appearance.backgroundImage,
+        `url("displaycore://app/assets/message-backgrounds/` +
+        `${materialAssetFileNames[preset]}")`,
+      );
+      assert.doesNotMatch(appearance.backgroundImage, /gradient/);
+      assert.notEqual(appearance.overlayContent, 'none');
+      const statistics = await captureMessageBackgroundStatistics(
+        previousBackgroundStatistics,
+      );
+      previousBackgroundStatistics = statistics;
+      materialStatistics.set(preset, statistics);
+      assert.ok(
+        statistics.averageLuma >= 55,
+        `${preset} 材質過暗：${JSON.stringify(statistics)}`,
+      );
+      assert.ok(
+        statistics.averageLuma <= 92,
+        `${preset} 材質不得亮成高彩度色塊：${JSON.stringify(statistics)}`,
+      );
+      assert.ok(
+        statistics.lumaDeviation >= 4,
+        `${preset} 缺少肉眼可辨識紋理：${JSON.stringify(statistics)}`,
+      );
+      assert.ok(
+        statistics.lumaP95 <= 145 && statistics.lumaP99 <= 190,
+        `${preset} 材質亮區會干擾任意位置文字：${JSON.stringify(statistics)}`,
+      );
+    }
+
+    await captureVisualQa(`message-${preset}.png`);
+  }
+
+  const materialEntries = [...materialStatistics.entries()];
+  for (let firstIndex = 0; firstIndex < materialEntries.length; firstIndex += 1) {
+    for (
+      let secondIndex = firstIndex + 1;
+      secondIndex < materialEntries.length;
+      secondIndex += 1
+    ) {
+      const [firstName, first] = materialEntries[firstIndex];
+      const [secondName, second] = materialEntries[secondIndex];
+      const firstMean = first.spatialLuma.reduce(
+        (total, value) => total + value,
+        0,
+      ) / first.spatialLuma.length;
+      const secondMean = second.spatialLuma.reduce(
+        (total, value) => total + value,
+        0,
+      ) / second.spatialLuma.length;
+      const firstCentered = first.spatialLuma.map((value) => value - firstMean);
+      const secondCentered = second.spatialLuma.map(
+        (value) => value - secondMean,
+      );
+      const firstScale = Math.sqrt(
+        firstCentered.reduce((total, value) => total + (value ** 2), 0) /
+          firstCentered.length,
+      );
+      const secondScale = Math.sqrt(
+        secondCentered.reduce((total, value) => total + (value ** 2), 0) /
+          secondCentered.length,
+      );
+      const textureDistance = Math.sqrt(
+        firstCentered.reduce((total, value, index) =>
+          total + ((
+            (value / firstScale) - (secondCentered[index] / secondScale)
+          ) ** 2), 0,
+        ) / firstCentered.length,
+      );
+      assert.ok(
+        textureDistance >= 0.35,
+        `${firstName} 與 ${secondName} 空間紋理過於相似：${JSON.stringify({
+          textureDistance,
+          first,
+          second,
+        })}`,
+      );
+    }
+  }
+
+  // contain 邏輯解析度會產生上下邊帶；材質模式不得露出舊的純色（例如藍色）。
+  const letterboxConfig = structuredClone(settingsManager.getSnapshot().config);
+  letterboxConfig.appearance.messageBackgroundPreset = 'emerald-onyx';
+  letterboxConfig.appearance.backgroundColor = '#102030';
+  letterboxConfig.display.renderResolution = '1920x1080';
+  const letterboxSettingsRevision = settingsManager.publish(
+    letterboxConfig,
+  ).revision;
+  displayWindow.setContentSize(1600, 1000, false);
+  const materialLetterbox = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const surface = document.getElementById('display-render-surface')
+        .getBoundingClientRect();
+      if (
+        stage.dataset.settingsRevision !== '${letterboxSettingsRevision}' ||
+        stage.dataset.mode !== 'page' ||
+        stage.dataset.messageBackground !== 'emerald-onyx' ||
+        window.innerWidth !== 1600 || window.innerHeight !== 1000 ||
+        surface.top <= 1
+      ) {
+        return false;
+      }
+      return {
+        viewportBackground: getComputedStyle(document.body).backgroundColor,
+        surfaceTop: surface.top,
+      };
+    })()`),
+    '材質訊息的非 16:9 邊帶背景',
+  );
+  assert.equal(materialLetterbox.viewportBackground, 'rgb(15, 48, 38)');
+  assert.ok(materialLetterbox.surfaceTop > 1);
+
+  presentationService.clearPresentation();
+  const blankRevision = presentationService.getSnapshot().revision;
+  await waitForRevision(blankRevision, false);
+  assert.equal(
+    await execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      return stage.dataset.mode === 'blank' &&
+        getComputedStyle(stage).backgroundImage === 'none' &&
+        getComputedStyle(stage, '::after').content === 'none';
+    })()`),
+    true,
+    '訊息材質不得污染待機背景',
+  );
 }
 
 /**
@@ -1110,6 +2380,7 @@ async function verifyClockWithoutLogo() {
 async function captureSandFrame({
   minimumProgress,
   maximumProgress,
+  minimumRightTailMassRatio = 0,
   expectedVisibleSource,
   description,
 }) {
@@ -1121,6 +2392,8 @@ async function captureSandFrame({
       const layer = layerElement.getBoundingClientRect();
       const canvas = document.getElementById('standby-sand-transition');
       const canvasBox = canvas.getBoundingClientRect();
+      const particleCanvas = document.getElementById('standby-sand-particles');
+      const particleCanvasBox = particleCanvas.getBoundingClientRect();
       const images = [...document.querySelectorAll('.standby-background-image')];
       const visibleImage = images.find((image) => !image.hidden);
 
@@ -1129,6 +2402,8 @@ async function captureSandFrame({
         stage.dataset.standbyTransition !== 'sand' ||
         progress < ${minimumProgress} || progress > ${maximumProgress} ||
         canvas.hidden || canvas.width <= 1 || canvas.height <= 1 ||
+        particleCanvas.hidden ||
+        particleCanvas.width <= 1 || particleCanvas.height <= 1 ||
         visibleImage?.getAttribute('src') !== '${expectedVisibleSource}'
       ) {
         return false;
@@ -1183,65 +2458,101 @@ async function captureSandFrame({
       };
 
       const visibleBox = visibleImage.getBoundingClientRect();
-      const particleDraws = canvas.__displayCoreSandTelemetry?.draws ?? [];
-      const particleHorizontalMass = new Array(5).fill(0);
-      for (const particle of particleDraws) {
-        const bucket = Math.min(
-          particleHorizontalMass.length - 1,
-          Math.max(
-            0,
-            Math.floor(
-              particle.centerX / canvas.width * particleHorizontalMass.length,
-            ),
-          ),
-        );
-        particleHorizontalMass[bucket] +=
-          particle.opacity * particle.width * particle.height;
-      }
-      const particleMass = (particle) =>
-        particle.opacity * particle.width * particle.height;
-      const maximumOpacity = particleDraws.reduce(
-        (maximum, particle) => Math.max(maximum, particle.opacity),
+      // 粒子已改由單次 putImageData 寫入獨立 Canvas；直接量測最後輸出像素，
+      // 避免測試綁死 drawImage 等內部實作，也確保數據與肉眼截圖完全一致。
+      const particleContext = particleCanvas.getContext('2d');
+      const particlePixels = particleContext.getImageData(
         0,
-      );
-      const strongParticles = particleDraws.filter(
-        (particle) => particle.opacity >= maximumOpacity * 0.55,
-      );
-      const weightedMean = (particles, property) => {
-        const totalMass = particles.reduce(
-          (total, particle) => total + particleMass(particle),
-          0,
-        );
-        if (totalMass <= 0) {
-          return 0;
+        0,
+        particleCanvas.width,
+        particleCanvas.height,
+      ).data;
+      const particleHorizontalMass = new Array(5).fill(0);
+      let maximumAlpha = 0;
+      let visiblePixelCount = 0;
+      let totalParticleMass = 0;
+      let weightedX = 0;
+      let weightedY = 0;
+      let weightedY2 = 0;
+      let longestHorizontalRun = 0;
+      for (let y = 0; y < particleCanvas.height; y += 1) {
+        let horizontalRun = 0;
+        for (let x = 0; x < particleCanvas.width; x += 1) {
+          const alpha = particlePixels[(y * particleCanvas.width + x) * 4 + 3];
+          maximumAlpha = Math.max(maximumAlpha, alpha);
+          if (alpha < 8) {
+            horizontalRun = 0;
+            continue;
+          }
+
+          horizontalRun += 1;
+          longestHorizontalRun = Math.max(longestHorizontalRun, horizontalRun);
+          visiblePixelCount += 1;
+          totalParticleMass += alpha;
+          weightedX += (x + 0.5) * alpha;
+          weightedY += (y + 0.5) * alpha;
+          weightedY2 += (y + 0.5) ** 2 * alpha;
+          const bucket = Math.min(
+            particleHorizontalMass.length - 1,
+            Math.floor((x + 0.5) / particleCanvas.width *
+              particleHorizontalMass.length),
+          );
+          particleHorizontalMass[bucket] += alpha;
         }
-        return particles.reduce(
-          (total, particle) =>
-            total + particle[property] * particleMass(particle),
-          0,
-        ) / totalMass;
-      };
-      const weightedSpread = (particles, property, mean) => {
-        const totalMass = particles.reduce(
-          (total, particle) => total + particleMass(particle),
-          0,
-        );
-        if (totalMass <= 0) {
-          return 0;
+      }
+      const destinationCenterX = totalParticleMass <= 0
+        ? 0
+        : weightedX / totalParticleMass;
+      const destinationCenterY = totalParticleMass <= 0
+        ? 0
+        : weightedY / totalParticleMass;
+      const rightTailMassRatio = totalParticleMass <= 0
+        ? 0
+        : particleHorizontalMass[4] / totalParticleMass;
+      if (
+        ${minimumRightTailMassRatio} > 0 &&
+        rightTailMassRatio <= ${minimumRightTailMassRatio}
+      ) {
+        return false;
+      }
+      let strongParticleMass = 0;
+      let strongWeightedX = 0;
+      let strongWeightedY = 0;
+      const strongAlphaThreshold = Math.max(8, maximumAlpha * 0.55);
+      for (let y = 0; y < particleCanvas.height; y += 1) {
+        for (let x = 0; x < particleCanvas.width; x += 1) {
+          const alpha = particlePixels[(y * particleCanvas.width + x) * 4 + 3];
+          if (alpha < strongAlphaThreshold) {
+            continue;
+          }
+          strongParticleMass += alpha;
+          strongWeightedX += (x + 0.5) * alpha;
+          strongWeightedY += (y + 0.5) * alpha;
         }
-        return Math.sqrt(particles.reduce(
-          (total, particle) => total +
-            (particle[property] - mean) ** 2 * particleMass(particle),
-          0,
-        ) / totalMass);
-      };
-      const strongSourceCenterX = weightedMean(strongParticles, 'sourceCenterX');
-      const strongSourceCenterY = weightedMean(strongParticles, 'sourceCenterY');
-      const sourceCenterX = weightedMean(particleDraws, 'sourceCenterX');
-      const sourceCenterY = weightedMean(particleDraws, 'sourceCenterY');
-      const destinationCenterX = weightedMean(particleDraws, 'centerX');
-      const destinationCenterY = weightedMean(particleDraws, 'centerY');
-      const surfaceCenterY = strongSourceCenterY / canvas.height;
+      }
+      const totalCanvasPixels = particleCanvas.width * particleCanvas.height;
+      const verticalVariance = totalParticleMass <= 0
+        ? 0
+        : weightedY2 / totalParticleMass - destinationCenterY ** 2;
+      const surfaceCandidates = Array.from({ length: 31 }, (_, index) => {
+        const centerY = 0.04 + index / 30 * 0.92;
+        const region = sampleRegion(
+          0.04,
+          0.96,
+          Math.max(0.005, centerY - 0.018),
+          Math.min(0.995, centerY + 0.018),
+          48,
+          4,
+        );
+        const erodedRatio = region.transparentRatio + region.partial /
+          (region.transparent + region.partial + region.opaque) * 0.5;
+        return { centerY, region, distance: Math.abs(erodedRatio - 0.5) };
+      });
+      const activeSurfaceCandidate = surfaceCandidates.reduce(
+        (closest, candidate) =>
+          candidate.distance < closest.distance ? candidate : closest,
+      );
+      const surfaceCenterY = activeSurfaceCandidate.centerY;
       const surfaceMinimumY = Math.max(0.005, surfaceCenterY - 0.04);
       const surfaceMaximumY = Math.min(0.995, surfaceCenterY + 0.04);
       const toBox = (box) => ({
@@ -1263,6 +2574,7 @@ async function captureSandFrame({
         progress,
         transition: stage.dataset.standbyTransition,
         canvasCoversLayer: coversLayer(canvasBox),
+        particleCanvasCoversLayer: coversLayer(particleCanvasBox),
         visibleSource: visibleImage.getAttribute('src'),
         visibleImageCoversLayer: coversLayer(visibleBox),
         layerBox: toBox(layer),
@@ -1283,20 +2595,29 @@ async function captureSandFrame({
           leftColumn: sampleRegion(0.115, 0.125, 0.04, 0.96, 1, 64),
         },
         particleTelemetry: {
-          drawCount: particleDraws.length,
+          canvasWidth: particleCanvas.width,
+          canvasHeight: particleCanvas.height,
+          visiblePixelCount,
+          visiblePixelCoverage: visiblePixelCount / totalCanvasPixels,
           horizontalMass: particleHorizontalMass,
           strongestBucket: particleHorizontalMass.indexOf(
             Math.max(...particleHorizontalMass),
           ),
-          strongSourceCenterX: strongSourceCenterX / canvas.width,
-          strongSourceCenterY: surfaceCenterY,
-          sourceCenterX: sourceCenterX / canvas.width,
-          sourceCenterY: sourceCenterY / canvas.height,
-          destinationCenterX: destinationCenterX / canvas.width,
-          destinationCenterY: destinationCenterY / canvas.height,
+          strongCenterX: strongParticleMass <= 0
+            ? 0
+            : strongWeightedX / strongParticleMass / particleCanvas.width,
+          strongCenterY: strongParticleMass <= 0
+            ? 0
+            : strongWeightedY / strongParticleMass / particleCanvas.height,
+          destinationCenterX: destinationCenterX / particleCanvas.width,
+          destinationCenterY: destinationCenterY / particleCanvas.height,
+          alphaCoverage:
+            totalParticleMass / (255 * totalCanvasPixels),
+          rightTailMassRatio,
           destinationVerticalSpread:
-            weightedSpread(particleDraws, 'centerY', destinationCenterY) /
-            canvas.height,
+            Math.sqrt(Math.max(0, verticalVariance)) / particleCanvas.height,
+          longestHorizontalRunRatio:
+            longestHorizontalRun / particleCanvas.width,
         },
         activeSurface: {
           centerY: surfaceCenterY,
@@ -1341,79 +2662,6 @@ async function captureSandFrame({
   );
 }
 
-/**
- * 僅在 smoke Renderer 包裝既有 Canvas 方法；每次仍呼叫原生 drawImage，
- * 但額外記錄小型來源圖塊的實際繪製位置，避免把侵蝕圓反鋸齒誤判成沙粒。
- */
-async function installSandParticleTelemetry() {
-  const installed = await execute(`(() => {
-    const canvas = document.getElementById('standby-sand-transition');
-    const context = canvas.getContext('2d');
-    if (!context) {
-      return false;
-    }
-    if (canvas.__displayCoreSandTelemetry) {
-      return true;
-    }
-
-    const telemetry = { draws: [] };
-    const originalClearRect = context.clearRect.bind(context);
-    const originalDrawImage = context.drawImage.bind(context);
-
-    context.clearRect = (...args) => {
-      telemetry.draws = [];
-      return originalClearRect(...args);
-    };
-    context.drawImage = (...args) => {
-      if (args.length === 9) {
-        const destinationX = Number(args[5]);
-        const destinationY = Number(args[6]);
-        const destinationWidth = Number(args[7]);
-        const destinationHeight = Number(args[8]);
-        const isParticle =
-          destinationWidth > 0 && destinationHeight > 0 &&
-          destinationWidth < canvas.width * 0.1 &&
-          destinationHeight < canvas.height * 0.1;
-        if (isParticle) {
-          const image = args[0];
-          const sourceX = Number(args[1]);
-          const sourceY = Number(args[2]);
-          const sourceWidth = Number(args[3]);
-          const sourceHeight = Number(args[4]);
-          const coverScale = Math.max(
-            canvas.width / image.naturalWidth,
-            canvas.height / image.naturalHeight,
-          );
-          const coverSourceWidth = canvas.width / coverScale;
-          const coverSourceHeight = canvas.height / coverScale;
-          const coverSourceX = (image.naturalWidth - coverSourceWidth) / 2;
-          const coverSourceY = (image.naturalHeight - coverSourceHeight) / 2;
-          telemetry.draws.push({
-            centerX: destinationX + destinationWidth / 2,
-            centerY: destinationY + destinationHeight / 2,
-            sourceCenterX:
-              (sourceX + sourceWidth / 2 - coverSourceX) * coverScale,
-            sourceCenterY:
-              (sourceY + sourceHeight / 2 - coverSourceY) * coverScale,
-            width: destinationWidth,
-            height: destinationHeight,
-            opacity: context.globalAlpha,
-          });
-        }
-      }
-      return originalDrawImage(...args);
-    };
-
-    Object.defineProperty(canvas, '__displayCoreSandTelemetry', {
-      value: telemetry,
-      configurable: true,
-    });
-    return true;
-  })()`);
-
-  assert.equal(installed, true, '必須能觀測真實 Canvas 沙粒繪製');
-}
-
 function assertImagesRemainStationary(imageMotion, description) {
   assert.equal(imageMotion.length, 2, `${description} 雙緩衝圖片`);
   for (const image of imageMotion) {
@@ -1452,47 +2700,449 @@ function assertSandGeometryStationary(reference, frame, description) {
   );
 }
 
-/** 驗證當下沙丘表面整體受風，沒有退化成同一高度由左掃到右的條帶。 */
+function srgbChannelToLinear(channel) {
+  const normalized = channel / 255;
+  return normalized <= 0.04045
+    ? normalized / 12.92
+    : ((normalized + 0.055) / 1.055) ** 2.4;
+}
+
+function resolveHue(red, green, blue) {
+  const maximum = Math.max(red, green, blue);
+  const minimum = Math.min(red, green, blue);
+  const delta = maximum - minimum;
+
+  if (delta === 0) {
+    return null;
+  }
+
+  let hue;
+  if (maximum === red) {
+    hue = 60 * (((green - blue) / delta) % 6);
+  } else if (maximum === green) {
+    hue = 60 * (((blue - red) / delta) + 2);
+  } else {
+    hue = 60 * (((red - green) / delta) + 4);
+  }
+
+  return hue < 0 ? hue + 360 : hue;
+}
+
+/** 從真實 Electron compositor 量測材質，不把九個白色數字誤算成背景。 */
+async function captureEmergencyMaterialStatistics(tone) {
+  await execute(`(() => {
+    for (const cell of document.querySelectorAll('.fill-cell')) {
+      cell.style.setProperty('color', 'transparent', 'important');
+      cell.style.setProperty('-webkit-text-fill-color', 'transparent', 'important');
+      cell.style.setProperty('text-shadow', 'none', 'important');
+      cell.style.setProperty('box-shadow', 'none', 'important');
+    }
+  })()`);
+  await execute(`new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  })`);
+
+  let image;
+  try {
+    image = await displayWindow.webContents.capturePage();
+    const visualQaDirectory =
+      process.env.DISPLAYCORE_VISUAL_QA_DIRECTORY?.trim();
+    if (visualQaDirectory) {
+      await fileSystem.mkdir(visualQaDirectory, { recursive: true });
+      await fileSystem.writeFile(
+        path.join(visualQaDirectory, `emergency-${tone}-background-only.png`),
+        image.toPNG(),
+      );
+    }
+  } finally {
+    await execute(`(() => {
+      for (const cell of document.querySelectorAll('.fill-cell')) {
+        cell.removeAttribute('style');
+      }
+    })()`);
+  }
+
+  const { width, height } = image.getSize();
+  const bitmap = image.toBitmap();
+  assert.equal(
+    bitmap.length,
+    width * height * 4,
+    'Electron bitmap 尺寸必須與 compositor 截圖一致',
+  );
+  const step = Math.max(4, Math.floor(Math.min(width, height) / 360));
+  const lumas = [];
+  const relativeLuminances = [];
+  const colorBins = new Map();
+  let sampledPixelCount = 0;
+  let chromaticPixelCount = 0;
+  let redPixelCount = 0;
+  let greenPixelCount = 0;
+  let redTotal = 0;
+  let greenTotal = 0;
+  let blueTotal = 0;
+
+  for (let y = 0; y < height; y += step) {
+    for (let x = 0; x < width; x += step) {
+      const offset = ((y * width) + x) * 4;
+      const blue = bitmap[offset];
+      const green = bitmap[offset + 1];
+      const red = bitmap[offset + 2];
+      const maximum = Math.max(red, green, blue);
+      const minimum = Math.min(red, green, blue);
+      const saturation = maximum === 0 ? 0 : (maximum - minimum) / maximum;
+      const hue = resolveHue(red, green, blue);
+      const luma = (red * 0.2126) + (green * 0.7152) + (blue * 0.0722);
+      const relativeLuminance =
+        (srgbChannelToLinear(red) * 0.2126) +
+        (srgbChannelToLinear(green) * 0.7152) +
+        (srgbChannelToLinear(blue) * 0.0722);
+      // 每色版 5 bits 可保留木纖維／晶體的細微層次，純色仍只會落在單一 bin。
+      const colorBin = `${red >> 3}:${green >> 3}:${blue >> 3}`;
+
+      sampledPixelCount += 1;
+      redTotal += red;
+      greenTotal += green;
+      blueTotal += blue;
+      lumas.push(luma);
+      colorBins.set(colorBin, (colorBins.get(colorBin) ?? 0) + 1);
+
+      if (saturation >= 0.3 && hue !== null) {
+        chromaticPixelCount += 1;
+        // 白字與格線不是材質；對比只取紅／綠材質本身的最亮 1%。
+        relativeLuminances.push(relativeLuminance);
+        if (hue >= 345 || hue <= 30) {
+          redPixelCount += 1;
+        }
+        if (hue >= 100 && hue <= 175) {
+          greenPixelCount += 1;
+        }
+      }
+    }
+  }
+
+  lumas.sort((first, second) => first - second);
+  relativeLuminances.sort((first, second) => first - second);
+  const percentile = (values, ratio) =>
+    values[Math.floor((values.length - 1) * ratio)];
+  let entropy = 0;
+  for (const count of colorBins.values()) {
+    const probability = count / sampledPixelCount;
+    entropy -= probability * Math.log2(probability);
+  }
+
+  const relativeLuminanceP99 = percentile(relativeLuminances, 0.99);
+  return Object.freeze({
+    width,
+    height,
+    averageRed: redTotal / sampledPixelCount,
+    averageGreen: greenTotal / sampledPixelCount,
+    averageBlue: blueTotal / sampledPixelCount,
+    redHueRatio: redPixelCount / Math.max(1, chromaticPixelCount),
+    greenHueRatio: greenPixelCount / Math.max(1, chromaticPixelCount),
+    chromaticRatio: chromaticPixelCount / sampledPixelCount,
+    lumaP5: percentile(lumas, 0.05),
+    lumaP95: percentile(lumas, 0.95),
+    lumaRange: percentile(lumas, 0.95) - percentile(lumas, 0.05),
+    colorEntropy: entropy,
+    whiteContrastAtP99: 1.05 / (relativeLuminanceP99 + 0.05),
+  });
+}
+
+async function inspectEmergencyMaterial(tone, expectedFileName) {
+  const expectedPositions = [
+    '0% 0%', '50% 0%', '100% 0%',
+    '0% 50%', '50% 50%', '100% 50%',
+    '0% 100%', '50% 100%', '100% 100%',
+  ];
+  const dom = await execute(`(() => {
+    const stage = document.getElementById('display-stage');
+    const cells = [...document.querySelectorAll('.fill-cell')];
+    return {
+      mode: stage.dataset.mode,
+      tone: stage.dataset.emergencyTone,
+      viewport: [window.innerWidth, window.innerHeight],
+      renderResolution: stage.dataset.renderResolution,
+      cellCount: cells.length,
+      clockHidden: document.getElementById('display-clock').hidden,
+      liquidCount: document.querySelectorAll('.message-liquid-canvas').length,
+      animationCount: cells.reduce(
+        (total, cell) => total + cell.getAnimations().length,
+        0,
+      ),
+      cells: cells.map((cell) => {
+        const style = getComputedStyle(cell);
+        return {
+          image: style.backgroundImage,
+          size: style.backgroundSize,
+          position: style.backgroundPosition,
+          color: style.color,
+          fillColor: style.getPropertyValue('-webkit-text-fill-color'),
+        };
+      }),
+    };
+  })()`);
+
+  assert.equal(dom.mode, 'emergency');
+  assert.equal(dom.tone, tone);
+  assert.deepEqual(dom.viewport, [1920, 1080]);
+  assert.equal(dom.renderResolution, '3840x2160');
+  assert.equal(dom.cellCount, 9);
+  assert.equal(dom.clockHidden, true);
+  assert.equal(dom.liquidCount, 0);
+  assert.equal(dom.animationCount, 0);
+
+  dom.cells.forEach((cell, index) => {
+    assert.match(cell.image, new RegExp(expectedFileName.replaceAll('.', '\\.')));
+    assert.doesNotMatch(cell.image, /https?:|data:/i);
+    assert.equal(cell.size, '100% 100%, 300% 300%');
+    assert.equal(cell.position, `50% 50%, ${expectedPositions[index]}`);
+    assert.equal(cell.color, 'rgb(255, 255, 255)');
+    assert.equal(cell.fillColor, 'rgb(255, 255, 255)');
+  });
+
+  return waitFor(async () => {
+    const statistics = await captureEmergencyMaterialStatistics(tone);
+    const toneDelivered = tone === 'inspection'
+      ? statistics.redHueRatio >= 0.75 &&
+        statistics.averageRed >= statistics.averageGreen * 1.25
+      : statistics.greenHueRatio >= 0.75 &&
+        statistics.averageGreen >= statistics.averageRed * 1.25 &&
+        statistics.averageGreen >= statistics.averageBlue * 1.1;
+    return (
+      toneDelivered &&
+      statistics.lumaRange >= 16 &&
+      statistics.colorEntropy >= 3.5
+    )
+      ? statistics
+      : false;
+  }, `${tone} 材質已交付至 Electron compositor`, 8_000);
+}
+
+async function verifyEmergencyLetterboxColor(tone) {
+  displayWindow.setContentSize(1600, 1000, false);
+  await waitFor(
+    () => execute(`window.innerWidth === 1600 && window.innerHeight === 1000`),
+    `${tone} 建立非 16:9 letterbox`,
+  );
+  await execute(`new Promise((resolve) => {
+    requestAnimationFrame(() => requestAnimationFrame(resolve));
+  })`);
+  const image = await displayWindow.webContents.capturePage({
+    x: 796,
+    y: 992,
+    width: 8,
+    height: 8,
+  });
+  const bitmap = image.toBitmap();
+  let red = 0;
+  let green = 0;
+  let blue = 0;
+  let count = 0;
+  for (let offset = 0; offset <= bitmap.length - 4; offset += 4) {
+    blue += bitmap[offset];
+    green += bitmap[offset + 1];
+    red += bitmap[offset + 2];
+    count += 1;
+  }
+  const average = {
+    red: red / count,
+    green: green / count,
+    blue: blue / count,
+  };
+  if (tone === 'inspection') {
+    assert.ok(
+      average.red >= average.green * 1.25 &&
+        average.red >= average.blue * 1.25,
+      JSON.stringify(average),
+    );
+  } else {
+    assert.ok(
+      average.green >= average.red * 1.25 &&
+        average.green >= average.blue * 1.1,
+      JSON.stringify(average),
+    );
+  }
+
+  displayWindow.setContentSize(1920, 1080, false);
+  await waitFor(
+    () => execute(`window.innerWidth === 1920 && window.innerHeight === 1080`),
+    `${tone} 還原 16:9 4K compositor`,
+  );
+}
+
+async function verifyEmergencyMaterialPresentation(timers) {
+  // Retina 測試主機以 1920×1080 viewport 產生實際 3840×2160 compositor；
+  // Display 本身仍使用 4K 邏輯解析度，與 Windows 4K HDMI 的排版座標一致。
+  displayWindow.setContentSize(1920, 1080, false);
+  await waitFor(
+    () => execute(`window.innerWidth === 1920 && window.innerHeight === 1080`),
+    '建立 4K 緊急材質驗收視窗',
+  );
+
+  // 即使管理員舊設定仍是黑色，固定信號色也必須保住紅／綠辨識。
+  const blackEmergencyConfig = structuredClone(
+    settingsManager.getSnapshot().config,
+  );
+  blackEmergencyConfig.emergency = {
+    inspectionBackgroundColor: '#000000',
+    releaseBackgroundColor: '#000000',
+  };
+  blackEmergencyConfig.display.renderResolution = '3840x2160';
+  const settingsRevision = settingsManager.publish(blackEmergencyConfig).revision;
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.settingsRevision === ` +
+      `'${settingsRevision}'`,
+    ),
+    '套用黑色舊設定後仍保留固定緊急信號色',
+  );
+
+  await execute(`Promise.all([
+    '../assets/emergency-materials/red-cypress-4k.jpg',
+    '../assets/emergency-materials/emerald-4k.jpg',
+  ].map(async (source) => {
+    const image = new Image();
+    image.src = new URL(source, document.baseURI).href;
+    await image.decode();
+  }))`);
+
+  presentationService.showEmergency('555');
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.emergencyTone === ` +
+      `'inspection' && document.querySelectorAll('.fill-cell').length === 9`,
+    ),
+    '顯示 555 紅檜木九宮格',
+  );
+  const inspection = await inspectEmergencyMaterial(
+    'inspection',
+    'red-cypress-4k.jpg',
+  );
+  assert.deepEqual(
+    [inspection.width, inspection.height],
+    [3840, 2160],
+    JSON.stringify(inspection),
+  );
+  assert.ok(inspection.chromaticRatio >= 0.75, JSON.stringify(inspection));
+  assert.ok(inspection.redHueRatio >= 0.75, JSON.stringify(inspection));
+  assert.ok(
+    inspection.averageRed >= inspection.averageGreen * 1.25,
+    JSON.stringify(inspection),
+  );
+  assert.ok(inspection.lumaRange >= 16, JSON.stringify(inspection));
+  assert.ok(inspection.colorEntropy >= 3.5, JSON.stringify(inspection));
+  assert.ok(inspection.whiteContrastAtP99 >= 4.5, JSON.stringify(inspection));
+  assert.equal(timers.active().length, 0);
+  await captureVisualQa('emergency-555-red-cypress-4k.png');
+  await verifyEmergencyLetterboxColor('inspection');
+
+  presentationService.showEmergency('888');
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.emergencyTone === ` +
+      `'release' && [...document.querySelectorAll('.fill-cell')]` +
+      `.every((cell) => cell.textContent === '8')`,
+    ),
+    '顯示 888 祖母綠九宮格',
+  );
+  const release = await inspectEmergencyMaterial('release', 'emerald-4k.jpg');
+  assert.deepEqual(
+    [release.width, release.height],
+    [3840, 2160],
+    JSON.stringify(release),
+  );
+  assert.ok(release.chromaticRatio >= 0.75, JSON.stringify(release));
+  assert.ok(release.greenHueRatio >= 0.75, JSON.stringify(release));
+  assert.ok(
+    release.averageGreen >= release.averageRed * 1.25 &&
+      release.averageGreen >= release.averageBlue * 1.1,
+    JSON.stringify(release),
+  );
+  assert.ok(release.lumaRange >= 16, JSON.stringify(release));
+  assert.ok(release.colorEntropy >= 3.5, JSON.stringify(release));
+  assert.ok(release.whiteContrastAtP99 >= 4.5, JSON.stringify(release));
+  assert.equal(timers.active().length, 0);
+  await captureVisualQa('emergency-888-emerald-4k.png');
+  await verifyEmergencyLetterboxColor('release');
+
+  const visualQaDirectory =
+    process.env.DISPLAYCORE_VISUAL_QA_DIRECTORY?.trim();
+  if (visualQaDirectory) {
+    await fileSystem.mkdir(visualQaDirectory, { recursive: true });
+    await fileSystem.writeFile(
+      path.join(visualQaDirectory, 'emergency-material-report.json'),
+      `${JSON.stringify({ inspection, release }, null, 2)}\n`,
+    );
+  }
+}
+
+/** 驗證風蝕區是左清右留的多孔二值風頭，而不是灰色淡化或無方向 dissolve。 */
 function assertContinuousSandSurface(frame, description) {
   const regions = [
     frame.activeSurface.left,
     frame.activeSurface.center,
     frame.activeSurface.right,
   ];
-  const transparentRatios = regions.map(({ transparentRatio }) =>
-    transparentRatio,
+  const transparentSamples = regions.reduce(
+    (total, region) => total + region.transparent,
+    0,
   );
-
-  for (const [index, region] of regions.entries()) {
-    assert.ok(
-      region.transparent > 0,
-      `${description}第 ${index + 1} 區必須同時受到侵蝕：` +
-        JSON.stringify(frame.activeSurface),
-    );
-  }
+  const partialSamples = regions.reduce(
+    (total, region) => total + region.partial,
+    0,
+  );
+  const opaqueSamples = regions.reduce(
+    (total, region) => total + region.opaque,
+    0,
+  );
+  const totalSamples = transparentSamples + partialSamples + opaqueSamples;
 
   assert.ok(
-    Math.max(...transparentRatios) - Math.min(...transparentRatios) <= 0.4,
-    `${description}左中右必須同時受風，不能形成水平掃描線：` +
+    transparentSamples > 0 &&
+      opaqueSamples > 0 &&
+      regions.some((region) => region.transparent > 0 && region.opaque > 0),
+    `${description}整體必須同時存在已吹散、仍保留及局部破碎區：` +
       JSON.stringify(frame.activeSurface),
   );
+  assert.ok(
+    partialSamples / totalSamples <= 0.08,
+    `${description}半透明樣本不得形成 crossfade 灰帶：` +
+      JSON.stringify(frame.activeSurface),
+  );
+  /*
+   * 多孔隨機前緣在單一窄水平帶可能左右顛倒，不以該瞬時切片判斷風向；
+   * 完整左至右方向由實際粒子尾流及多組固定種子的單元測試驗證。
+   */
 }
 
-/** 驗證真實 drawImage 沙粒形成中間偏右、向右上翻滾的立體沙塵雲。 */
+/** 驗證最終輸出 Canvas 像素形成中間偏右、向右延伸的可見沙塵雲。 */
 function assertDesertDustCloud(frame, description) {
   const telemetry = frame.particleTelemetry;
 
-  assert.ok(telemetry.drawCount > 0, `${description}必須繪出舊圖片來源沙粒`);
   assert.ok(
-    telemetry.strongSourceCenterX >= 0.55 &&
-      telemetry.strongSourceCenterX <= 0.8,
-    `${description}高密度沙塵來源必須位於畫面中間偏右：` +
+    telemetry.visiblePixelCount >= 500,
+    `${description}必須繪出足量且肉眼可見的舊圖片像素沙粒：` +
       JSON.stringify(telemetry),
   );
   assert.ok(
-    telemetry.destinationCenterX > telemetry.sourceCenterX &&
-      telemetry.destinationCenterY < telemetry.sourceCenterY,
-    `${description}沙粒必須由來源位置向右上揚起：` +
+    telemetry.strongCenterX >= 0.55 && telemetry.strongCenterX <= 0.82,
+    `${description}高密度沙塵核心必須位於畫面中間偏右：` +
+      JSON.stringify(telemetry),
+  );
+  /* 隨機細砂尾流在單幀約落於 1%～2%；方向主體另由峰值區與單元測試驗證。 */
+  assert.ok(
+    telemetry.strongestBucket === 3 && telemetry.rightTailMassRatio > 0.01,
+    `${description}沙塵質量峰值必須在 60%～80%，並向最右側留下尾流：` +
+      JSON.stringify(telemetry),
+  );
+  assert.ok(
+    telemetry.alphaCoverage >= 0.0005,
+    `${description}沙塵必須具有肉眼可見的圖片粒覆蓋：` +
+      JSON.stringify(telemetry),
+  );
+  assert.ok(
+    telemetry.longestHorizontalRunRatio <= 0.2,
+    `${description}不能退化成貫穿畫面的掃描線：` +
       JSON.stringify(telemetry),
   );
   assert.ok(
@@ -1543,8 +3193,28 @@ async function runWorkflow(
       'reportPageProgress',
     ],
     interactiveCount: 0,
-    reducedMotion: true,
+    reducedMotion: false,
   });
+
+  if (process.env.DISPLAYCORE_RUNTIME_REDUCED_MOTION_QA_ONLY === '1') {
+    await verifyLiquidRuntimeReducedMotionFallback(timers);
+    return;
+  }
+
+  if (process.env.DISPLAYCORE_LIQUID_SETTING_QA_ONLY === '1') {
+    await verifyMessageLiquidSettingToggle();
+    return;
+  }
+
+  if (process.env.DISPLAYCORE_MESSAGE_BACKGROUND_QA_ONLY === '1') {
+    await verifyLuxuryMessageAppearance();
+    return;
+  }
+
+  if (process.env.DISPLAYCORE_EMERGENCY_MATERIAL_QA_ONLY === '1') {
+    await verifyEmergencyMaterialPresentation(timers);
+    return;
+  }
 
   await verifyStandbyPresentation(
     expectedLogoUrl,
@@ -1625,16 +3295,17 @@ async function runWorkflow(
   assertImagesRemainStationary(beforeSandGeometry.imageMotion, '轉場前');
   assertSandGeometryStationary(beforeSandGeometry, beforeSandGeometry, '轉場前');
 
-  await installSandParticleTelemetry();
   delayedSecondBackgroundRead.release();
   const earlySandFrame = await captureSandFrame({
     minimumProgress: 0.22,
     maximumProgress: 0.3,
+    minimumRightTailMassRatio: 0.01,
     expectedVisibleSource: secondStandbyBackgroundUrl,
     description: '下層連續沙丘侵蝕 Canvas 幀',
   });
   assert.equal(earlySandFrame.transition, 'sand');
   assert.equal(earlySandFrame.canvasCoversLayer, true);
+  assert.equal(earlySandFrame.particleCanvasCoversLayer, true);
   assert.equal(earlySandFrame.visibleImageCoversLayer, true);
   assert.equal(earlySandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(earlySandFrame.imageMotion, '轉場早段');
@@ -1652,15 +3323,18 @@ async function runWorkflow(
       JSON.stringify(earlySandFrame.regions.leftColumn),
   );
   assertDesertDustCloud(earlySandFrame, '早段沙塵雲');
+  await captureVisualQa('sand-early.png');
 
   const middleSandFrame = await captureSandFrame({
     minimumProgress: 0.47,
     maximumProgress: 0.55,
+    minimumRightTailMassRatio: 0.01,
     expectedVisibleSource: secondStandbyBackgroundUrl,
     description: '中層連續沙丘侵蝕 Canvas 幀',
   });
   assert.equal(middleSandFrame.transition, 'sand');
   assert.equal(middleSandFrame.canvasCoversLayer, true);
+  assert.equal(middleSandFrame.particleCanvasCoversLayer, true);
   assert.equal(middleSandFrame.visibleImageCoversLayer, true);
   assert.equal(middleSandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(middleSandFrame.imageMotion, '轉場中段');
@@ -1678,12 +3352,7 @@ async function runWorkflow(
   );
   assertContinuousSandSurface(middleSandFrame, '中段沙丘表面');
   assertDesertDustCloud(middleSandFrame, '中段沙塵雲');
-  assert.equal(
-    middleSandFrame.particleTelemetry.strongestBucket,
-    3,
-    `實際 Canvas 沙粒質量峰值必須位於畫面 60%～80%：` +
-      JSON.stringify(middleSandFrame.particleTelemetry.horizontalMass),
-  );
+  await captureVisualQa('sand-middle.png');
   assert.ok(
     middleSandFrame.regions.bottomLeft.transparentRatio >=
       earlySandFrame.regions.bottomLeft.transparentRatio,
@@ -1697,6 +3366,7 @@ async function runWorkflow(
   });
   assert.equal(lateSandFrame.transition, 'sand');
   assert.equal(lateSandFrame.canvasCoversLayer, true);
+  assert.equal(lateSandFrame.particleCanvasCoversLayer, true);
   assert.equal(lateSandFrame.visibleImageCoversLayer, true);
   assert.equal(lateSandFrame.visibleSource, secondStandbyBackgroundUrl);
   assertImagesRemainStationary(lateSandFrame.imageMotion, '轉場晚段');
@@ -1713,6 +3383,18 @@ async function runWorkflow(
   );
   assertContinuousSandSurface(lateSandFrame, '晚段沙丘表面');
   assertDesertDustCloud(lateSandFrame, '晚段沙塵雲');
+  await captureVisualQa('sand-late.png');
+  assert.ok(
+    earlySandFrame.particleTelemetry.strongCenterY >
+        middleSandFrame.particleTelemetry.strongCenterY + 0.12 &&
+      middleSandFrame.particleTelemetry.strongCenterY >
+        lateSandFrame.particleTelemetry.strongCenterY + 0.12,
+    `沙塵核心必須隨風勢由下往上連續移動：${JSON.stringify([
+      earlySandFrame.particleTelemetry.strongCenterY,
+      middleSandFrame.particleTelemetry.strongCenterY,
+      lateSandFrame.particleTelemetry.strongCenterY,
+    ])}`,
+  );
   assert.ok(
     earlySandFrame.activeSurface.centerY >
         middleSandFrame.activeSurface.centerY + 0.12 &&
@@ -1858,10 +3540,273 @@ async function runWorkflow(
     viewportHasOverflow: false,
   });
   assert.ok(firstPage.fontSize > 0);
-  assert.match(firstPage.clockText, /^\d{2}:\d{2}:\d{2}$/);
+  assert.match(firstPage.clockText, /^\d{2}:\d{2}$/);
   assert.equal(firstPage.clockDateTime, firstPage.clockText);
   await verifyDisplayedClockOffset(3_661, 'Display 套用離線時間偏移');
   assert.match(firstPage.fontFamily, /^Arial/i);
+
+  const numeralTypography = await waitFor(
+    () => execute(`(() => {
+      const numberSpans = [
+        ...document.querySelectorAll('.message-glyph-sizing .message-number')
+      ];
+      const clock = document.getElementById('display-clock');
+      const didotFace = [...document.fonts].find(
+        (face) => face.family === 'DisplayCore GFS Didot'
+      );
+      if (!didotFace || didotFace.status !== 'loaded') {
+        return false;
+      }
+      return {
+        clockFontFamily: getComputedStyle(clock).fontFamily,
+        didotFaceStatus: didotFace.status,
+        numberFontFamilies: numberSpans.map(
+          (span) => getComputedStyle(span).fontFamily
+        ),
+        numberTexts: numberSpans.map((span) => span.textContent),
+      };
+    })()`),
+    '專案內建 Didot 數字字型載入並套用',
+  );
+  assert.equal(numeralTypography.didotFaceStatus, 'loaded');
+  assert.deepEqual(numeralTypography.numberTexts, ['001', '002']);
+  assert.equal(
+    numeralTypography.numberFontFamilies.every((family) =>
+      family.includes('DisplayCore GFS Didot')),
+    true,
+  );
+  assert.match(numeralTypography.clockFontFamily, /DisplayCore GFS Didot/);
+
+  const transparentColors = new Set(['rgba(0, 0, 0, 0)', 'transparent']);
+  const assertLiquidSample = (
+    sample,
+    expectedLevel,
+    expectedProgress,
+    baselineRects = null,
+    expectedActiveCount = 3,
+  ) => {
+    assert.equal(sample.computedLiquidLevel, expectedLevel);
+    assert.equal(sample.requestedProgress, expectedProgress);
+    assert.equal(sample.liquidPropertySupported, true);
+    assert.equal(sample.liquidRows.length, 3);
+    const activeRows = sample.liquidRows.filter(
+      (row) => row.effect === 'active',
+    );
+    const staticRows = sample.liquidRows.filter(
+      (row) => row.effect === 'static',
+    );
+    assert.equal(
+      activeRows.length,
+      expectedActiveCount,
+    );
+    assert.equal(sample.renderedCount, expectedActiveCount);
+    assert.equal(
+      activeRows.every((row) => row.geometryAligned),
+      true,
+      JSON.stringify(activeRows),
+    );
+    assert.equal(
+      activeRows.every((row) =>
+        transparentColors.has(row.sizingFillColor) &&
+        transparentColors.has(row.shellFillColor) &&
+        row.shellVisibility === 'hidden'),
+      true,
+      '有限訊息的 HTML 尺寸層須透明，active 白框改由同幾何 SVG 固定繪製',
+    );
+    assert.equal(
+      activeRows.every((row) =>
+        row.outlineFill === 'none' &&
+        row.outlineStroke === '#ffffff' &&
+        row.outlineStrokeWidth > 0 &&
+        row.outlineAnimationName === 'none'),
+      true,
+      '每個進度的 canonical SVG 外框都必須固定為純白且沒有動畫',
+    );
+    assert.equal(
+      activeRows.every((row) =>
+        row.svgCount === 1 &&
+        row.svgDisplay === 'block' &&
+        row.svgNamespace === 'http://www.w3.org/2000/svg' &&
+        row.svgViewBox !== null &&
+        row.viewBoxWidth > 0 &&
+        row.viewBoxHeight > 0 &&
+        row.maskCount === 1 &&
+        row.maskType === 'alpha' &&
+        row.foreignObjectCount === 0 &&
+        row.canonicalGlyphCount === 1 &&
+        row.maskGlyphCount === 1 &&
+        row.outlineGlyphCount === 1 &&
+        row.canonicalText === row.sizingText &&
+        row.maskText === row.sizingText &&
+        row.outlineText === row.sizingText &&
+        row.canonicalRuns.length > 0 &&
+        JSON.stringify(row.maskRuns) === JSON.stringify(row.canonicalRuns) &&
+        JSON.stringify(row.outlineRuns) === JSON.stringify(row.canonicalRuns) &&
+        JSON.stringify(row.canonicalRuns
+          .filter(({ isNumber }) => isNumber)
+          .map(({ text }) => text)) ===
+            JSON.stringify(row.sizingNumberTexts) &&
+        row.canonicalRuns.every(({ lengthAdjust, textLength }) =>
+          lengthAdjust === 'spacingAndGlyphs' &&
+          Number.parseFloat(textLength) > 0
+        ) &&
+        row.canonicalRuns
+          .filter(({ isNumber }) => isNumber)
+          .every(({ fontFamily }) =>
+            fontFamily.includes('DisplayCore GFS Didot')
+          )),
+      true,
+      `native SVG mask、固定白框與 canonical 中英 Didot runs 必須完全同幾何：${JSON.stringify(activeRows)}`,
+    );
+    assert.equal(
+      activeRows.every((row) =>
+        row.paintMask === row.expectedMaskUrl &&
+        row.bodyPaintMask === row.expectedMaskUrl &&
+        row.refractionPaintMask === row.expectedMaskUrl &&
+        row.meniscusPaintMask === row.expectedMaskUrl &&
+        row.bodyPath.startsWith('M ') &&
+        row.bodyPath.endsWith(' Z') &&
+        / C /.test(row.bodyPath) &&
+        !/polygon/i.test(row.bodyPath) &&
+        row.refractionPath === row.bodyPath &&
+        row.meniscusPath.startsWith('M ') &&
+        / C /.test(row.meniscusPath) &&
+        !/polygon/i.test(row.meniscusPath) &&
+        row.outsideBeforeContent === 'none' &&
+        row.outsideAfterContent === 'none' &&
+        row.outsideBeforeAnimationName === 'none' &&
+        row.outsideAfterAnimationName === 'none'),
+      true,
+      `酒體、折射與 meniscus 必須共用字形 mask 且不得有字外酒液：${JSON.stringify(activeRows)}`,
+    );
+    assert.equal(
+      new Set(activeRows.map((row) => row.maskId)).size,
+      expectedActiveCount,
+      '每個訊息 vessel 必須使用唯一 mask id',
+    );
+    assert.equal(
+      activeRows.every((row) => {
+        if (expectedProgress === 0) {
+          return row.bodyOpacity === 0 &&
+            row.refractionOpacity === 0 &&
+            row.meniscusOpacity === 0;
+        }
+        if (expectedProgress === 1) {
+          return row.bodyOpacity === 1 &&
+            row.refractionOpacity > 0 &&
+            row.meniscusOpacity === 0;
+        }
+        return row.bodyOpacity === 1 &&
+          row.refractionOpacity > 0 &&
+          row.meniscusOpacity > 0;
+      }),
+      true,
+      '酒體與 meniscus 透明度必須符合空杯、流動、滿杯三階段',
+    );
+    assert.equal(
+      staticRows.every((row) =>
+        row.shellFillColor === 'rgb(255, 255, 255)' &&
+        row.shellStrokeColor === 'rgb(255, 255, 255)' &&
+        row.shellVisibility === 'visible' &&
+        row.svgCount === 0 &&
+        row.svgDisplay === 'none' &&
+        row.outsideBeforeContent === 'none' &&
+        row.outsideAfterContent === 'none'),
+      true,
+      '置中營運訊息不得套用液面倒數，必須維持白色實心字',
+    );
+    if (baselineRects !== null) {
+      assert.deepEqual(
+        sample.liquidRows.map(({ rect }) => rect),
+        baselineRects,
+        '液面推進不得造成任何文字位移或尺寸改變',
+      );
+    }
+  };
+
+  const firstPageLiquidStart = await sampleMessageLiquid(0);
+  assert.equal(firstPageLiquidStart.animationCount, 1);
+  assert.equal(
+    firstPageLiquidStart.effectKeyframes.every((keyframe) =>
+      Object.hasOwn(keyframe, '--message-liquid-level') &&
+      !Object.hasOwn(keyframe, '--message-liquid-wave') &&
+      !Object.hasOwn(keyframe, '--message-liquid-agitation') &&
+      !Object.hasOwn(keyframe, '--message-outline-color') &&
+      !Object.hasOwn(keyframe, 'color') &&
+      !Object.hasOwn(keyframe, 'webkitTextStrokeColor')),
+    true,
+    'WAAPI 只允許提供 0～100% 液位時鐘，不得再合成 CSS 假波形',
+  );
+  assert.equal(firstPageLiquidStart.inlineLiquidLevel, '0%');
+  assert.equal(firstPageLiquidStart.duration, 1_000);
+  assertLiquidSample(firstPageLiquidStart, '0%', 0);
+  assert.equal(firstPageLiquidStart.clockColor, 'rgb(244, 245, 246)');
+  assert.equal(
+    firstPageLiquidStart.clockFillColor,
+    firstPageLiquidStart.clockColor,
+  );
+  assert.equal(firstPageLiquidStart.clockStrokeWidth, '0px');
+  assert.equal(firstPageLiquidStart.clockAnimationCount, 0);
+  assert.equal(firstPageLiquidStart.logoAnimationCount, 0);
+  const baselineLiquidRects = firstPageLiquidStart.liquidRows.map(
+    ({ rect }) => rect,
+  );
+  await captureVisualQa('message-liquid-000.png');
+
+  const firstPageLiquidTen = await sampleMessageLiquid(0.1, 0.1);
+  assertLiquidSample(firstPageLiquidTen, '10%', 0.1, baselineLiquidRects);
+  await captureVisualQa('message-liquid-010.png');
+
+  const firstPageLiquidQuarter = await sampleMessageLiquid(0.25, 0.25);
+  assertLiquidSample(firstPageLiquidQuarter, '25%', 0.25, baselineLiquidRects);
+  await captureVisualQa('message-liquid-025.png');
+
+  const firstPageHalfPhases = [];
+  for (const timePhase of [0.17, 0.39, 0.63, 0.88]) {
+    firstPageHalfPhases.push(await sampleMessageLiquid(0.5, timePhase));
+  }
+  for (const sample of firstPageHalfPhases) {
+    assertLiquidSample(sample, '50%', 0.5, baselineLiquidRects);
+    assert.equal(
+      sample.computedLiquidLevel,
+      firstPageHalfPhases[0].computedLiquidLevel,
+      '物理時間相位不得改變 50% 液位',
+    );
+  }
+  for (let index = 0; index < firstPageHalfPhases[0].liquidRows.length; index += 1) {
+    const phaseRows = firstPageHalfPhases.map(
+      (sample) => sample.liquidRows[index],
+    );
+    if (phaseRows[0].effect !== 'active') {
+      continue;
+    }
+    assert.equal(
+      new Set(phaseRows.map(({ bodyPath }) => bodyPath)).size,
+      4,
+      `同一 50% 液位的四個時間相位必須各有不同曲線：${JSON.stringify(phaseRows)}`,
+    );
+  }
+  await sampleMessageLiquid(0.5, 0.63);
+  await captureVisualQa('message-liquid-050.png');
+
+  const firstPageLiquidThreeQuarters = await sampleMessageLiquid(0.75, 0.75);
+  assertLiquidSample(
+    firstPageLiquidThreeQuarters,
+    '75%',
+    0.75,
+    baselineLiquidRects,
+  );
+  await captureVisualQa('message-liquid-075.png');
+
+  const firstPageLiquidNinety = await sampleMessageLiquid(0.9, 0.9);
+  assertLiquidSample(firstPageLiquidNinety, '90%', 0.9, baselineLiquidRects);
+  await captureVisualQa('message-liquid-090.png');
+
+  const firstPageLiquidFull = await sampleMessageLiquid(1, 1);
+  assertLiquidSample(firstPageLiquidFull, '100%', 1, baselineLiquidRects);
+  assert.equal(firstPageLiquidFull.clockColor, firstPageLiquidStart.clockColor);
+  await captureVisualQa('message-liquid-100.png');
+
   assert.doesNotMatch(firstPage.logoSource, /file:|Users|userData/i);
   for (const source of firstPage.standbyBackgroundSources.filter(Boolean)) {
     assert.doesNotMatch(
@@ -1894,9 +3839,32 @@ async function runWorkflow(
     ),
     messages.slice(3, 6).map(({ message }) => message),
   );
+  const secondPageLiquidStart = await sampleMessageLiquid(0);
+  assertLiquidSample(secondPageLiquidStart, '0%', 0, null, 2);
+  assert.equal(secondPageLiquidStart.inlineLiquidLevel, '0%');
+  assert.equal(
+    secondPageLiquidStart.clockColor,
+    firstPageLiquidStart.clockColor,
+  );
 
-  const longMessage = '超長訊息'.repeat(1_000);
-  const secondLongMessage = '第二列更長訊息'.repeat(700);
+  const secondPageLiquidHalf = await sampleMessageLiquid(0.5, 0.44);
+  assertLiquidSample(secondPageLiquidHalf, '50%', 0.5, null, 2);
+  assert.equal(
+    secondPageLiquidHalf.clockColor,
+    firstPageLiquidStart.clockColor,
+  );
+
+  const secondPageLiquidFull = await sampleMessageLiquid(1);
+  assertLiquidSample(secondPageLiquidFull, '100%', 1, null, 2);
+  assert.equal(
+    secondPageLiquidFull.clockColor,
+    firstPageLiquidStart.clockColor,
+  );
+
+  // 這一段要驗證「仍可套用酒液」的壓縮／跑馬燈文字，因此維持在
+  // 512 code point 裝飾特效上限內；10,000 字安全退回另由 production QA 驗證。
+  const longMessage = '超長訊息'.repeat(100);
+  const secondLongMessage = '第二列更長訊息'.repeat(60);
   presentationService.startProgram({
     messages: [
       { message: longMessage, alignment: 'left' },
@@ -1906,36 +3874,199 @@ async function runWorkflow(
     repeat: { mode: 'finite', rounds: 1 },
   });
   await waitForRevision(3);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('display-stage').dataset.revision === '3' &&
+      document.getElementById('page-layer').getAnimations().some(
+        (animation) => animation.effect.getKeyframes().some(
+          (keyframe) => Object.hasOwn(keyframe, '--message-liquid-level')
+        )
+      )
+    )()`),
+    'revision 3 的 started 已被 Main 接受並啟動酒液時鐘',
+  );
   const staticOverflow = await execute(`(() => {
     const rows = [...document.querySelectorAll('.message-row')];
     return {
       marquee: rows.map((row) => row.classList.contains('is-marquee')),
       compressed: rows.map((row) => row.classList.contains('is-compressed')),
-      messages: rows.map((row) => row.querySelector('.message-text')?.textContent),
+      vesselBeforeContents: rows.map((row) => getComputedStyle(
+        row.querySelector('.message-vessel'),
+        '::before'
+      ).content),
+      vesselAfterContents: rows.map((row) => getComputedStyle(
+        row.querySelector('.message-vessel'),
+        '::after'
+      ).content),
+      liquidSvgCounts: rows.map((row) =>
+        row.querySelectorAll('.message-liquid-svg').length
+      ),
+      liquidEffects: rows.map((row) => row.dataset.liquidEffect),
+      liquidCompatible: rows.map((row) =>
+        row.querySelector('.message-vessel')?.dataset.liquidCompatible
+      ),
+      liquidAnimationCount: document.getElementById('page-layer')
+        .getAnimations()
+        .filter((animation) => animation.effect.getKeyframes()
+          .some((keyframe) => Object.hasOwn(
+            keyframe,
+            '--message-liquid-level'
+          ))).length,
+      numberSpanCounts: rows.map((row) =>
+        row.querySelectorAll('.message-number').length
+      ),
+      messages: rows.map((row) =>
+        row.querySelector('.message-glyph-sizing')?.textContent
+      ),
     };
   })()`);
   assert.deepEqual(staticOverflow, {
     marquee: [false, false],
     compressed: [true, true],
+    vesselBeforeContents: Array(2).fill('none'),
+    vesselAfterContents: Array(2).fill('none'),
+    liquidSvgCounts: Array(2).fill(1),
+    liquidEffects: Array(2).fill('active'),
+    liquidCompatible: Array(2).fill('true'),
+    liquidAnimationCount: 1,
+    numberSpanCounts: Array(2).fill(0),
     messages: [longMessage, secondLongMessage],
   });
 
   const nextConfig = structuredClone(settingsManager.getSnapshot().config);
   nextConfig.logo.enabled = false;
   nextConfig.appearance.backgroundColor = '#204060';
+  nextConfig.appearance.messageBackgroundPreset = 'solid';
   nextConfig.appearance.fontColor = '#ABCDEF';
   nextConfig.appearance.fontSizePercent = 75;
   nextConfig.appearance.lineSpacingPercent = 200;
   nextConfig.dateTime.enabled = false;
   nextConfig.marquee.enabled = true;
+
+  /*
+   * 刻意延遲這次 ready 的 IPC 回應，驗證跑馬燈不能在 Main 正式接受頁面前
+   * 偷跑；接受後則必須和酒液時軸從同一個顯示週期開始。
+   */
+  const originalReportPageProgress =
+    coordinator.reportPageProgress.bind(coordinator);
+  const delayedReadyReports = [];
+  let delayMarqueeReady = true;
+  coordinator.reportPageProgress = (event, payload) => {
+    if (
+      delayMarqueeReady &&
+      payload?.phase === 'ready' &&
+      payload.revision === 3 &&
+      payload.settingsRevision === 1
+    ) {
+      return new Promise((resolve) => {
+        delayedReadyReports.push({ event, payload, resolve });
+      });
+    }
+
+    return originalReportPageProgress(event, payload);
+  };
   settingsManager.publish(nextConfig);
+  await waitFor(
+    () => Promise.resolve(delayedReadyReports.length > 0),
+    '攔截跑馬燈頁面的 ready 回應',
+  );
+  await new Promise((resolve) => setTimeout(resolve, 150));
+  const beforeMarqueeReady = await execute(`(() => {
+    const tracks = [...document.querySelectorAll('.marquee-track')];
+    const liquidSvgs = [...document.querySelectorAll('.message-liquid-svg')];
+    const liquidAnimations = document.getElementById('page-layer')
+      .getAnimations()
+      .filter((animation) => animation.effect.getKeyframes().some(
+        (keyframe) => Object.hasOwn(keyframe, '--message-liquid-level')
+      ));
+    return {
+      count: tracks.length,
+      playStates: tracks.map((track) =>
+        getComputedStyle(track).animationPlayState
+      ),
+      currentTimes: tracks.map((track) =>
+        track.getAnimations()[0]?.currentTime ?? null
+      ),
+      liquidAnimationCount: liquidAnimations.length,
+      liquidAnimationCurrentTimes: liquidAnimations.map(
+        (animation) => animation.currentTime
+      ),
+      liquidAnimationPlayStates: liquidAnimations.map(
+        (animation) => animation.playState
+      ),
+      liquidSvgCount: liquidSvgs.length,
+      liquidSvgReadyCount: liquidSvgs.filter((svg) =>
+        svg.closest('.message-vessel')?.dataset.liquidSvg === 'ready'
+      ).length,
+      liquidBodyOpacities: liquidSvgs.map((svg) => Number(
+        svg.querySelector('.message-liquid-body')?.getAttribute('opacity') ?? 0
+      )),
+    };
+  })()`);
+  assert.equal(beforeMarqueeReady.count, 2);
+  assert.deepEqual(beforeMarqueeReady.playStates, ['paused', 'paused']);
+  assert.equal(
+    beforeMarqueeReady.currentTimes.every(
+      (currentTime) => currentTime === null || Math.abs(currentTime) <= 1,
+    ),
+    true,
+    `Main 接受 ready 前跑馬燈不得偷跑：${JSON.stringify(beforeMarqueeReady)}`,
+  );
+  /*
+   * 這是同一 revision 的設定 refit，不是新頁面。既有倒酒時鐘必須保留，
+   * 否則每次改設定都會把酒量歸零重倒；只有新跑馬燈要等 Main 接受後啟動。
+   */
+  assert.equal(beforeMarqueeReady.liquidAnimationCount, 1);
+  assert.deepEqual(beforeMarqueeReady.liquidAnimationPlayStates, ['running']);
+  assert.equal(
+    beforeMarqueeReady.liquidAnimationCurrentTimes.every(
+      (currentTime) => Number.isFinite(currentTime) && currentTime > 0,
+    ),
+    true,
+    `同一頁 refit 不得把倒酒時鐘歸零：${JSON.stringify(beforeMarqueeReady)}`,
+  );
+  assert.ok(beforeMarqueeReady.liquidSvgCount > 0);
+  assert.equal(
+    beforeMarqueeReady.liquidSvgReadyCount,
+    beforeMarqueeReady.liquidSvgCount,
+  );
+  assert.equal(
+    beforeMarqueeReady.liquidBodyOpacities.every((opacity) => opacity === 1),
+    true,
+    `同一頁 refit 必須保留既有酒液狀態：` +
+      JSON.stringify(beforeMarqueeReady),
+  );
+
+  delayMarqueeReady = false;
+  coordinator.reportPageProgress = originalReportPageProgress;
+  for (const delayedReport of delayedReadyReports) {
+    delayedReport.resolve(originalReportPageProgress(
+      delayedReport.event,
+      delayedReport.payload,
+    ));
+  }
   await waitFor(
     () => execute(`(() => {
       const stage = document.getElementById('display-stage');
+      const tracks = [...document.querySelectorAll('.marquee-track')];
+      const liquidSvgs = [...document.querySelectorAll('.message-liquid-svg')];
       return stage.dataset.revision === '3' &&
         stage.dataset.settingsRevision === '1' &&
         stage.dataset.fittedSettingsRevision === '1' &&
-        stage.dataset.marqueeCount === '2';
+        stage.dataset.marqueeCount === '2' &&
+        tracks.length === 2 &&
+        tracks.every((track) =>
+          getComputedStyle(track).animationPlayState === 'running'
+        ) &&
+        liquidSvgs.length > 0 &&
+        liquidSvgs.every((svg) =>
+          svg.querySelector('.message-liquid-body')?.getAttribute('d')
+        ) &&
+        document.getElementById('page-layer').getAnimations().some(
+          (animation) => animation.effect.getKeyframes().some(
+            (keyframe) => Object.hasOwn(keyframe, '--message-liquid-level')
+          )
+        );
     })()`),
     '播放中即時套用設定',
   );
@@ -1945,16 +4076,79 @@ async function runWorkflow(
     const rows = [...document.querySelectorAll('.message-row')];
     const row = rows[0];
     const copies = [...row.querySelectorAll('.marquee-copy')];
+    const liquidAnimation = document.getElementById('page-layer')
+      .getAnimations()
+      .find((animation) => animation.effect.getKeyframes().some(
+        (keyframe) => Object.hasOwn(keyframe, '--message-liquid-level')
+      ));
     return {
       active: rows.map((item) => item.classList.contains('is-marquee')),
       trackCount: document.querySelectorAll('.marquee-track').length,
       copyCount: copies.length,
-      copiesMatch: copies.every((copy) => copy.textContent === ${JSON.stringify(longMessage)}),
+      copiesMatch: copies.every((copy) =>
+        copy.querySelector('.message-glyph-sizing')?.textContent ===
+          ${JSON.stringify(longMessage)}
+      ),
+      copiesHaveVessels: copies.every((copy) => {
+        const mask = copy.querySelector('.message-liquid-mask');
+        const paint = copy.querySelector('.message-liquid-paint');
+        const fluidClip = copy.querySelector('.message-liquid-fluid-clip');
+        const optics = copy.querySelector('.message-liquid-optics');
+        const wineNodes = [...copy.querySelectorAll(
+          '.message-liquid-body, .message-liquid-refraction-primary, ' +
+          '.message-liquid-refraction-secondary, ' +
+          '.message-liquid-caustic, .message-liquid-surface-focus, ' +
+          '.message-liquid-meniscus'
+        )];
+        const opticalNodes = [...copy.querySelectorAll(
+          '.message-liquid-refraction-primary, ' +
+          '.message-liquid-refraction-secondary, ' +
+          '.message-liquid-caustic, .message-liquid-surface-focus'
+        )];
+        return copy.querySelectorAll('.message-vessel').length === 1 &&
+          copy.querySelectorAll('.message-glyph-sizing').length === 1 &&
+          copy.querySelectorAll('.message-liquid-svg').length === 1 &&
+          copy.querySelectorAll('.message-liquid-mask').length === 1 &&
+          wineNodes.length === 6 &&
+          opticalNodes.length === 4 &&
+          wineNodes.every((node) =>
+            node.closest('.message-liquid-paint') === paint
+          ) &&
+          opticalNodes.every((node) =>
+            node.closest('.message-liquid-optics') === optics
+          ) &&
+          paint?.getAttribute('mask') === 'url(#' + mask?.id + ')' &&
+          optics?.getAttribute('clip-path') ===
+            'url(#' + fluidClip?.id + ')' &&
+          copy.querySelectorAll('.message-glyph-shell').length === 1;
+      }),
+      copyMaskIds: copies.map((copy) =>
+        copy.querySelector('.message-liquid-mask')?.id ?? null
+      ),
+      copyBeforeContents: copies.map((copy) => getComputedStyle(
+        copy.querySelector('.message-vessel'),
+        '::before'
+      ).content),
+      copyAfterContents: copies.map((copy) => getComputedStyle(
+        copy.querySelector('.message-vessel'),
+        '::after'
+      ).content),
+      rowBeforeContent: getComputedStyle(row, '::before').content,
       ariaHidden: row.querySelector('.marquee-track')?.getAttribute('aria-hidden'),
       presentationRevision: stage.dataset.revision,
       settingsRevision: stage.dataset.settingsRevision,
       backgroundColor: getComputedStyle(stage).backgroundColor,
       fontColor: getComputedStyle(stage).color,
+      messageColors: rows.map((item) => getComputedStyle(item).color),
+      messageStrokeWidths: rows.map((item) => getComputedStyle(
+        item.querySelector('.message-glyph-shell')
+      ).getPropertyValue('-webkit-text-stroke-width')),
+      messageShellFillColors: rows.map((item) => getComputedStyle(
+        item.querySelector('.message-glyph-shell')
+      ).getPropertyValue('-webkit-text-fill-color')),
+      liquidDisplays: rows.map((item) => getComputedStyle(
+        item.querySelector('.message-liquid-svg')
+      ).display),
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoSource: document.getElementById('display-logo').getAttribute('src'),
       clockText: document.getElementById('display-clock').textContent,
@@ -1962,9 +4156,20 @@ async function runWorkflow(
       normalHasClock: document.getElementById('normal-layer').classList.contains('has-clock'),
       normalGap: getComputedStyle(document.getElementById('normal-layer')).gap,
       animationName: getComputedStyle(row.querySelector('.marquee-track')).animationName,
-      animationDuration: Number.parseFloat(
-        getComputedStyle(row.querySelector('.marquee-track')).animationDuration
+      animationDurations: rows.map((item) => Number.parseFloat(
+        getComputedStyle(item.querySelector('.marquee-track')).animationDuration
+      )),
+      inlineAnimationDurations: rows.map((item) => Number.parseFloat(
+        item.querySelector('.marquee-track').style.getPropertyValue(
+          '--marquee-duration'
+        )
+      )),
+      trackCurrentTimes: rows.map((item) =>
+        item.querySelector('.marquee-track').getAnimations()[0]?.currentTime
       ),
+      liquidCurrentTime: liquidAnimation?.currentTime,
+      liquidTimelineDuration:
+        liquidAnimation?.effect.getComputedTiming().duration,
     };
   })()`);
   assert.deepEqual(marquee, {
@@ -1972,11 +4177,20 @@ async function runWorkflow(
     trackCount: 2,
     copyCount: 2,
     copiesMatch: true,
+    copiesHaveVessels: true,
+    copyMaskIds: marquee.copyMaskIds,
+    copyBeforeContents: Array(2).fill('none'),
+    copyAfterContents: Array(2).fill('none'),
+    rowBeforeContent: 'none',
     ariaHidden: 'true',
     presentationRevision: '3',
     settingsRevision: '1',
     backgroundColor: 'rgb(32, 64, 96)',
     fontColor: 'rgb(171, 205, 239)',
+    messageColors: Array(2).fill('rgb(255, 255, 255)'),
+    messageStrokeWidths: marquee.messageStrokeWidths,
+    messageShellFillColors: Array(2).fill('rgba(0, 0, 0, 0)'),
+    liquidDisplays: Array(2).fill('block'),
     chromeHidden: true,
     logoSource: null,
     clockText: '',
@@ -1984,9 +4198,46 @@ async function runWorkflow(
     normalHasClock: false,
     normalGap: '0px',
     animationName: 'display-marquee',
-    animationDuration: marquee.animationDuration,
+    animationDurations: marquee.animationDurations,
+    inlineAnimationDurations: marquee.inlineAnimationDurations,
+    trackCurrentTimes: marquee.trackCurrentTimes,
+    liquidCurrentTime: marquee.liquidCurrentTime,
+    liquidTimelineDuration: marquee.liquidTimelineDuration,
   });
-  assert.ok(marquee.animationDuration >= 8);
+  assert.equal(
+    new Set(marquee.copyMaskIds).size,
+    marquee.copyMaskIds.length,
+    '跑馬燈的每份 SVG 必須使用唯一 mask id',
+  );
+  assert.equal(
+    marquee.trackCurrentTimes.every(Number.isFinite) &&
+      Number.isFinite(marquee.liquidCurrentTime),
+    true,
+  );
+  assert.equal(
+    marquee.trackCurrentTimes.every(
+      (currentTime) =>
+        marquee.liquidCurrentTime > currentTime + 50,
+    ),
+    true,
+    `同一頁 refit 必須保留既有酒量，不能隨新跑馬燈歸零重倒：${JSON.stringify({
+      trackCurrentTimes: marquee.trackCurrentTimes,
+      liquidCurrentTime: marquee.liquidCurrentTime,
+    })}`,
+  );
+  assert.equal(
+    marquee.animationDurations.every((duration) => duration >= 8),
+    true,
+  );
+  assert.equal(
+    marquee.liquidTimelineDuration,
+    1_000,
+    '同 revision 的設定 refit 不得取消或重建已經開始的一秒倒酒時鐘',
+  );
+  assert.equal(
+    marquee.messageStrokeWidths.every((width) => Number.parseFloat(width) > 0),
+    true,
+  );
 
   await waitFor(
     () => Promise.resolve(timers.active().length === 1),
@@ -2005,6 +4256,27 @@ async function runWorkflow(
 
   await execute(`document.querySelectorAll('.marquee-track')[1]
     .dispatchEvent(new Event('animationiteration'))`);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    presentationService.getSnapshot().revision,
+    3,
+    '所有跑馬燈 traversal 完成仍須等待酒液真正到達 100% 終幀',
+  );
+
+  // 此處只加速 refit 前已啟動的同一條正式 WAAPI 時鐘，驗證它完成後仍須
+  // 等新跑馬燈 traversal，且 finished → 100% → complete 流程不會重複。
+  assert.equal(await execute(`(() => {
+    const liquidAnimation = document.getElementById('page-layer')
+      .getAnimations()
+      .find((animation) => animation.effect.getKeyframes().some(
+        (keyframe) => Object.hasOwn(keyframe, '--message-liquid-level')
+      ));
+    if (!liquidAnimation) {
+      return false;
+    }
+    liquidAnimation.updatePlaybackRate(100);
+    return true;
+  })()`), true);
   await waitForRevision(4, false);
   assert.equal(presentationService.getSnapshot().mode, 'blank');
 
@@ -2050,6 +4322,28 @@ async function runWorkflow(
     backgroundColor: getComputedStyle(document.getElementById('display-stage')).backgroundColor,
     viewportBackgroundColor: getComputedStyle(document.body).backgroundColor,
     fontColor: getComputedStyle(document.getElementById('display-stage')).color,
+    pageColorAnimationCount:
+      document.getElementById('page-layer').getAnimations().length,
+    pageInlineColor: document.getElementById('page-layer').style.color,
+    pageInlineStrokeColor: document.getElementById('page-layer').style
+      .getPropertyValue('-webkit-text-stroke-color'),
+    pageInlineLiquidLevel: document.getElementById('page-layer').style
+      .getPropertyValue('--message-liquid-level'),
+    liquidVesselCount: document.querySelectorAll('.message-vessel').length,
+    cellColors: [...document.querySelectorAll('.fill-cell')].map(
+      (cell) => getComputedStyle(cell).color
+    ),
+    cellFillColors: [...document.querySelectorAll('.fill-cell')].map(
+      (cell) => getComputedStyle(cell)
+        .getPropertyValue('-webkit-text-fill-color')
+    ),
+    cellFontFamilies: [...document.querySelectorAll('.fill-cell')].map(
+      (cell) => getComputedStyle(cell).fontFamily
+    ),
+    cellStrokeWidths: [...document.querySelectorAll('.fill-cell')].map(
+      (cell) => getComputedStyle(cell)
+        .getPropertyValue('-webkit-text-stroke-width')
+    ),
   }))()`);
   assert.equal(inspection.mode, 'emergency');
   assert.equal(inspection.normalHidden, true);
@@ -2061,33 +4355,126 @@ async function runWorkflow(
     await execute(`document.getElementById('display-clock').hidden`),
     true,
   );
-  assert.equal(inspection.cells.length, 24);
-  assert.equal(inspection.cells.every((value) => value === '555'), true);
+  assert.equal(inspection.cells.length, 9);
+  assert.equal(inspection.cells.every((value) => value === '5'), true);
   assert.equal(inspection.marqueeCount, 0);
   assert.equal(inspection.announcement, '555');
   assert.equal(inspection.ariaLive, 'assertive');
-  assert.equal(inspection.backgroundColor, 'rgb(127, 29, 29)');
-  assert.equal(inspection.viewportBackgroundColor, 'rgb(127, 29, 29)');
+  const expectedInspectionBackground = await resolveComputedBackgroundColor(
+    'color-mix(in srgb, #7F1D1D 18%, #A70F22)',
+  );
+  assert.equal(inspection.backgroundColor, expectedInspectionBackground);
+  assert.equal(
+    inspection.viewportBackgroundColor,
+    expectedInspectionBackground,
+  );
   assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
+  assert.equal(inspection.pageColorAnimationCount, 0);
+  assert.equal(inspection.pageInlineColor, '');
+  assert.equal(inspection.pageInlineStrokeColor, '');
+  assert.equal(inspection.pageInlineLiquidLevel, '');
+  assert.equal(inspection.liquidVesselCount, 0);
+  assert.equal(
+    inspection.cellColors.every((color) => color === 'rgb(255, 255, 255)'),
+    true,
+  );
+  assert.equal(
+    inspection.cellFillColors.every(
+      (color) => color === 'rgb(255, 255, 255)'),
+    true,
+  );
+  assert.equal(
+    inspection.cellFontFamilies.every((family) =>
+      family.includes('DisplayCore GFS Didot')),
+    true,
+  );
+  assert.equal(
+    inspection.cellStrokeWidths.every((width) => width === '0px'),
+    true,
+  );
   assert.equal(timers.active().length, 0, '555 不得建立時間限制 timer');
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(presentationService.getSnapshot().revision, 5);
   assert.equal(presentationService.getSnapshot().mode, 'emergency');
   assert.equal(presentationService.getSnapshot().messages[0].message, '555');
 
+  // 555／888 共用一般字級設定；九宮格受限於單格高度，但完整 50%～200%
+  // 範圍仍須逐級有差異，不能在 150% 左右提前封頂。
+  const emergencyFontSizes = [];
+  for (const percentage of [50, 100, 150, 200]) {
+    const fontConfig = structuredClone(settingsManager.getSnapshot().config);
+    fontConfig.appearance.fontSizePercent = percentage;
+    const fontSettingsRevision = settingsManager.publish(fontConfig).revision;
+    const fontSize = await waitFor(
+      () => execute(`(() => {
+        const stage = document.getElementById('display-stage');
+        const cell = document.querySelector('.fill-cell');
+        if (
+          stage.dataset.settingsRevision !== '${fontSettingsRevision}' ||
+          !cell
+        ) {
+          return false;
+        }
+        return Number.parseFloat(getComputedStyle(cell).fontSize);
+      })()`),
+      `555 九宮格字級 ${percentage}%`,
+    );
+    emergencyFontSizes.push(fontSize);
+  }
+  for (let index = 1; index < emergencyFontSizes.length; index += 1) {
+    assert.ok(
+      emergencyFontSizes[index] > emergencyFontSizes[index - 1] * 1.1,
+      `555／888 字級未持續放大：${JSON.stringify(emergencyFontSizes)}`,
+    );
+  }
+
+  const resetEmergencyFontConfig = structuredClone(
+    settingsManager.getSnapshot().config,
+  );
+  resetEmergencyFontConfig.appearance.fontSizePercent = 100;
+  const resetEmergencyFontRevision = settingsManager.publish(
+    resetEmergencyFontConfig,
+  ).revision;
+  await waitFor(
+    () => execute(
+      `document.getElementById('display-stage').dataset.settingsRevision === ` +
+      `'${resetEmergencyFontRevision}'`,
+    ),
+    '還原 555／888 字級',
+  );
+  await captureVisualQa('emergency-555.png');
+
   presentationService.showEmergency('888');
   await waitForRevision(6, false);
   assert.equal(
-    await execute(`document.querySelector('.fill-cell').textContent`),
-    '888',
+    await execute(`(() => {
+      const cells = [...document.querySelectorAll('.fill-cell')];
+      const pageLayer = document.getElementById('page-layer');
+      return cells.length === 9 &&
+        cells.every((cell) => cell.textContent === '8') &&
+        cells.every((cell) => getComputedStyle(cell).fontFamily.includes(
+          'DisplayCore GFS Didot'
+        )) &&
+        cells.every((cell) => getComputedStyle(cell)
+          .getPropertyValue('-webkit-text-stroke-width') === '0px') &&
+        pageLayer.getAnimations().length === 0 &&
+        pageLayer.style.color === '' &&
+        pageLayer.style.getPropertyValue('-webkit-text-stroke-color') === '' &&
+        pageLayer.style.getPropertyValue('--message-liquid-level') === '' &&
+        document.querySelectorAll('.message-vessel').length === 0;
+    })()`),
+    true,
+  );
+  const expectedReleaseBackground = await resolveComputedBackgroundColor(
+    'color-mix(in srgb, #14532D 18%, #087A46)',
   );
   assert.equal(
     await execute(`getComputedStyle(document.getElementById('display-stage')).backgroundColor`),
-    'rgb(20, 83, 45)',
+    expectedReleaseBackground,
   );
   assert.equal(
     await execute(`getComputedStyle(document.body).backgroundColor`),
-    'rgb(20, 83, 45)',
+    expectedReleaseBackground,
   );
   assert.equal(
     await execute(`document.getElementById('display-clock').hidden`),
@@ -2099,6 +4486,7 @@ async function runWorkflow(
   assert.equal(presentationService.getSnapshot().revision, 6);
   assert.equal(presentationService.getSnapshot().mode, 'emergency');
   assert.equal(presentationService.getSnapshot().messages[0].message, '888');
+  await captureVisualQa('emergency-888.png');
 
   presentationService.clearPresentation();
   await waitForRevision(7, false);
@@ -2162,7 +4550,7 @@ async function runWorkflow(
     await execute(`getComputedStyle(document.body).backgroundColor`),
     'rgb(32, 64, 96)',
   );
-  assert.match(standby.clockText, /^\d{2}:\d{2}:\d{2}$/);
+  assert.match(standby.clockText, /^\d{2}:\d{2}$/);
   assert.ok(Math.abs(standby.clockCenter - standby.stageCenter) < 1);
   await verifyDisplayedClockOffset(3_661, '待機時保留離線時間偏移');
 
@@ -2188,6 +4576,44 @@ async function runWorkflow(
     source: secondStandbyBackgroundUrl,
   });
 
+  /*
+   * 輪播中途切回固定背景後，不得讓下一輪永遠不會使用的 4K Canvas 與
+   * 預建幾何留在 Renderer。等待本輪安全收斂後，所有 backing store 都要縮回。
+   */
+  const fixedBackgroundConfig = structuredClone(
+    settingsManager.getSnapshot().config,
+  );
+  fixedBackgroundConfig.standby.backgroundMode = 'fixed';
+  fixedBackgroundConfig.standby.backgroundImagePaths = [
+    fixedBackgroundConfig.standby.backgroundImagePaths[0],
+  ];
+  const fixedBackgroundRevision = settingsManager.publish(
+    fixedBackgroundConfig,
+  ).revision;
+  const releasedSandBuffers = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const sand = document.getElementById('standby-sand-transition');
+      const particles = document.getElementById('standby-sand-particles');
+      return stage.dataset.settingsRevision === '${fixedBackgroundRevision}' &&
+        stage.dataset.standbyTransition === undefined &&
+        stage.dataset.sandPreparation === undefined &&
+        sand.hidden && particles.hidden &&
+        sand.width === 1 && sand.height === 1 &&
+        particles.width === 1 && particles.height === 1
+        ? {
+            sand: [sand.width, sand.height],
+            particles: [particles.width, particles.height],
+          }
+        : false;
+    })()`),
+    '輪播切回固定背景後釋放沙塵 Canvas buffers',
+  );
+  assert.deepEqual(releasedSandBuffers, {
+    sand: [1, 1],
+    particles: [1, 1],
+  });
+
   await verifyConfiguredRenderResolutions();
   await verifyLogoSizeScaling('blank');
 
@@ -2201,6 +4627,11 @@ async function runWorkflow(
   await verifyLogoSizeScaling('page');
   await verifyFixedMessageLayout();
   await verifyClockWithoutLogo();
+  await verifyLuxuryMessageAppearance();
+  await verifyContinuousMessageIsStatic();
+  await verifyLiquidAnimationFailureFallback();
+  await verifyLiquidReducedMotionFallback();
+  await verifyLiquidRuntimeReducedMotionFallback(timers);
 }
 
 async function run() {
@@ -2248,7 +4679,7 @@ async function run() {
     STANDBY_BACKGROUND_BYTES,
   );
   const secondStandbyBackgroundDigest = createHash('sha256')
-    .update(LOGO_BYTES)
+    .update(SECOND_STANDBY_BACKGROUND_BYTES)
     .digest('hex')
     .slice(0, 24);
   const secondStandbyBackgroundFileName =
@@ -2262,7 +4693,7 @@ async function run() {
       managedStandbyBackgroundDirectory,
       secondStandbyBackgroundFileName,
     ),
-    LOGO_BYTES,
+    SECOND_STANDBY_BACKGROUND_BYTES,
   );
 
   const initialConfig = structuredClone(defaultConfig);
@@ -2282,6 +4713,7 @@ async function run() {
   initialConfig.appearance = {
     ...initialConfig.appearance,
     backgroundColor: '#102030',
+    messageBackgroundPreset: 'solid',
     fontFamily: 'Arial, sans-serif',
     fontColor: '#F4F5F6',
     minimumFontSizeRem: 3,
@@ -2378,7 +4810,7 @@ async function run() {
     {
       features: [{
         name: 'prefers-reduced-motion',
-        value: 'reduce',
+        value: 'no-preference',
       }],
     },
   );

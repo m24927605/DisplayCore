@@ -50,11 +50,31 @@ const LEGACY_V5_CONFIG_KEYS = Object.freeze([
   'standby',
 ]);
 const LEGACY_V6_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_V7_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_V8_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
   'fontFamily',
   'minimumFontSizeRem',
+]);
+const LEGACY_V2_TO_V7_APPEARANCE_KEYS = Object.freeze([
+  'backgroundColor',
+  'fontColor',
+  'fontFamily',
+  'fontSizePercent',
+  'lineSpacingPercent',
+  'minimumFontSizeRem',
+]);
+const LEGACY_V8_APPEARANCE_KEYS = Object.freeze([
+  'backgroundColor',
+  'fontColor',
+  'fontFamily',
+  'fontSizePercent',
+  'lineSpacingPercent',
+  'messageBackgroundPreset',
+  'minimumFontSizeRem',
+  'standbyClockSizePercent',
 ]);
 
 function isPlainObject(value) {
@@ -117,14 +137,7 @@ function isCanonicalV2Shape(candidate) {
     hasExactKeys(candidate, LEGACY_V2_CONFIG_KEYS) &&
     candidate.configVersion === 2 &&
     hasCommonLegacySections(candidate) &&
-    hasExactKeys(candidate.appearance, [
-      'backgroundColor',
-      'fontColor',
-      'fontFamily',
-      'fontSizePercent',
-      'lineSpacingPercent',
-      'minimumFontSizeRem',
-    ]) &&
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS) &&
     hasExactKeys(candidate.dateTime, ['enabled']) &&
     typeof candidate.dateTime.enabled === 'boolean' &&
     hasExactKeys(candidate.emergency, [
@@ -135,7 +148,24 @@ function isCanonicalV2Shape(candidate) {
 }
 
 /**
- * 將 v5／v6 的單張待機背景轉成 v7 有序清單。
+ * v7 以前沒有訊息材質與獨立待機時間比例；遷移時保留原本純色外觀，
+ * 並讓待機時間沿用舊字體比例，避免升級後畫面突然改變。
+ */
+function migrateLegacyAppearance(legacyAppearance, defaultAppearance) {
+  const appearance = {
+    ...defaultAppearance,
+    ...legacyAppearance,
+  };
+
+  return {
+    ...appearance,
+    messageBackgroundPreset: 'solid',
+    standbyClockSizePercent: appearance.fontSizePercent,
+  };
+}
+
+/**
+ * 將 v5／v6 的單張待機背景轉成目前版本的有序清單。
  * null 代表沒有背景，因此轉成空陣列；既有圖片則固定放在第一張。
  */
 function migrateSingleStandbyBackground(legacyStandby, defaultStandby) {
@@ -150,10 +180,10 @@ function migrateSingleStandbyBackground(legacyStandby, defaultStandby) {
 }
 
 /**
- * 將磁碟上的合法 v1 至 v6 設定轉成 canonical v7。
+ * 將磁碟上的合法 v1 至 v8 設定轉成 canonical v9。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v7。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v7 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v9。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v9 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -169,14 +199,58 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V8_CONFIG_KEYS) &&
+    candidate.configVersion === 8 &&
+    hasExactKeys(candidate.appearance, LEGACY_V8_APPEARANCE_KEYS)
+  ) {
+    const migratedV8 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      appearance: {
+        ...candidate.appearance,
+        messageLiquidEffectEnabled:
+          defaults.value.appearance.messageLiquidEffectEnabled,
+      },
+    });
+
+    return migratedV8.ok
+      ? { ok: true, value: migratedV8.value, migrated: true }
+      : migratedV8;
+  }
+
+  if (
+    hasExactKeys(candidate, LEGACY_V7_CONFIG_KEYS) &&
+    candidate.configVersion === 7 &&
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS)
+  ) {
+    const migratedV7 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      appearance: migrateLegacyAppearance(
+        candidate.appearance,
+        defaults.value.appearance,
+      ),
+    });
+
+    return migratedV7.ok
+      ? { ok: true, value: migratedV7.value, migrated: true }
+      : migratedV7;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V6_CONFIG_KEYS) &&
     candidate.configVersion === 6 &&
     hasExactKeys(candidate.logo, ['enabled', 'path', 'sizePercent']) &&
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS) &&
     hasExactKeys(candidate.standby, ['backgroundImagePath'])
   ) {
     const migratedV6 = validateConfig({
       ...candidate,
       configVersion: defaults.value.configVersion,
+      appearance: migrateLegacyAppearance(
+        candidate.appearance,
+        defaults.value.appearance,
+      ),
       standby: migrateSingleStandbyBackground(
         candidate.standby,
         defaults.value.standby,
@@ -192,6 +266,7 @@ function migrateStoredConfig(candidate, currentDefaults) {
     hasExactKeys(candidate, LEGACY_V5_CONFIG_KEYS) &&
     candidate.configVersion === 5 &&
     hasExactKeys(candidate.logo, ['enabled', 'path']) &&
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS) &&
     hasExactKeys(candidate.standby, ['backgroundImagePath'])
   ) {
     const migratedV5 = validateConfig({
@@ -201,6 +276,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         ...candidate.logo,
         sizePercent: defaults.value.logo.sizePercent,
       },
+      appearance: migrateLegacyAppearance(
+        candidate.appearance,
+        defaults.value.appearance,
+      ),
       standby: migrateSingleStandbyBackground(
         candidate.standby,
         defaults.value.standby,
@@ -215,7 +294,8 @@ function migrateStoredConfig(candidate, currentDefaults) {
   if (
     hasExactKeys(candidate, LEGACY_V4_CONFIG_KEYS) &&
     candidate.configVersion === 4 &&
-    hasExactKeys(candidate.logo, ['enabled', 'path'])
+    hasExactKeys(candidate.logo, ['enabled', 'path']) &&
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS)
   ) {
     const migratedV4 = validateConfig({
       ...candidate,
@@ -224,6 +304,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         ...candidate.logo,
         sizePercent: defaults.value.logo.sizePercent,
       },
+      appearance: migrateLegacyAppearance(
+        candidate.appearance,
+        defaults.value.appearance,
+      ),
       standby: { ...defaults.value.standby },
     });
 
@@ -235,7 +319,8 @@ function migrateStoredConfig(candidate, currentDefaults) {
   if (
     hasExactKeys(candidate, LEGACY_V3_CONFIG_KEYS) &&
     candidate.configVersion === 3 &&
-    hasExactKeys(candidate.logo, ['enabled', 'path'])
+    hasExactKeys(candidate.logo, ['enabled', 'path']) &&
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS)
   ) {
     const migratedV3 = validateConfig({
       ...candidate,
@@ -244,6 +329,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         ...candidate.logo,
         sizePercent: defaults.value.logo.sizePercent,
       },
+      appearance: migrateLegacyAppearance(
+        candidate.appearance,
+        defaults.value.appearance,
+      ),
       playback: { ...defaults.value.playback },
       standby: { ...defaults.value.standby },
     });
@@ -261,6 +350,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         ...candidate.logo,
         sizePercent: defaults.value.logo.sizePercent,
       },
+      appearance: migrateLegacyAppearance(
+        candidate.appearance,
+        defaults.value.appearance,
+      ),
       dateTime: {
         enabled: candidate.dateTime.enabled,
         offsetSeconds: defaults.value.dateTime.offsetSeconds,
@@ -294,10 +387,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
       ...candidate.logo,
       sizePercent: defaults.value.logo.sizePercent,
     },
-    appearance: {
-      ...defaults.value.appearance,
-      ...candidate.appearance,
-    },
+    appearance: migrateLegacyAppearance(
+      candidate.appearance,
+      defaults.value.appearance,
+    ),
     dateTime: {
       enabled: candidate.dateTime.enabled,
       offsetSeconds: defaults.value.dateTime.offsetSeconds,

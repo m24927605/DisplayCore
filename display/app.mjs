@@ -6,24 +6,62 @@ import {
   LOGO_TREATMENTS,
 } from './logo-appearance.mjs';
 import { calculateLogoLayoutScales } from './logo-size.mjs';
+import {
+  createMessageBackgroundLoader,
+} from './message-background-loader.mjs';
+import {
+  createMessageLiquidAnimator,
+} from './message-liquid-progress.mjs';
+import {
+  renderMessageLiquidFrame,
+  resetMessageLiquidSvgs,
+  syncMessageLiquidSvgs,
+  warmMessageLiquidPipeline,
+} from './message-liquid-svg.mjs';
+import { createMessageTypographyPlan } from './message-typography.mjs';
 import { createDisplaySettingsController } from './settings-controller.mjs';
 import { SAFE_DISPLAY_SETTINGS } from './settings-state.mjs';
 import {
   createStandbyBackgroundPlayer,
 } from './standby-background-player.mjs';
 import { createSandTransition } from './sand-transition.mjs';
+import { createSandTimeline } from './sand-timeline.mjs';
+import { createSandWebglRenderer } from './sand-webgl-renderer.mjs';
 import { resolveRenderResolution } from './render-resolution.mjs';
 import {
   calculateResponsiveFontBounds,
   findLargestFittingFontSize,
 } from './text-fit.mjs';
 
-const FILL_CELL_COUNT = 24;
+const EMERGENCY_GRID_CELL_COUNT = 9;
+const EMERGENCY_GLYPHS = Object.freeze({
+  inspection: '5',
+  release: '8',
+});
+const MESSAGE_BACKGROUND_VIEWPORT_COLORS = Object.freeze({
+  obsidian: '#292E34',
+  'dark-marble': '#313338',
+  walnut: '#321B11',
+  'emerald-onyx': '#0F3026',
+});
 const FIT_PRECISION_PX = 0.25;
 const MESSAGE_LINE_HEIGHT = 1.08;
 const LOGO_ALPHA_SAMPLE_EDGE = 64;
-const SAND_TRANSITION_DURATION_MS = 1_600;
+const SAND_TRANSITION_DURATION_MS = 2_800;
 const LAYOUT_GENERATION_STORAGE_KEY = 'displaycore-layout-generation';
+const SUPPORTS_IDLE_CALLBACK =
+  typeof globalThis.requestIdleCallback === 'function' &&
+  typeof globalThis.cancelIdleCallback === 'function';
+const requestSandPreparationIdle = SUPPORTS_IDLE_CALLBACK
+  ? (callback) => globalThis.requestIdleCallback(callback, { timeout: 1_000 })
+  : (callback) => globalThis.setTimeout(callback, 0);
+const cancelSandPreparationIdle = SUPPORTS_IDLE_CALLBACK
+  ? (handle) => globalThis.cancelIdleCallback(handle)
+  : (handle) => globalThis.clearTimeout(handle);
+const messageLiquidMotionPreference =
+  typeof globalThis.matchMedia === 'function'
+    ? globalThis.matchMedia('(prefers-reduced-motion: reduce)')
+    : null;
 
 const elements = Object.freeze({
   renderSurface: document.getElementById('display-render-surface'),
@@ -36,6 +74,7 @@ const elements = Object.freeze({
     document.getElementById('standby-background-image-buffer'),
   ]),
   sandCanvas: document.getElementById('standby-sand-transition'),
+  sandParticleCanvas: document.getElementById('standby-sand-particles'),
   chrome: document.getElementById('display-chrome'),
   logoFrame: document.getElementById('logo-frame'),
   logo: document.getElementById('display-logo'),
@@ -61,8 +100,20 @@ let pendingStandbyBackgroundImage = null;
 let standbyBackgroundReady = false;
 let sandOutgoingImage = null;
 let sandCoverCrop = null;
+let sandMaskImageData = null;
+let sandParticleImageData = null;
+let sandParticleSourcePixels = null;
+let sandPreparationHandle = null;
+let sandDustColumnStrengths = null;
+let sandDustColumnStrengthsWidth = 0;
+let sandPreparedViewportWidth = 0;
+let sandPreparedViewportHeight = 0;
+let sandPreparedScrimSignature = null;
 let clockHasValue = false;
 let clockSignature = null;
+let messageBackgroundGeneration = 0;
+let messageBackgroundReadyPromise = Promise.resolve(true);
+let liquidMotionFallbackScope = null;
 
 function readStoredLayoutGeneration() {
   try {
@@ -124,7 +175,7 @@ const clock = createDisplayClock({
     }
 
     updateChromeVisibility();
-    // 每秒只更新文字；若可見性不變，不重建正在播放的跑馬燈。
+    // 每分鐘只更新文字；若可見性不變，不重建正在播放的跑馬燈。
     if (clockHasValue !== previousClockHasValue) {
       scheduleFit();
     }
@@ -133,10 +184,54 @@ const clock = createDisplayClock({
 const standbyBackgroundPlayer = createStandbyBackgroundPlayer({
   onSourceChange: applyStandbyBackgroundSource,
 });
-const sandContext = elements.sandCanvas.getContext('2d', { alpha: true });
-const sandTransition = createSandTransition({
-  onFrame: drawStandbySandFrame,
+const messageBackgroundLoader = createMessageBackgroundLoader();
+const messageLiquidAnimator = createMessageLiquidAnimator({
+  onComplete({ revision, layoutGeneration }) {
+    pageProgressReporter?.liquidComplete(revision, layoutGeneration);
+  },
+  onFailure() {
+    const layoutGeneration = Number(elements.stage.dataset.layoutGeneration);
+    disableMessageLiquidEffect();
+    if (Number.isSafeInteger(layoutGeneration)) {
+      pageProgressReporter?.liquidComplete(
+        currentPresentation?.revision,
+        layoutGeneration,
+      );
+    }
+  },
+  renderFrame(frame) {
+    const expectedCount = elements.pageLayer.querySelectorAll(
+      '.message-row[data-liquid-effect="active"] .message-vessel',
+    ).length;
+    const renderedCount = renderMessageLiquidFrame(elements.pageLayer, frame);
+
+    if (expectedCount > 0 && renderedCount !== expectedCount) {
+      throw new Error('訊息酒液 SVG 未能繪製全部字形。');
+    }
+  },
+  shouldReduceMotion() {
+    return messageLiquidMotionPreference?.matches === true;
+  },
 });
+const sandContext = elements.sandCanvas.getContext('2d', { alpha: true });
+const sandWebglRenderer = createSandWebglRenderer({
+  canvas: elements.sandParticleCanvas,
+});
+const sandParticleContext = sandWebglRenderer === null
+  ? elements.sandParticleCanvas.getContext('2d', { alpha: true })
+  : null;
+const sandMaskCanvas = document.createElement('canvas');
+const sandMaskContext = sandMaskCanvas.getContext('2d', { alpha: true });
+const sandParticleSourceCanvas = document.createElement('canvas');
+const sandParticleSourceContext = sandParticleSourceCanvas.getContext('2d', {
+  alpha: true,
+  willReadFrequently: true,
+});
+const sandTransition = sandWebglRenderer === null
+  ? createSandTransition({ onFrame: drawStandbySandFrame })
+  : createSandTimeline({ onFrame: drawStandbySandFrame });
+elements.standbyBackgroundLayer.dataset.sandRenderer =
+  sandWebglRenderer === null ? 'canvas-2d' : 'webgl';
 
 function cancelPendingFit() {
   renderGeneration += 1;
@@ -150,7 +245,14 @@ function cancelPendingFit() {
 
 function clearVisualLayers() {
   cancelPendingFit();
-  cancelStandbySandTransition();
+  liquidMotionFallbackScope = null;
+  messageLiquidAnimator.reset();
+  resetMessageLiquidSvgs(elements.pageLayer);
+  const leavingStandby = currentPresentation?.mode !== 'blank';
+  if (leavingStandby) {
+    cancelScheduledSandPreparation();
+  }
+  cancelStandbySandTransition({ releaseBuffers: leavingStandby });
   elements.pageLayer.textContent = '';
   elements.fillLayer.textContent = '';
   elements.standbyBackgroundLayer.hidden = true;
@@ -171,14 +273,51 @@ function updateAnnouncement(message, priority) {
   elements.announcement.textContent = message;
 }
 
+/** 安全建立混合字型內容；不使用 innerHTML，也不改寫原始訊息。 */
+function appendMessageTypography(target, runs) {
+  for (const run of runs) {
+    if (run.kind === 'number') {
+      const number = document.createElement('span');
+      number.className = 'message-number';
+      number.textContent = run.text;
+      target.append(number);
+      continue;
+    }
+
+    target.append(document.createTextNode(run.text));
+  }
+}
+
+/**
+ * 建立唯一排版來源與固定純白外框。SVG 酒液會在最終排版完成後才建立，
+ * 並複製 sizing 內容成 alpha mask，避免中文、英文與 Didot 數字錯位。
+ */
+function createMessageVessel(message, className) {
+  const typography = createMessageTypographyPlan(message);
+  const vessel = document.createElement('span');
+  vessel.className = `${className} message-vessel`;
+  vessel.setAttribute('aria-hidden', 'true');
+  vessel.dataset.liquidCompatible = String(typography.liquidCompatible);
+
+  const sizing = document.createElement('span');
+  sizing.className = 'message-glyph-layer message-glyph-sizing';
+  appendMessageTypography(sizing, typography.runs);
+
+  const shell = document.createElement('span');
+  shell.className = 'message-glyph-layer message-glyph-shell';
+  appendMessageTypography(shell, typography.runs);
+  vessel.append(sizing, shell);
+
+  return vessel;
+}
+
 function createStaticMessage(row, message) {
   row.textContent = '';
   row.classList.remove('is-marquee', 'is-compressed');
   row.style.removeProperty('--compression-ratio');
+  row.setAttribute('aria-label', message);
 
-  const text = document.createElement('span');
-  text.className = 'message-text';
-  text.textContent = message;
+  const text = createMessageVessel(message, 'message-text');
   row.append(text);
   return text;
 }
@@ -209,6 +348,7 @@ function pageFitsAt(fontSize, rows) {
 function activateMarquee(row, message) {
   row.textContent = '';
   row.classList.add('is-marquee');
+  row.setAttribute('aria-label', message);
 
   const track = document.createElement('span');
   track.className = 'marquee-track';
@@ -217,7 +357,7 @@ function activateMarquee(row, message) {
   for (let index = 0; index < 2; index += 1) {
     const copy = document.createElement('span');
     copy.className = 'marquee-copy';
-    copy.textContent = message;
+    copy.append(createMessageVessel(message, 'marquee-message'));
     track.append(copy);
   }
 
@@ -270,11 +410,171 @@ function protectOverflowingRows(rows) {
   compressOverflowingRows(overflowingRows);
 }
 
-function reportPageReady(
+/** 動效無法與 Main 的頁面生命週期同步時，安全退回可讀的白色實心字。 */
+function disableMessageLiquidEffect() {
+  resetMessageLiquidSvgs(elements.pageLayer, { fallback: true });
+  for (const row of getRows()) {
+    if (row.dataset.liquidEffect === 'active') {
+      row.dataset.liquidEffect = 'static';
+    }
+  }
+}
+
+/**
+ * 系統在訊息播放途中切換降低動態時，只停止 Renderer 的裝飾時鐘並退回白字。
+ * 切回一般動態不處理，確保同一頁不會從中途重新倒酒；下一頁會重新 prepare。
+ */
+function handleMessageLiquidMotionPreferenceChange() {
+  if (messageLiquidMotionPreference?.matches !== true) {
+    return;
+  }
+
+  liquidMotionFallbackScope = Object.freeze({
+    presentationRevision: currentPresentation?.revision ?? null,
+    settingsRevision: currentSettings.revision,
+  });
+  const layoutGeneration = Number(elements.stage.dataset.layoutGeneration);
+  if (Number.isSafeInteger(layoutGeneration)) {
+    pageProgressReporter?.liquidComplete(
+      currentPresentation?.revision,
+      layoutGeneration,
+    );
+  }
+  messageLiquidAnimator.reset();
+  disableMessageLiquidEffect();
+}
+
+/** 以最長跑馬燈 traversal 與設定最短秒數的較大值作為實際顯示時間。 */
+function calculateEffectivePageDurationMilliseconds(tracks) {
+  const configuredDuration = Number.isSafeInteger(
+    currentPresentation?.pageDurationSeconds,
+  )
+    ? currentPresentation.pageDurationSeconds * 1_000
+    : 0;
+  let effectiveDuration = configuredDuration;
+
+  for (const track of tracks) {
+    const durationSeconds = Number.parseFloat(
+      track.style.getPropertyValue('--marquee-duration'),
+    );
+    if (Number.isFinite(durationSeconds) && durationSeconds > 0) {
+      effectiveDuration = Math.max(
+        effectiveDuration,
+        durationSeconds * 1_000,
+      );
+    }
+  }
+
+  return effectiveDuration;
+}
+
+function startMessageLiquidEffect(revision, layoutGeneration) {
+  const started = messageLiquidAnimator.start(revision, layoutGeneration);
+  if (!started) {
+    disableMessageLiquidEffect();
+  }
+  return started;
+}
+
+/** 新 layout 進入 pending 時暫停跑馬燈；同頁酒液維持單一連續時鐘。 */
+function holdPageEffectsForLayout(revision) {
+  for (const track of elements.pageLayer.querySelectorAll('.marquee-track')) {
+    track.style.animationPlayState = 'paused';
+  }
+  messageLiquidAnimator.holdAtStart(revision);
+}
+
+/** Main 接受目前版面後，同步放行跑馬燈與酒液的播放時軸。 */
+function startAcceptedPageEffects({ revision, layoutGeneration }) {
+  if (
+    currentPresentation?.mode !== 'page' ||
+    currentPresentation.revision !== revision ||
+    Number(elements.stage.dataset.layoutGeneration) !== layoutGeneration
+  ) {
+    return false;
+  }
+
+  const hasActiveLiquid = elements.pageLayer.querySelector(
+    '.message-row[data-liquid-effect="active"]',
+  ) !== null;
+  if (hasActiveLiquid) {
+    // 酒液只是裝飾：建立失敗已由 helper 退回白字，不得卡住 finite 播放。
+    if (!startMessageLiquidEffect(revision, layoutGeneration)) {
+      pageProgressReporter?.liquidComplete(revision, layoutGeneration);
+    }
+  }
+
+  /*
+   * CSS 動畫預設 paused；此處與 WAAPI 的酒液 start 同步執行，瀏覽器會在
+   * 下一個 compositor frame 一起開始，避免 IPC 延遲期間跑馬燈先行。
+   */
+  for (const track of elements.pageLayer.querySelectorAll('.marquee-track')) {
+    track.style.animationPlayState = 'running';
+  }
+  return true;
+}
+
+async function reportPageReady(
   presentationRevision,
   settingsRevision,
   layoutToken,
 ) {
+  const readyGeneration = renderGeneration;
+  const tracks = [
+    ...elements.pageLayer.querySelectorAll('.marquee-track'),
+  ];
+  const activeLiquidRows = elements.pageLayer.querySelectorAll(
+    '.message-row[data-liquid-effect="active"]',
+  );
+  const activeLiquidVessels = elements.pageLayer.querySelectorAll(
+    '.message-row[data-liquid-effect="active"] .message-vessel',
+  );
+  const effectiveDurationMilliseconds =
+    calculateEffectivePageDurationMilliseconds(tracks);
+  let liquidLayoutReady = true;
+
+  if (activeLiquidVessels.length > 0) {
+    const renderers = syncMessageLiquidSvgs(elements.pageLayer, {
+      seed: presentationRevision,
+    });
+    liquidLayoutReady = renderers.length === activeLiquidVessels.length;
+    if (!liquidLayoutReady) {
+      disableMessageLiquidEffect();
+    }
+  }
+
+  if (
+    liquidLayoutReady &&
+    activeLiquidRows.length > 0 &&
+    !messageLiquidAnimator.retime(
+      presentationRevision,
+      effectiveDurationMilliseconds,
+    )
+  ) {
+    disableMessageLiquidEffect();
+    liquidLayoutReady = false;
+  }
+
+  if (liquidLayoutReady && activeLiquidRows.length > 0) {
+    const warmed = await warmMessageLiquidPipeline(elements.pageLayer, {
+      durationMilliseconds: effectiveDurationMilliseconds,
+    });
+    if (!warmed) {
+      disableMessageLiquidEffect();
+    }
+  }
+
+  if (
+    readyGeneration !== renderGeneration ||
+    currentPresentation?.mode !== 'page' ||
+    currentPresentation.revision !== presentationRevision ||
+    currentPresentation.pageNumber !== layoutToken.pageNumber ||
+    currentSettings.revision !== settingsRevision ||
+    currentDisplayEpoch !== layoutToken.displayEpoch
+  ) {
+    return false;
+  }
+
   elements.stage.dataset.marqueeCount = String(
     elements.pageLayer.querySelectorAll('.is-marquee').length,
   );
@@ -285,8 +585,14 @@ function reportPageReady(
   );
   pageProgressReporter.ready(
     layoutToken,
-    [...elements.pageLayer.querySelectorAll('.marquee-track')],
+    tracks,
+    {
+      liquidCompletionRequired: elements.pageLayer.querySelector(
+        '.message-row[data-liquid-effect="active"]',
+      ) !== null,
+    },
   );
+  return true;
 }
 
 function fitCurrentPage(
@@ -397,6 +703,34 @@ function fitCurrentPage(
   );
 }
 
+/** Main 接受 pending 並取消舊 timer 後，才可把同頁酒液歸零並重新排版。 */
+function startAcceptedPageLayout(layoutToken) {
+  if (
+    currentPresentation?.mode !== 'page' ||
+    currentPresentation.revision !== layoutToken.revision ||
+    currentPresentation.pageNumber !== layoutToken.pageNumber ||
+    currentSettings.revision !== layoutToken.settingsRevision ||
+    currentDisplayEpoch !== layoutToken.displayEpoch
+  ) {
+    return false;
+  }
+
+  holdPageEffectsForLayout(currentPresentation.revision);
+  const generation = renderGeneration;
+  const presentationRevision = currentPresentation.revision;
+  const settingsRevision = currentSettings.revision;
+  fitFrame = requestAnimationFrame(() => {
+    fitFrame = null;
+    fitCurrentPage(
+      presentationRevision,
+      settingsRevision,
+      generation,
+      layoutToken,
+    );
+  });
+  return true;
+}
+
 function scheduleFit() {
   if (
     currentPresentation?.mode !== 'page' ||
@@ -418,19 +752,6 @@ function scheduleFit() {
   if (!layoutToken) {
     return;
   }
-
-  const generation = renderGeneration;
-  const presentationRevision = currentPresentation.revision;
-  const settingsRevision = currentSettings.revision;
-  fitFrame = requestAnimationFrame(() => {
-    fitFrame = null;
-    fitCurrentPage(
-      presentationRevision,
-      settingsRevision,
-      generation,
-      layoutToken,
-    );
-  });
 }
 
 function updateChromeVisibility() {
@@ -454,7 +775,9 @@ function updateChromeVisibility() {
     image.hidden = !showStandbyBackground ||
       image !== activeStandbyBackgroundImage;
   }
-  elements.sandCanvas.hidden = !showStandbyBackground ||
+  elements.sandCanvas.hidden = sandWebglRenderer !== null ||
+    !showStandbyBackground || !sandTransition.isRunning();
+  elements.sandParticleCanvas.hidden = !showStandbyBackground ||
     !sandTransition.isRunning();
   elements.clock.hidden = !showClock;
   elements.normalLayer.classList.toggle('has-logo', showLogo);
@@ -622,19 +945,159 @@ function calculateCoverCrop(image, width, height) {
   });
 }
 
-function clearStandbySandCanvas() {
-  sandOutgoingImage = null;
-  sandCoverCrop = null;
-  elements.sandCanvas.hidden = true;
-  elements.sandCanvas.width = 1;
-  elements.sandCanvas.height = 1;
+function setCanvasSize(canvas, width, height) {
+  if (canvas.width === width && canvas.height === height) {
+    return false;
+  }
+
+  canvas.width = width;
+  canvas.height = height;
+  return true;
 }
 
-function cancelStandbySandTransition() {
+/**
+ * 隱藏並清空本輪內容；輪播期間預設保留 backing store，避免下一輪重新配置。
+ * 離開待機或卸載時才縮回 1×1 並釋放大型像素陣列。
+ */
+function clearStandbySandCanvas({ releaseBuffers = false } = {}) {
+  sandOutgoingImage = null;
+  sandCoverCrop = null;
+  sandPreparedScrimSignature = null;
+  elements.sandCanvas.hidden = true;
+  elements.sandParticleCanvas.hidden = true;
+
+  sandContext?.clearRect(
+    0,
+    0,
+    elements.sandCanvas.width,
+    elements.sandCanvas.height,
+  );
+  sandParticleContext?.clearRect(
+    0,
+    0,
+    elements.sandParticleCanvas.width,
+    elements.sandParticleCanvas.height,
+  );
+  sandWebglRenderer?.clear();
+  sandMaskContext?.clearRect(0, 0, sandMaskCanvas.width, sandMaskCanvas.height);
+  sandParticleSourceContext?.clearRect(
+    0,
+    0,
+    sandParticleSourceCanvas.width,
+    sandParticleSourceCanvas.height,
+  );
+  sandMaskImageData?.data.fill(0);
+  sandParticleImageData?.data.fill(0);
+
+  if (!releaseBuffers) {
+    return;
+  }
+
+  sandMaskImageData = null;
+  sandParticleImageData = null;
+  sandParticleSourcePixels = null;
+  sandPreparedViewportWidth = 0;
+  sandPreparedViewportHeight = 0;
+  setCanvasSize(sandMaskCanvas, 1, 1);
+  setCanvasSize(sandParticleSourceCanvas, 1, 1);
+  setCanvasSize(elements.sandCanvas, 1, 1);
+  setCanvasSize(elements.sandParticleCanvas, 1, 1);
+}
+
+function cancelStandbySandTransition(options) {
   sandTransition.cancel();
-  clearStandbySandCanvas();
+  if (options?.releaseBuffers === true) {
+    sandTransition.discardPrepared();
+  }
+  clearStandbySandCanvas(options);
   delete elements.stage.dataset.standbyTransition;
   delete elements.stage.dataset.sandProgress;
+}
+
+function cancelScheduledSandPreparation({ preserveReady = false } = {}) {
+  if (sandPreparationHandle !== null) {
+    cancelSandPreparationIdle(sandPreparationHandle);
+    sandPreparationHandle = null;
+  }
+
+  if (
+    !preserveReady ||
+    elements.stage.dataset.sandPreparation !== 'ready'
+  ) {
+    delete elements.stage.dataset.sandPreparation;
+  }
+}
+
+/** 在背景靜止停留期間先建立下一輪遮罩與粒子幾何，轉場起點只做繪圖準備。 */
+function scheduleStandbySandPreparation() {
+  cancelScheduledSandPreparation({ preserveReady: true });
+
+  if (sandTransition.isRunning()) {
+    return false;
+  }
+
+  if (
+    currentPresentation?.mode !== 'blank' ||
+    !activeStandbyBackgroundImage ||
+    currentSettings.standby.backgroundMode !== 'slideshow' ||
+    currentSettings.standby.backgroundImageUrls.length < 2
+  ) {
+    sandTransition.discardPrepared();
+    clearStandbySandCanvas({ releaseBuffers: true });
+    delete elements.stage.dataset.sandPreparation;
+    return false;
+  }
+
+  const width = elements.standbyBackgroundLayer.clientWidth;
+  const height = elements.standbyBackgroundLayer.clientHeight;
+  const expectedImage = activeStandbyBackgroundImage;
+  const expectedScrimSignature = createStandbyScrimSignature(
+    currentSettings.appearance.fontColor,
+  );
+  if (width <= 0 || height <= 0) {
+    return false;
+  }
+
+  if (
+    elements.stage.dataset.sandPreparation === 'ready' &&
+    sandOutgoingImage === expectedImage &&
+    sandPreparedViewportWidth === width &&
+    sandPreparedViewportHeight === height &&
+    sandPreparedScrimSignature === expectedScrimSignature
+  ) {
+    return true;
+  }
+
+  elements.stage.dataset.sandPreparation = 'scheduled';
+  const handle = requestSandPreparationIdle(() => {
+    if (sandPreparationHandle !== handle) {
+      return;
+    }
+
+    sandPreparationHandle = null;
+    if (
+      currentPresentation?.mode !== 'blank' ||
+      activeStandbyBackgroundImage !== expectedImage ||
+      createStandbyScrimSignature(currentSettings.appearance.fontColor) !==
+        expectedScrimSignature ||
+      sandTransition.isRunning()
+    ) {
+      delete elements.stage.dataset.sandPreparation;
+      return;
+    }
+
+    const geometryPrepared = sandTransition.prepare({ width, height });
+    const buffersPrepared = geometryPrepared && prepareStandbySandBuffers(
+      expectedImage,
+      width,
+      height,
+    );
+    elements.stage.dataset.sandPreparation = buffersPrepared
+      ? 'ready'
+      : 'skipped';
+  });
+  sandPreparationHandle = handle;
+  return true;
 }
 
 function drawCoverImage(context, image, crop, width, height) {
@@ -651,58 +1114,620 @@ function drawCoverImage(context, image, crop, width, height) {
   );
 }
 
-/** 舊圖原位依連續沙丘表面挖出孔洞，再把中間偏右的來源圖塊畫成右上揚沙。 */
-function drawStandbySandFrame(frame) {
-  if (!sandContext || !sandOutgoingImage || !sandCoverCrop) {
+/**
+ * 在靜止停留期間先配置 Canvas、複製舊圖並讀取來源像素。
+ * 轉場真正開始時若圖片與尺寸相同，就不再觸發首輪 backing store 配置卡頓。
+ */
+function prepareStandbySandBuffers(image, width, height) {
+  if (
+    (sandWebglRenderer === null && (
+      !sandContext ||
+      !sandParticleContext ||
+      !sandParticleSourceContext
+    )) ||
+    !image ||
+    width <= 0 ||
+    height <= 0 ||
+    image.naturalWidth <= 0 ||
+    image.naturalHeight <= 0
+  ) {
+    return false;
+  }
+
+  sandOutgoingImage = image;
+  sandCoverCrop = calculateCoverCrop(image, width, height);
+  sandPreparedViewportWidth = width;
+  sandPreparedViewportHeight = height;
+  const scrimProfile = calculateStandbyScrimProfile(
+    currentSettings.appearance.fontColor,
+  );
+  const scrimSignature = createStandbyScrimSignature(
+    currentSettings.appearance.fontColor,
+  );
+
+  if (sandWebglRenderer !== null) {
+    const prepared = sandWebglRenderer.prepare({
+      image,
+      crop: sandCoverCrop,
+      width,
+      height,
+      scrim: scrimProfile,
+    });
+    if (!prepared) {
+      clearStandbySandCanvas({ releaseBuffers: true });
+    } else {
+      sandPreparedScrimSignature = scrimSignature;
+    }
+    return prepared;
+  }
+
+  setCanvasSize(elements.sandCanvas, width, height);
+  // 以總像素上限控制成本；1920 畫面維持接近原生解析度，4K 仍約 1600×900。
+  const particleScale = Math.min(
+    1,
+    Math.sqrt(1_500_000 / (width * height)),
+  );
+  const particleWidth = Math.max(1, Math.round(width * particleScale));
+  const particleHeight = Math.max(1, Math.round(height * particleScale));
+  setCanvasSize(elements.sandParticleCanvas, particleWidth, particleHeight);
+  setCanvasSize(sandParticleSourceCanvas, particleWidth, particleHeight);
+  sandContext.clearRect(0, 0, width, height);
+  sandContext.imageSmoothingEnabled = true;
+  drawCoverImage(sandContext, image, sandCoverCrop, width, height);
+  sandParticleSourceContext.clearRect(0, 0, particleWidth, particleHeight);
+  sandParticleSourceContext.imageSmoothingEnabled = true;
+  drawCoverImage(
+    sandParticleSourceContext,
+    image,
+    sandCoverCrop,
+    particleWidth,
+    particleHeight,
+  );
+
+  try {
+    sandParticleSourcePixels = sandParticleSourceContext.getImageData(
+      0,
+      0,
+      particleWidth,
+      particleHeight,
+    ).data;
+    if (
+      !sandParticleImageData ||
+      sandParticleImageData.width !== particleWidth ||
+      sandParticleImageData.height !== particleHeight
+    ) {
+      sandParticleImageData = sandParticleContext.createImageData(
+        particleWidth,
+        particleHeight,
+      );
+    }
+  } catch {
+    clearStandbySandCanvas();
+    return false;
+  }
+
+  sandPreparedScrimSignature = scrimSignature;
+  return true;
+}
+
+/** 將引擎的細顆粒資料同步到可重用離屏 Canvas，只更新這一幀的髒矩形。 */
+function updateSandMaskCanvas(erosionMask) {
+  if (!sandMaskContext) {
+    return false;
+  }
+
+  if (
+    sandMaskImageData === null ||
+    sandMaskCanvas.width !== erosionMask.width ||
+    sandMaskCanvas.height !== erosionMask.height
+  ) {
+    sandMaskCanvas.width = erosionMask.width;
+    sandMaskCanvas.height = erosionMask.height;
+    sandMaskImageData = sandMaskContext.createImageData(
+      erosionMask.width,
+      erosionMask.height,
+    );
+  }
+
+  const dirty = erosionMask.dirtyBounds;
+  if (dirty === null) {
+    return true;
+  }
+
+  const source = erosionMask.deltaPixels;
+  const destination = sandMaskImageData.data;
+  for (let y = dirty.y; y < dirty.y + dirty.height; y += 1) {
+    const start = (y * erosionMask.width + dirty.x) * 4;
+    const end = start + dirty.width * 4;
+    destination.set(source.subarray(start, end), start);
+  }
+  sandMaskContext.putImageData(
+    sandMaskImageData,
+    0,
+    0,
+    dirty.x,
+    dirty.y,
+    dirty.width,
+    dirty.height,
+  );
+  return true;
+}
+
+/** 將來源圖片像素以 source-over 混入顆粒 ImageData，重疊處仍保留正確色彩。 */
+function blendSandPixel(destination, destinationIndex, sourceIndex, opacity) {
+  if (!sandParticleSourcePixels || opacity <= 0) {
     return;
   }
 
-  elements.stage.dataset.sandProgress = frame.progress.toFixed(3);
-  sandContext.clearRect(0, 0, frame.width, frame.height);
-  sandContext.imageSmoothingEnabled = true;
-  drawCoverImage(
-    sandContext,
-    sandOutgoingImage,
-    sandCoverCrop,
-    frame.width,
-    frame.height,
+  const sourceAlpha = sandParticleSourcePixels[sourceIndex + 3] / 255 * opacity;
+  const destinationAlpha = destination[destinationIndex + 3] / 255;
+  const outputAlpha = sourceAlpha + destinationAlpha * (1 - sourceAlpha);
+  if (outputAlpha <= 0) {
+    return;
+  }
+
+  const destinationWeight = destinationAlpha * (1 - sourceAlpha);
+  for (let channel = 0; channel < 3; channel += 1) {
+    destination[destinationIndex + channel] = Math.round((
+      sandParticleSourcePixels[sourceIndex + channel] * sourceAlpha +
+      destination[destinationIndex + channel] * destinationWeight
+    ) / outputAlpha);
+  }
+  destination[destinationIndex + 3] = Math.round(outputAlpha * 255);
+}
+
+/**
+ * 將舊圖來源像素畫成一段 1～3px 的水平細砂。
+ *
+ * 風砂不能使用實心圓，否則亮色來源會變成雪點或泡泡；短水平粒同時保留來源
+ * 色彩與左至右風向。顆粒固定在有界 ImageData 上，4K 仍只需一次 putImageData。
+ */
+function rasterizeSandGrain(
+  destination,
+  sourceIndex,
+  particleWidth,
+  particleHeight,
+  x,
+  y,
+  width,
+  height,
+  opacity,
+  scaleX,
+  scaleY,
+) {
+  if (opacity <= 0 || width <= 0 || height <= 0) {
+    return;
+  }
+
+  const centerX = x * scaleX;
+  const centerY = y * scaleY;
+  const halfWidth = Math.max(0.5, width * scaleX / 2);
+  const halfHeight = Math.max(0.42, height * scaleY / 2);
+  const left = Math.max(0, Math.floor(centerX - halfWidth));
+  const right = Math.min(particleWidth - 1, Math.ceil(centerX + halfWidth));
+  const top = Math.max(0, Math.floor(centerY - halfHeight));
+  const bottom = Math.min(particleHeight - 1, Math.ceil(centerY + halfHeight));
+  let painted = false;
+
+  for (let pixelY = top; pixelY <= bottom; pixelY += 1) {
+    for (let pixelX = left; pixelX <= right; pixelX += 1) {
+      const normalizedX = Math.abs(pixelX + 0.5 - centerX) / halfWidth;
+      const normalizedY = Math.abs(pixelY + 0.5 - centerY) / halfHeight;
+      if (normalizedX > 1 || normalizedY > 1) {
+        continue;
+      }
+      // 砂粒中央清楚、四周快速變薄，避免整齊矩形看起來像電視雜訊。
+      const horizontalProfile = 1 - normalizedX ** 2;
+      const verticalProfile = 1 - normalizedY ** 2;
+      const edgeFade = Math.max(
+        0.16,
+        horizontalProfile * verticalProfile,
+      );
+      blendSandPixel(
+        destination,
+        (pixelY * particleWidth + pixelX) * 4,
+        sourceIndex,
+        opacity * edgeFade,
+      );
+      painted = true;
+    }
+  }
+
+  if (!painted) {
+    const pixelX = Math.max(0, Math.min(
+      particleWidth - 1,
+      Math.floor(centerX),
+    ));
+    const pixelY = Math.max(0, Math.min(
+      particleHeight - 1,
+      Math.floor(centerY),
+    ));
+    blendSandPixel(
+      destination,
+      (pixelY * particleWidth + pixelX) * 4,
+      sourceIndex,
+      opacity,
+    );
+  }
+}
+
+function smoothstep01(value) {
+  const progress = Math.min(1, Math.max(0, value));
+  return progress * progress * (3 - 2 * progress);
+}
+
+/**
+ * 預先計算每個遮罩欄位的沙塵供料量。
+ *
+ * 左側是低矮進風，約 66% 畫寬形成主揚砂核心，核心右側拉成較長尾流；最後
+ * 14% 畫寬逐步歸零，避免沙粒撞上螢幕右邊後被硬切斷。
+ */
+function getSandDustColumnStrengths(maskWidth) {
+  if (
+    sandDustColumnStrengths !== null &&
+    sandDustColumnStrengthsWidth === maskWidth
+  ) {
+    return sandDustColumnStrengths;
+  }
+
+  const strengths = new Float32Array(maskWidth);
+  for (let x = 0; x < maskWidth; x += 1) {
+    const normalizedX = (x + 0.5) / maskWidth;
+    const intake = smoothstep01(normalizedX / 0.66);
+    const coreSpread = normalizedX < 0.66 ? 0.095 : 0.19;
+    const core = Math.exp(
+      -0.5 * ((normalizedX - 0.66) / coreSpread) ** 2,
+    );
+    const edgeFade = smoothstep01((0.985 - normalizedX) / 0.145);
+    strengths[x] = (
+      0.015 + intake * 0.055 + core * 0.93
+    ) * edgeFade;
+  }
+
+  sandDustColumnStrengths = strengths;
+  sandDustColumnStrengthsWidth = maskWidth;
+  return strengths;
+}
+
+function calculateParticleRightEdgeFade(x, width) {
+  return smoothstep01((0.985 - x / width) / 0.145);
+}
+
+/**
+ * 將這一輪剛離開舊圖的遮罩像素直接搬成向右飛行的密集細砂。
+ *
+ * 稀疏主粒負責較遠的揚砂與尾流；這個貼面粒場負責補回被遮罩移除的圖片質量，
+ * 避免畫面先出現 wipe 接縫，之後才在別處看到零散粒子。每一粒的 RGB 都直接
+ * 取自舊背景相同位置，不建立假色煙霧，也不產生每幀物件配置。
+ */
+function rasterizeErosionDustField(
+  frame,
+  destination,
+  particleWidth,
+  particleHeight,
+  scaleX,
+  scaleY,
+) {
+  const { activations, width: maskWidth, height: maskHeight } =
+    frame.erosionMask;
+  if (!activations || frame.progress <= 0 || frame.progress >= 1) {
+    return;
+  }
+
+  const sourceCellEdge = Math.max(
+    frame.width / maskWidth,
+    frame.height / maskHeight,
   );
+  const columnStrengths = getSandDustColumnStrengths(maskWidth);
+  const finalFade = frame.progress <= 0.94
+    ? 1
+    : (1 - frame.progress) / 0.06;
 
-  sandContext.save();
-  sandContext.globalCompositeOperation = 'destination-out';
-  sandContext.beginPath();
-  for (const patch of frame.erosionPatches) {
-    sandContext.moveTo(patch.x + patch.radius, patch.y);
-    sandContext.arc(
-      patch.x,
-      patch.y,
-      patch.radius,
-      0,
-      Math.PI * 2,
-    );
+  for (let maskY = 0; maskY < maskHeight; maskY += 1) {
+    const sourceY = (maskY + 0.5) / maskHeight * frame.height;
+    // 棋盤式取樣保留每列連續風紋，同時把 4K 每幀像素工作量減半。
+    for (let maskX = maskY % 2; maskX < maskWidth; maskX += 2) {
+      const maskIndex = maskY * maskWidth + maskX;
+      const normalizedX = (maskX + 0.5) / maskWidth;
+      const plumeStrength = columnStrengths[maskX];
+      const activation = activations[maskIndex] / 255;
+      const lifeProgress = 0.09 + plumeStrength * 0.14;
+      const age = (frame.progress - activation) / lifeProgress;
+      if (age < 0 || age >= 1) {
+        continue;
+      }
+
+      let hash = Math.imul(maskIndex ^ 0x51ed270b, 1_597_334_677);
+      hash = Math.imul(hash ^ (hash >>> 15), 2_246_822_519);
+      const gateRandom = ((hash ^ (hash >>> 13)) >>> 0) / 4_294_967_295;
+      if (gateRandom > 0.012 + plumeStrength * 0.68) {
+        continue;
+      }
+      hash = Math.imul(hash ^ 0x68bc21eb, 3_266_489_917);
+      const motionRandom = ((hash ^ (hash >>> 16)) >>> 0) / 4_294_967_295;
+
+      const sourceX = (maskX + 0.5) / maskWidth * frame.width;
+      const travelProgress = age * (2 - age);
+      const horizontalTravel = frame.width * (
+        0.022 + plumeStrength * 0.17 + motionRandom * 0.026
+      ) * travelProgress;
+      const upwardTravel = frame.height * (
+        0.003 + plumeStrength * 0.034 + motionRandom * 0.006
+      ) * (1 - (1 - age) ** 1.35);
+      const streamJitter = Math.sin(
+        maskY * 0.73 + maskX * 0.11 + motionRandom * Math.PI * 2,
+      ) * sourceCellEdge * (0.4 + age * 1.2);
+      const destinationX = sourceX + horizontalTravel;
+      const rightEdgeFade = calculateParticleRightEdgeFade(
+        destinationX,
+        frame.width,
+      );
+      const opacity = Math.min(
+        0.5,
+        (0.012 + plumeStrength * 0.47) *
+          (1 - age) ** 0.68 *
+          finalFade *
+          (0.68 + motionRandom * 0.32) *
+          rightEdgeFade,
+      );
+      const sourcePixelX = Math.max(0, Math.min(
+        particleWidth - 1,
+        Math.floor(sourceX * scaleX),
+      ));
+      const sourcePixelY = Math.max(0, Math.min(
+        particleHeight - 1,
+        Math.floor(sourceY * scaleY),
+      ));
+      const sourceIndex = (
+        sourcePixelY * particleWidth + sourcePixelX
+      ) * 4;
+      const grainHeight = sourceCellEdge * (0.42 + motionRandom * 0.28);
+      const grainWidth = grainHeight * (
+        2.4 + plumeStrength * 2.1 + age * 1.4
+      );
+
+      rasterizeSandGrain(
+        destination,
+        sourceIndex,
+        particleWidth,
+        particleHeight,
+        destinationX,
+        sourceY - upwardTravel + streamJitter,
+        grainWidth,
+        grainHeight,
+        opacity,
+        scaleX,
+        scaleY,
+      );
+    }
   }
-  sandContext.fill();
-  sandContext.restore();
+}
 
-  sandContext.imageSmoothingEnabled = false;
+/**
+ * 只對舊圖 Canvas 新增的侵蝕區做 destination-out；飛散圖粒畫在獨立的
+ * 半解析度 Canvas，讓 4K 畫面不必在每一幀清除及重畫整張舊圖片。
+ */
+function drawStandbySandFrame(frame) {
+  elements.stage.dataset.sandProgress = frame.progress.toFixed(3);
+
+  if (sandWebglRenderer !== null) {
+    if (!sandWebglRenderer.draw(frame.progress)) {
+      throw new Error('GPU 風吹砂單幀繪製失敗。');
+    }
+    return;
+  }
+
+  if (
+    !sandContext ||
+    !sandParticleContext ||
+    !sandOutgoingImage ||
+    !sandCoverCrop
+  ) {
+    return;
+  }
+
+  if (updateSandMaskCanvas(frame.erosionMask)) {
+    const dirty = frame.erosionMask.dirtyBounds;
+    if (dirty !== null) {
+      const sourceX = Math.max(0, dirty.x - 1);
+      const sourceY = Math.max(0, dirty.y - 1);
+      const sourceRight = Math.min(
+        frame.erosionMask.width,
+        dirty.x + dirty.width + 1,
+      );
+      const sourceBottom = Math.min(
+        frame.erosionMask.height,
+        dirty.y + dirty.height + 1,
+      );
+      const sourceWidth = sourceRight - sourceX;
+      const sourceHeight = sourceBottom - sourceY;
+      const destinationX = sourceX / frame.erosionMask.width * frame.width;
+      const destinationY = sourceY / frame.erosionMask.height * frame.height;
+      const destinationWidth = sourceWidth /
+        frame.erosionMask.width * frame.width;
+      const destinationHeight = sourceHeight /
+        frame.erosionMask.height * frame.height;
+
+      sandContext.save();
+      sandContext.globalCompositeOperation = 'destination-out';
+      sandContext.imageSmoothingEnabled = false;
+      sandContext.drawImage(
+        sandMaskCanvas,
+        sourceX,
+        sourceY,
+        sourceWidth,
+        sourceHeight,
+        destinationX,
+        destinationY,
+        destinationWidth,
+        destinationHeight,
+      );
+      sandContext.restore();
+    }
+  }
+
+  const particleWidth = elements.sandParticleCanvas.width;
+  const particleHeight = elements.sandParticleCanvas.height;
+  const scaleX = particleWidth / frame.width;
+  const scaleY = particleHeight / frame.height;
+  if (
+    !sandParticleImageData ||
+    !sandParticleSourcePixels ||
+    sandParticleImageData.width !== particleWidth ||
+    sandParticleImageData.height !== particleHeight
+  ) {
+    return;
+  }
+
+  const destination = sandParticleImageData.data;
+  destination.fill(0);
+  rasterizeErosionDustField(
+    frame,
+    destination,
+    particleWidth,
+    particleHeight,
+    scaleX,
+    scaleY,
+  );
   for (const particle of frame.particles) {
-    const sourceSize = particle.sourceSize / sandCoverCrop.scale;
-    sandContext.globalAlpha = particle.opacity;
-    sandContext.drawImage(
-      sandOutgoingImage,
-      sandCoverCrop.sourceX +
-        (particle.sourceX - particle.sourceSize / 2) / sandCoverCrop.scale,
-      sandCoverCrop.sourceY +
-        (particle.sourceY - particle.sourceSize / 2) / sandCoverCrop.scale,
-      sourceSize,
-      sourceSize,
-      particle.x - particle.size / 2,
-      particle.y - particle.size / 2,
-      particle.size,
-      particle.size,
+    const particleEdgeFade = calculateParticleRightEdgeFade(
+      particle.x,
+      frame.width,
+    );
+    const particleOpacity = particle.opacity * particleEdgeFade;
+    if (particleOpacity < 0.004) {
+      continue;
+    }
+    const sourceX = Math.max(0, Math.min(
+      particleWidth - 1,
+      Math.floor(particle.sourceX * scaleX),
+    ));
+    const sourceY = Math.max(0, Math.min(
+      particleHeight - 1,
+      Math.floor(particle.sourceY * scaleY),
+    ));
+    const sourceIndex = (sourceY * particleWidth + sourceX) * 4;
+
+    const activeFragmentGrainCount = Math.ceil(
+      particle.fragmentGrainCount * particle.fragmentStrength,
+    );
+    for (
+      let fragmentGrainIndex = 0;
+      fragmentGrainIndex < activeFragmentGrainCount;
+      fragmentGrainIndex += 1
+    ) {
+      const fragmentPhase = particle.wakePhase * 1.73 +
+        fragmentGrainIndex * 2.399963;
+      const fragmentJitter = (Math.sin(fragmentPhase * 6.17) + 1) / 2;
+      const fragmentDistance = particle.fragmentSpread * Math.sqrt(
+        (fragmentGrainIndex + 0.25 + fragmentJitter * 0.5) /
+          (particle.fragmentGrainCount + 0.5),
+      ) * 2.2;
+      const fragmentSourceX = Math.max(0, Math.min(
+        particleWidth - 1,
+        sourceX - Math.round(fragmentDistance * scaleX),
+      ));
+      const fragmentSourceY = Math.max(0, Math.min(
+        particleHeight - 1,
+        sourceY + Math.round(
+          Math.sin(fragmentPhase) * particle.fragmentSpread * 0.35 * scaleY,
+        ),
+      ));
+      const fragmentSourceIndex = (
+        fragmentSourceY * particleWidth + fragmentSourceX
+      ) * 4;
+      const fragmentSizeScale = 0.24 + fragmentJitter * 0.18;
+
+      rasterizeSandGrain(
+        destination,
+        fragmentSourceIndex,
+        particleWidth,
+        particleHeight,
+        particle.x - fragmentDistance,
+        particle.y + Math.sin(fragmentPhase) * particle.fragmentSpread * 0.35,
+        particle.width * fragmentSizeScale,
+        particle.height * fragmentSizeScale,
+        particleOpacity * (0.36 + particle.fragmentStrength * 0.3),
+        scaleX,
+        scaleY,
+      );
+    }
+
+    for (
+      let wakeIndex = particle.wakeGrainCount;
+      wakeIndex >= 1;
+      wakeIndex -= 1
+    ) {
+      const wakeJitter = (
+        Math.sin(particle.wakePhase * 13.7 + wakeIndex * 78.233) + 1
+      ) / 2;
+      const wakeProgress = Math.pow(
+        Math.max(0.04, Math.min(
+          0.98,
+          (wakeIndex - 0.32 + wakeJitter * 0.64) /
+            (particle.wakeGrainCount + 0.36),
+        )),
+        1.28,
+      );
+      const wakeScale = 1 - wakeProgress * 0.55;
+      const wakeOpacity = particleOpacity * particle.wakeOpacityScale *
+        (1 - wakeProgress * 0.7);
+      const sourceSpread = Math.max(
+        1,
+        Math.round(particle.sourceSize * Math.max(scaleX, scaleY) * 1.4),
+      );
+      const wakeSourceX = Math.max(0, Math.min(
+        particleWidth - 1,
+        sourceX + Math.round(
+          Math.sin(particle.wakePhase + wakeIndex * 2.17) * sourceSpread,
+        ),
+      ));
+      const wakeSourceY = Math.max(0, Math.min(
+        particleHeight - 1,
+        sourceY + Math.round(
+          Math.cos(particle.wakePhase * 1.31 + wakeIndex * 1.73) *
+            sourceSpread,
+        ),
+      ));
+      const wakeSourceIndex = (
+        wakeSourceY * particleWidth + wakeSourceX
+      ) * 4;
+
+      if (wakeOpacity < 0.012) {
+        continue;
+      }
+
+      rasterizeSandGrain(
+        destination,
+        wakeSourceIndex,
+        particleWidth,
+        particleHeight,
+        particle.x - particle.wakeLength * wakeProgress,
+        particle.y + Math.sin(
+          particle.wakePhase + wakeProgress * Math.PI * 2.7,
+        ) * particle.wakeCurl * (0.45 + wakeProgress * 0.55),
+        particle.width * wakeScale,
+        particle.height * wakeScale,
+        wakeOpacity,
+        scaleX,
+        scaleY,
+      );
+    }
+    rasterizeSandGrain(
+      destination,
+      sourceIndex,
+      particleWidth,
+      particleHeight,
+      particle.x,
+      particle.y,
+      particle.width,
+      particle.height,
+      particleOpacity,
+      scaleX,
+      scaleY,
     );
   }
-  sandContext.globalAlpha = 1;
+  sandParticleContext.putImageData(sandParticleImageData, 0, 0);
 }
 
 /**
@@ -717,7 +1742,12 @@ function startStandbySandTransition(image, url) {
   const height = elements.standbyBackgroundLayer.clientHeight;
 
   if (
-    !sandContext ||
+    (sandWebglRenderer === null && (
+      !sandContext ||
+      !sandParticleContext ||
+      !sandParticleSourceContext ||
+      !sandMaskContext
+    )) ||
     !outgoingImage ||
     width <= 0 ||
     height <= 0 ||
@@ -727,14 +1757,30 @@ function startStandbySandTransition(image, url) {
     return false;
   }
 
-  cancelStandbySandTransition();
-  elements.sandCanvas.width = width;
-  elements.sandCanvas.height = height;
-  sandOutgoingImage = outgoingImage;
-  sandCoverCrop = calculateCoverCrop(outgoingImage, width, height);
-  sandContext.clearRect(0, 0, width, height);
-  sandContext.imageSmoothingEnabled = true;
-  drawCoverImage(sandContext, outgoingImage, sandCoverCrop, width, height);
+  const buffersArePrepared =
+    !sandTransition.isRunning() &&
+    sandOutgoingImage === outgoingImage &&
+    sandCoverCrop !== null &&
+    sandPreparedViewportWidth === width &&
+    sandPreparedViewportHeight === height &&
+    sandPreparedScrimSignature === createStandbyScrimSignature(
+      currentSettings.appearance.fontColor,
+    ) &&
+    (sandWebglRenderer !== null || (
+      sandParticleSourcePixels !== null &&
+      sandParticleImageData !== null
+    ));
+  cancelScheduledSandPreparation();
+  sandTransition.cancel();
+  delete elements.stage.dataset.standbyTransition;
+  delete elements.stage.dataset.sandProgress;
+
+  if (!buffersArePrepared) {
+    clearStandbySandCanvas();
+    if (!prepareStandbySandBuffers(outgoingImage, width, height)) {
+      return false;
+    }
+  }
 
   activeStandbyBackgroundImage = image;
   pendingStandbyBackgroundImage = null;
@@ -742,18 +1788,23 @@ function startStandbySandTransition(image, url) {
   standbyBackgroundReady = true;
   elements.stage.dataset.standbyBackgroundState = 'ready';
   elements.stage.dataset.standbyTransition = 'sand';
+  elements.stage.dataset.sandPreparation = 'consumed';
+
+  const finishTransition = () => {
+    clearStandbySandCanvas();
+    delete elements.stage.dataset.standbyTransition;
+    delete elements.stage.dataset.sandProgress;
+    updateChromeVisibility();
+    scheduleStandbySandPreparation();
+    standbyBackgroundPlayer.handleLoad(url);
+  };
 
   const started = sandTransition.start({
     width,
     height,
     durationMs: SAND_TRANSITION_DURATION_MS,
-    onComplete() {
-      clearStandbySandCanvas();
-      delete elements.stage.dataset.standbyTransition;
-      delete elements.stage.dataset.sandProgress;
-      updateChromeVisibility();
-      standbyBackgroundPlayer.handleLoad(url);
-    },
+    onComplete: finishTransition,
+    onError: finishTransition,
   });
 
   if (!started) {
@@ -791,6 +1842,7 @@ function commitStandbyBackgroundImage(image, url) {
   standbyBackgroundReady = true;
   elements.stage.dataset.standbyBackgroundState = 'ready';
   updateChromeVisibility();
+  scheduleStandbySandPreparation();
   standbyBackgroundPlayer.handleLoad(url);
   return true;
 }
@@ -838,7 +1890,8 @@ function handleStandbyBackgroundError(event) {
 }
 
 function clearStandbyBackgroundImages() {
-  cancelStandbySandTransition();
+  cancelScheduledSandPreparation();
+  cancelStandbySandTransition({ releaseBuffers: true });
   expectedStandbyBackgroundUrl = null;
   activeStandbyBackgroundImage = null;
   pendingStandbyBackgroundImage = null;
@@ -855,7 +1908,10 @@ function clearStandbyBackgroundImages() {
  */
 function applyStandbyBackgroundSource(nextUrl) {
   // 設定更新可能在轉場中途重設來源；舊世代動畫必須立即失效。
-  cancelStandbySandTransition();
+  // 靜止停留時則保留剛在 idle 期間準備完成的 Canvas，供下一張直接使用。
+  if (sandTransition.isRunning()) {
+    cancelStandbySandTransition();
+  }
 
   if (nextUrl === null) {
     clearStandbyBackgroundImages();
@@ -879,6 +1935,7 @@ function applyStandbyBackgroundSource(nextUrl) {
     standbyBackgroundReady = true;
     elements.stage.dataset.standbyBackgroundState = 'ready';
     updateChromeVisibility();
+    scheduleStandbySandPreparation();
     standbyBackgroundPlayer.handleLoad(nextUrl);
     return;
   }
@@ -946,15 +2003,25 @@ function calculateLogoOutline(backgroundColor) {
     : 'rgb(255 255 255 / 10%)';
 }
 
-/** 依文字明暗自動提供相反色遮罩，不增加管理員設定負擔。 */
-function calculateStandbyScrim(fontColor) {
+/** 依文字明暗回傳相反色遮罩；CSS 與 GPU 舊圖共用同一份色彩資料。 */
+function calculateStandbyScrimProfile(fontColor) {
   const red = Number.parseInt(fontColor.slice(1, 3), 16);
   const green = Number.parseInt(fontColor.slice(3, 5), 16);
   const blue = Number.parseInt(fontColor.slice(5, 7), 16);
   const relativeBrightness = (red * 299 + green * 587 + blue * 114) / 1000;
   return relativeBrightness >= 150
-    ? 'rgb(0 0 0 / 48%)'
-    : 'rgb(255 255 255 / 52%)';
+    ? Object.freeze({ red: 0, green: 0, blue: 0, alpha: 0.48 })
+    : Object.freeze({ red: 1, green: 1, blue: 1, alpha: 0.52 });
+}
+
+function createStandbyScrimSignature(fontColor) {
+  const { red, green, blue, alpha } = calculateStandbyScrimProfile(fontColor);
+  return `${red}:${green}:${blue}:${alpha}`;
+}
+
+function calculateStandbyScrim(fontColor) {
+  const { red, green, blue, alpha } = calculateStandbyScrimProfile(fontColor);
+  return `rgb(${red * 255} ${green * 255} ${blue * 255} / ${alpha * 100}%)`;
 }
 
 function applyEmergencyBackground(tone) {
@@ -965,6 +2032,10 @@ function applyEmergencyBackground(tone) {
     background = currentSettings.emergency.inspectionBackgroundColor;
   } else if (tone === 'release') {
     background = currentSettings.emergency.releaseBackgroundColor;
+  } else if (currentPresentation?.mode === 'page') {
+    background = MESSAGE_BACKGROUND_VIEWPORT_COLORS[
+      currentSettings.appearance.messageBackgroundPreset
+    ] ?? background;
   }
 
   const rootStyle = document.documentElement.style;
@@ -976,9 +2047,55 @@ function applyEmergencyBackground(tone) {
   rootStyle.setProperty('--viewport-background', background);
 }
 
+/**
+ * 先完成目前材質的單張 4K 解碼，再原子切換 CSS selector。
+ * 快速連續改設定時，以世代號拒絕較舊 decode，避免舊材質反蓋新設定。
+ */
+function prepareMessageBackground(preset) {
+  const generation = ++messageBackgroundGeneration;
+
+  if (preset === 'solid') {
+    messageBackgroundLoader.prepare('solid');
+    elements.stage.dataset.messageBackground = 'solid';
+    elements.stage.dataset.messageBackgroundState = 'ready';
+    messageBackgroundReadyPromise = Promise.resolve(true);
+    return;
+  }
+
+  elements.stage.dataset.messageBackgroundState = 'loading';
+  messageBackgroundReadyPromise = messageBackgroundLoader
+    .prepare(preset)
+    .then((ready) => {
+      if (generation !== messageBackgroundGeneration) {
+        return false;
+      }
+
+      elements.stage.dataset.messageBackground = ready ? preset : 'solid';
+      elements.stage.dataset.messageBackgroundState = ready ? 'ready' : 'error';
+      applyEmergencyBackground(currentPresentation?.emergencyTone);
+      return ready;
+    });
+}
+
+/** 啟動 Display 前等待最新一輪，而不是等待可能已過期的前一張圖片。 */
+async function waitForCurrentMessageBackground() {
+  while (true) {
+    const pending = messageBackgroundReadyPromise;
+    await pending;
+    if (pending === messageBackgroundReadyPromise) {
+      return;
+    }
+  }
+}
+
 function applyDisplaySettings(snapshot) {
   cancelPendingFit();
   currentSettings = snapshot;
+  if (snapshot.appearance.messageLiquidEffectEnabled === false) {
+    // 管理員關閉後立即停止裝飾時鐘並移除 SVG，保留固定純白字。
+    messageLiquidAnimator.reset();
+    disableMessageLiquidEffect();
+  }
   const rootStyle = document.documentElement.style;
   const logoScales = calculateLogoLayoutScales(snapshot.logo.sizePercent);
   rootStyle.setProperty(
@@ -1007,6 +2124,10 @@ function applyDisplaySettings(snapshot) {
     String(snapshot.appearance.fontSizePercent / 100),
   );
   rootStyle.setProperty(
+    '--standby-clock-size-scale',
+    String(snapshot.appearance.standbyClockSizePercent / 100),
+  );
+  rootStyle.setProperty(
     '--message-line-spacing-scale',
     String(snapshot.appearance.lineSpacingPercent / 100),
   );
@@ -1018,6 +2139,7 @@ function applyDisplaySettings(snapshot) {
     '--standby-scrim',
     calculateStandbyScrim(snapshot.appearance.fontColor),
   );
+  prepareMessageBackground(snapshot.appearance.messageBackgroundPreset);
   elements.stage.dataset.settingsRevision = String(snapshot.revision);
   applyRenderResolution();
   applyEmergencyBackground(currentPresentation?.emergencyTone);
@@ -1064,15 +2186,38 @@ function renderPage(snapshot) {
     ? 'operation'
     : 'messages';
 
+  const hasLiquidEligibleMessage = snapshot.messages.some(
+    ({ alignment }) => alignment === 'left',
+  );
+  const liquidPrepared =
+    currentSettings.appearance.messageLiquidEffectEnabled &&
+    hasLiquidEligibleMessage &&
+    messageLiquidAnimator.prepare(snapshot, elements.pageLayer);
+
   const fragment = document.createDocumentFragment();
+  let activeLiquidRowCount = 0;
 
   for (const { message, alignment } of snapshot.messages) {
     const row = document.createElement('div');
     row.className = 'message-row';
     row.dataset.message = message;
     row.dataset.alignment = alignment;
-    createStaticMessage(row, message);
+    const vessel = createStaticMessage(row, message);
+    row.dataset.liquidEffect =
+      liquidPrepared &&
+      alignment === 'left' &&
+      vessel.dataset.liquidCompatible === 'true'
+        ? 'active'
+        : 'static';
+    if (row.dataset.liquidEffect === 'active') {
+      activeLiquidRowCount += 1;
+    }
     fragment.append(row);
+  }
+
+  if (liquidPrepared && activeLiquidRowCount === 0) {
+    // 極端輸入採白字安全路徑，不保留永遠不會啟動的裝飾時鐘。
+    messageLiquidAnimator.reset();
   }
 
   elements.pageLayer.append(fragment);
@@ -1087,6 +2232,7 @@ function renderPage(snapshot) {
 function renderEmergency(snapshot) {
   clearVisualLayers();
   const message = snapshot.messages[0].message;
+  const glyph = EMERGENCY_GLYPHS[snapshot.emergencyTone] ?? '';
   updateAnnouncement(message, 'assertive');
   elements.normalLayer.hidden = true;
   elements.pageLayer.hidden = true;
@@ -1096,10 +2242,10 @@ function renderEmergency(snapshot) {
 
   const fragment = document.createDocumentFragment();
 
-  for (let index = 0; index < FILL_CELL_COUNT; index += 1) {
+  for (let index = 0; index < EMERGENCY_GRID_CELL_COUNT; index += 1) {
     const cell = document.createElement('span');
     cell.className = 'fill-cell';
-    cell.textContent = message;
+    cell.textContent = glyph;
     fragment.append(cell);
   }
 
@@ -1142,8 +2288,36 @@ function hasRequiredBridge(api) {
   );
 }
 
+function handleFontsLoadingDone() {
+  const sameMotionFallbackScope = Boolean(
+    liquidMotionFallbackScope !== null &&
+    liquidMotionFallbackScope.presentationRevision ===
+      currentPresentation?.revision &&
+    liquidMotionFallbackScope.settingsRevision === currentSettings.revision
+  );
+  if (
+    sameMotionFallbackScope ||
+    (
+      messageLiquidMotionPreference?.matches === true &&
+      elements.pageLayer.querySelector(
+        '.message-row[data-liquid-effect="active"]',
+      ) !== null
+    )
+  ) {
+    return;
+  }
+
+  // 動態切換內嵌字型後，必須用真正字型重新判斷縮字、壓縮與跑馬燈。
+  scheduleFit();
+}
+
 elements.logo.addEventListener('load', handleLogoLoad);
 elements.logo.addEventListener('error', handleLogoError);
+document.fonts.addEventListener('loadingdone', handleFontsLoadingDone);
+messageLiquidMotionPreference?.addEventListener?.(
+  'change',
+  handleMessageLiquidMotionPreferenceChange,
+);
 for (const image of elements.standbyBackgroundImages) {
   image.addEventListener('load', handleStandbyBackgroundLoad);
   image.addEventListener('error', handleStandbyBackgroundError);
@@ -1152,6 +2326,7 @@ applyDisplaySettings(SAFE_DISPLAY_SETTINGS);
 
 const resizeObserver = new ResizeObserver(() => {
   applyRenderResolution();
+  scheduleStandbySandPreparation();
   scheduleFit();
 });
 resizeObserver.observe(elements.stage);
@@ -1171,6 +2346,8 @@ async function boot() {
     report: (...args) => bridge.reportPageProgress(...args),
     initialLayoutGeneration: readStoredLayoutGeneration(),
     onLayoutGeneration: storeLayoutGeneration,
+    onPendingAccepted: startAcceptedPageLayout,
+    onStartedAccepted: startAcceptedPageEffects,
   });
   unsubscribeRefitRequested = bridge.onRefitRequested(handleRefitRequested);
   if (typeof unsubscribeRefitRequested !== 'function') {
@@ -1189,6 +2366,7 @@ async function boot() {
     view: Object.freeze({ applyDisplaySettings }),
   });
   const settingsStarted = await settingsController.start();
+  await waitForCurrentMessageBackground();
 
   try {
     await document.fonts.ready;
@@ -1220,8 +2398,19 @@ window.addEventListener(
     unsubscribeRefitRequested = null;
     clock.dispose();
     standbyBackgroundPlayer.dispose();
+    messageBackgroundGeneration += 1;
+    messageBackgroundLoader.dispose();
+    messageLiquidAnimator.dispose();
+    cancelScheduledSandPreparation();
     sandTransition.dispose();
+    clearStandbySandCanvas({ releaseBuffers: true });
+    sandWebglRenderer?.dispose();
     resizeObserver.disconnect();
+    document.fonts.removeEventListener('loadingdone', handleFontsLoadingDone);
+    messageLiquidMotionPreference?.removeEventListener?.(
+      'change',
+      handleMessageLiquidMotionPreferenceChange,
+    );
     elements.logo.removeEventListener('load', handleLogoLoad);
     elements.logo.removeEventListener('error', handleLogoError);
     for (const image of elements.standbyBackgroundImages) {

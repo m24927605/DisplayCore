@@ -96,7 +96,11 @@ test('載入設定時驗證 snapshot，再交給 view 建立基準與預設值',
   assert.equal(loaded, true);
   assert.equal(harness.calls.snapshots.length, 1);
   assert.equal(harness.calls.snapshots[0].revision, 0);
-  assert.equal(harness.calls.snapshots[0].config.configVersion, 7);
+  assert.equal(harness.calls.snapshots[0].config.configVersion, 9);
+  assert.equal(
+    harness.calls.snapshots[0].config.appearance.messageLiquidEffectEnabled,
+    true,
+  );
   assert.deepEqual(
     harness.calls.snapshots[0].config.playback,
     defaultConfig.playback,
@@ -128,6 +132,7 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   const controller = createSettingsController(harness);
   const config = structuredClone(defaultConfig);
   config.marquee.enabled = false;
+  config.appearance.messageLiquidEffectEnabled = false;
   config.playback = {
     pageDurationSeconds: 9,
     repeatMode: 'continuous',
@@ -147,6 +152,11 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
     harness.calls.snapshots.at(-1).config.playback,
     config.playback,
   );
+  assert.equal(
+    harness.calls.snapshots.at(-1).config.appearance
+      .messageLiquidEffectEnabled,
+    false,
+  );
   assert.notEqual(harness.calls.snapshots.at(-1).config.playback, config.playback);
   assert.equal(
     Object.isFrozen(harness.calls.snapshots.at(-1).config.playback),
@@ -157,10 +167,17 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   ]);
 });
 
-test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v7 snapshot', async () => {
+test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v9 snapshot', async () => {
   const { createSettingsController } = await loadModule();
   const invalidConfigs = [
-    { ...defaultConfig, configVersion: 6 },
+    { ...defaultConfig, configVersion: 8 },
+    {
+      ...defaultConfig,
+      appearance: {
+        ...defaultConfig.appearance,
+        messageLiquidEffectEnabled: 'true',
+      },
+    },
     {
       ...defaultConfig,
       logo: { ...defaultConfig.logo, sizePercent: 101 },

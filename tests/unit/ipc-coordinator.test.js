@@ -536,7 +536,7 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 7,
+      configVersion: 9,
       logo: { enabled: false, sizePercent: 100, url: null },
       standby: {
         backgroundMode: 'fixed',
@@ -556,6 +556,10 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.equal(Object.hasOwn(result.data, 'defaults'), false);
   assert.equal(Object.hasOwn(result.data, 'notice'), false);
   assert.equal(Object.hasOwn(result.data, 'playback'), false);
+  assert.equal(
+    result.data.appearance.messageLiquidEffectEnabled,
+    true,
+  );
   assert.deepEqual(Object.keys(result.data.display), ['renderResolution']);
 
   const forbiddenResult = await ipcMain.invoke(
@@ -570,6 +574,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   const { ipcMain, windows } = createHarness();
   const config = structuredClone(defaultConfig);
   config.appearance.backgroundColor = '#123456';
+  config.appearance.messageLiquidEffectEnabled = false;
   config.dateTime.enabled = true;
   config.dateTime.offsetSeconds = 3_661;
   config.playback.pageDurationSeconds = 8;
@@ -592,7 +597,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 7,
+    configVersion: 9,
     logo: { enabled: false, sizePercent: 150, url: null },
     standby: {
       backgroundMode: 'fixed',
@@ -606,6 +611,11 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     display: { renderResolution: '2560x1440' },
     revision: 1,
   });
+  assert.equal(
+    windows.display.webContents.sent[0].payload.appearance
+      .messageLiquidEffectEnabled,
+    false,
+  );
   assert.doesNotMatch(
     JSON.stringify(windows.display.webContents.sent[0].payload),
     /defaults|notice|playback|defaultDisplayId|selectionMode|fullscreen|userData/i,
@@ -838,7 +848,22 @@ test('內容 CAS 不受翻頁 revision 影響，過期修改會原子拒絕', as
     displayEvent,
     createPageProgress(presentationService.getSnapshot(), 'ready'),
   );
+  await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    displayEvent,
+    createPageProgress(presentationService.getSnapshot(), 'started'),
+  );
   timers[0].callback();
+  assert.equal(
+    presentationService.getSnapshot().pageNumber,
+    1,
+    'Main timer 到期仍須等待 Renderer 的 100% 終幀 complete',
+  );
+  await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    displayEvent,
+    createPageProgress(presentationService.getSnapshot(), 'complete'),
+  );
   assert.equal(presentationService.getSnapshot().pageNumber, 2);
   assert.equal(presentationService.getControlSnapshot().contentRevision, 1);
 
@@ -877,7 +902,7 @@ test('內容 CAS 不受翻頁 revision 影響，過期修改會原子拒絕', as
   );
 });
 
-test('Main scheduler 等 Display ready 後才計算每頁最短時間並發布翻頁', async () => {
+test('Main scheduler 同時等待最短時間與 Display 終幀 complete 才翻頁', async () => {
   const { ipcMain, presentationService, timers, windows } = createHarness();
   const result = await ipcMain.invoke(
     IPC_CHANNELS.CONTROL_START_PROGRAM,
@@ -893,11 +918,25 @@ test('Main scheduler 等 Display ready 後才計算每頁最短時間並發布�
     createPageProgress(presentationService.getSnapshot(), 'ready'),
   );
   assert.deepEqual(firstReady, { ok: true, data: { accepted: true } });
+  assert.equal(timers.length, 0);
+  const firstStarted = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'started'),
+  );
+  assert.deepEqual(firstStarted, { ok: true, data: { accepted: true } });
   assert.equal(timers.length, 1);
   assert.equal(timers[0].delay, 3_000);
 
   timers[0].cleared = true;
   timers[0].callback();
+  assert.equal(presentationService.getSnapshot().pageNumber, 1);
+  const firstComplete = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'complete'),
+  );
+  assert.deepEqual(firstComplete, { ok: true, data: { accepted: true } });
   assert.equal(presentationService.getSnapshot().pageNumber, 2);
   assert.equal(timers.length, 1);
 
@@ -909,10 +948,28 @@ test('Main scheduler 等 Display ready 後才計算每頁最短時間並發布�
     }),
   );
   assert.deepEqual(secondReady, { ok: true, data: { accepted: true } });
+  assert.equal(timers.length, 1);
+  const secondStarted = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'started', {
+      layoutGeneration: 2,
+    }),
+  );
+  assert.deepEqual(secondStarted, { ok: true, data: { accepted: true } });
   assert.equal(timers.length, 2);
 
   timers[1].cleared = true;
   timers[1].callback();
+  assert.equal(presentationService.getSnapshot().mode, 'page');
+  const secondComplete = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'complete', {
+      layoutGeneration: 2,
+    }),
+  );
+  assert.deepEqual(secondComplete, { ok: true, data: { accepted: true } });
   assert.equal(presentationService.getSnapshot().mode, 'blank');
   assert.deepEqual(
     windows.display.webContents.sent.map(({ payload }) => payload.revision),
@@ -977,6 +1034,13 @@ test('Display 頁面進度受角色、main frame URL、schema 與目前 revision
     valid,
   );
   assert.deepEqual(accepted, { ok: true, data: { accepted: true } });
+  assert.equal(timers.length, 0);
+  const started = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'started'),
+  );
+  assert.deepEqual(started, { ok: true, data: { accepted: true } });
   assert.equal(timers.length, 1);
 
   const oldDisplay = windows.display;
@@ -1001,6 +1065,11 @@ test('設定更新先使目前頁面 gate 失效，再通知 Display 重新 fit'
     IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
     createEvent(windows.display),
     createPageProgress(presentationService.getSnapshot(), 'ready'),
+  );
+  await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'started'),
   );
   const activeTimer = timers[0];
   const delayedOldReady = createPageProgress(
@@ -1038,6 +1107,16 @@ test('設定更新先使目前頁面 gate 失效，再通知 Display 重新 fit'
     }),
   );
   assert.deepEqual(refitted, { ok: true, data: { accepted: true } });
+  assert.equal(timers.filter(({ cleared }) => !cleared).length, 0);
+  const refittedStarted = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    createEvent(windows.display),
+    createPageProgress(presentationService.getSnapshot(), 'started', {
+      settingsRevision: 1,
+      layoutGeneration: 2,
+    }),
+  );
+  assert.deepEqual(refittedStarted, { ok: true, data: { accepted: true } });
   assert.equal(timers.filter(({ cleared }) => !cleared).length, 1);
   assert.equal(
     windows.display.webContents.sent.at(-1).channel,
