@@ -1,0 +1,164 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-installer-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-windows-x64:
+    name: Build Windows x64 installer
+    if: github.ref == 'refs/heads/main'
+    runs-on: windows-2022
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Use project Node.js version
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Run test suite
+        run: npm test
+
+      - name: Build Squirrel.Windows installer
+        run: npm run make -- --platform=win32 --arch=x64
+
+      - name: Verify installer and create checksum
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = 'out/make/squirrel.windows/x64/DisplayCoreSetup.exe'
+
+          if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
+            throw "找不到 Windows 安裝程式：$source"
+          }
+
+          $installer = Get-Item -LiteralPath $source
+          if ($installer.Length -lt 1MB) {
+            throw 'DisplayCoreSetup.exe 小於 1 MB，不是有效的 Electron 安裝程式。'
+          }
+
+          function Get-PeMachine {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Path
+            )
+
+            $file = Get-Item -LiteralPath $Path
+            $reader = $null
+            try {
+              $reader = [System.IO.BinaryReader]::new(
+                [System.IO.File]::OpenRead($file.FullName)
+              )
+
+              if ($reader.ReadUInt16() -ne 0x5A4D) {
+                throw "$Path 缺少有效的 MZ 標頭。"
+              }
+
+              $reader.BaseStream.Position = 0x3C
+              $peOffset = $reader.ReadInt32()
+              if ($peOffset -lt 0x40 -or ($peOffset + 6) -gt $file.Length) {
+                throw "$Path 的 PE 標頭位置無效。"
+              }
+
+              $reader.BaseStream.Position = $peOffset
+              if ($reader.ReadUInt32() -ne 0x00004550) {
+                throw "$Path 缺少有效的 PE 標頭。"
+              }
+
+              return $reader.ReadUInt16()
+            } finally {
+              if ($null -ne $reader) {
+                $reader.Dispose()
+              }
+            }
+          }
+
+          # Squirrel 的 Setup 是通用 bootstrapper，可能是 x86；真正的應用程式
+          # payload 才必須符合本工作流指定的 x64 架構。
+          $setupMachine = Get-PeMachine -Path $source
+          if ($setupMachine -notin @(0x014c, 0x8664)) {
+            throw "DisplayCoreSetup.exe 使用不支援的 PE machine：0x$($setupMachine.ToString('x4'))"
+          }
+
+          $payload = 'out/DisplayCore-win32-x64/DisplayCore.exe'
+          if (-not (Test-Path -LiteralPath $payload -PathType Leaf)) {
+            throw "找不到 Windows x64 應用程式 payload：$payload"
+          }
+
+          $payloadMachine = Get-PeMachine -Path $payload
+          if ($payloadMachine -ne 0x8664) {
+            throw "DisplayCore.exe 不是 Windows x64 執行檔：0x$($payloadMachine.ToString('x4'))"
+          }
+
+          $releaseDirectory = 'release/windows-x64'
+          New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
+          Copy-Item -LiteralPath $source -Destination "$releaseDirectory/DisplayCoreSetup.exe"
+
+          $hash = (
+            Get-FileHash `
+              -LiteralPath "$releaseDirectory/DisplayCoreSetup.exe" `
+              -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
+
+          "$hash  DisplayCoreSetup.exe" |
+            Set-Content `
+              -LiteralPath "$releaseDirectory/DisplayCoreSetup.exe.sha256" `
+              -Encoding utf8NoBOM
+
+          @(
+            "commit=$env:GITHUB_SHA"
+            "run_id=$env:GITHUB_RUN_ID"
+            "runner_os=$env:RUNNER_OS"
+            "runner_arch=$env:RUNNER_ARCH"
+            "image_os=$env:ImageOS"
+            "image_version=$env:ImageVersion"
+            "node=$(node --version)"
+            "npm=$(npm --version)"
+            'authenticode=unsigned'
+          ) |
+            Set-Content `
+              -LiteralPath "$releaseDirectory/build-info.txt" `
+              -Encoding utf8NoBOM
+
+          "### DisplayCore Windows x64 installer" >> $env:GITHUB_STEP_SUMMARY
+          "- File: ``DisplayCoreSetup.exe``" >> $env:GITHUB_STEP_SUMMARY
+          "- Size: $($installer.Length) bytes" >> $env:GITHUB_STEP_SUMMARY
+          "- SHA-256: ``$hash``" >> $env:GITHUB_STEP_SUMMARY
+          "- Commit: ``$env:GITHUB_SHA``" >> $env:GITHUB_STEP_SUMMARY
+          "- Runner image: ``$env:ImageOS $env:ImageVersion``" >> $env:GITHUB_STEP_SUMMARY
+          "- Authenticode: unsigned" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload Windows installer
+        id: upload-installer
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DisplayCoreSetup-windows-x64
+          path: release/windows-x64
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0
+
+      - name: Record GitHub artifact digest
+        shell: pwsh
+        env:
+          ARTIFACT_DIGEST: ${{ steps.upload-installer.outputs.artifact-digest }}
+        run: |
+          "- GitHub artifact digest: ``$env:ARTIFACT_DIGEST``" >> $env:GITHUB_STEP_SUMMARY

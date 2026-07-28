@@ -39,6 +39,8 @@ npm run make -- --platform=win32 --arch=x64
 
 `DisplayCoreSetup.exe` 會攜帶 Electron、正式程式、兩套字型、授權檔與四張訊息材質；安裝及執行期間不下載任何資源。若使用 `npm run package -- --platform=win32 --arch=x64` 產生的免安裝目錄，必須整個複製 `out/DisplayCore-win32-x64/`，不能只複製 `DisplayCore.exe`。
 
+也可以在 GitHub Actions 手動執行 `Build Windows installer`。工作流只接受 `main`，完成後會保留 `DisplayCoreSetup-windows-x64` artifact 30 天，內容包含 `DisplayCoreSetup.exe`、SHA-256 與建置環境資訊。目前安裝檔未做 Authenticode 簽章，Windows SmartScreen 可能顯示未知發行者警告。
+
 ## 目前進度：第 10 步軟體 QA 與 macOS 外接螢幕驗收完成；Windows 實機驗收待進行
 
 本階段已完成：
