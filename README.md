@@ -105,8 +105,8 @@ npm run make -- --platform=win32 --arch=x64
 - 完整自動化測試覆蓋播放設定持久化、一鍵顯示、Logo 最高 1000%／透明度處理／高亮、單一連續沙丘侵蝕面且不使用 slide／wipe 的待機背景輪播、一般訊息固定三槽、跨頁到期提醒色階、內嵌 Didot 數字、原生全螢幕回歸、離線校時、排版解析度、顯示清單獨立分頁與刪除、555／888 無限時、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
 - 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
-- macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait` 或 `.gstack` QA 產物；Forge 規則有正例及 `wait/` 負例測試。
-- dependencies 與 devDependencies 的 `npm audit` 均為 0 vulnerabilities；封裝已驗證安全 Electron fuses、ASAR integrity 與 macOS code signature。
+- macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait`、`.gstack` QA 產物或 `.github` CI 設定；Forge 規則有正例及 `wait/` 負例測試。
+- 正式執行依賴的 `npm audit --omit=dev` 為 0 vulnerabilities；開發／封裝工具鏈仍有上游 advisories，但不會進入離線 runtime。封裝已驗證安全 Electron fuses、ASAR integrity 與 macOS code signature。
 
 ## 播放模型
 
