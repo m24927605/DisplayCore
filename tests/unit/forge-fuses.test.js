@@ -172,15 +172,16 @@ test('ad-hoc 簽章使用固定 codesign 參數且保留既有安全 metadata', 
 });
 
 test('依 packageAfterCopy 平台解析尚未改名的 Electron 執行檔', () => {
-  const buildPath = path.join('/tmp', 'DisplayCore', 'resources', 'app');
+  const buildPath = path.resolve('/tmp', 'DisplayCore', 'resources', 'app');
+  const bundleRoot = path.resolve('/tmp', 'DisplayCore');
 
   assert.equal(
     resolveElectronExecutable(buildPath, 'win32'),
-    path.join('/tmp', 'DisplayCore', 'electron.exe'),
+    path.join(bundleRoot, 'electron.exe'),
   );
   assert.equal(
     resolveElectronExecutable(buildPath, 'linux'),
-    path.join('/tmp', 'DisplayCore', 'electron'),
+    path.join(bundleRoot, 'electron'),
   );
   assert.equal(
     resolveElectronExecutable(
@@ -193,7 +194,8 @@ test('依 packageAfterCopy 平台解析尚未改名的 Electron 執行檔', () =
 
 test('Forge hook 只把解析後執行檔與完整設定交給 flipFuses', async () => {
   const calls = [];
-  const buildPath = path.join('/tmp', 'DisplayCore', 'resources', 'app');
+  const buildPath = path.resolve('/tmp', 'DisplayCore', 'resources', 'app');
+  const bundleRoot = path.resolve('/tmp', 'DisplayCore');
   const forgeConfig = { packagerConfig: {} };
 
   await flipPackageFuses({
@@ -205,7 +207,7 @@ test('Forge hook 只把解析後執行檔與完整設定交給 flipFuses', async
   });
 
   assert.equal(calls.length, 1);
-  assert.equal(calls[0][0], path.join('/tmp', 'DisplayCore', 'electron.exe'));
+  assert.equal(calls[0][0], path.join(bundleRoot, 'electron.exe'));
   assert.equal(calls[0][1].strictlyRequireAllFuses, true);
   assert.equal(calls[0][1][FuseV1Options.WasmTrapHandlers], false);
 });

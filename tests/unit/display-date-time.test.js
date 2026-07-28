@@ -33,7 +33,9 @@ test('時間加上離線校時偏移後只顯示本機 24 小時 HH:mm', async (
 
 test('Clock 立即顯示並依校時偏移對齊下一個整分鐘', async () => {
   const { createDisplayClock } = await loadModule();
-  let currentDate = new Date('2026-07-16T08:05:14.322+08:00');
+  // Clock 顯示的是執行主機本機時間；使用本機建構子可避免 CI 時區
+  // （例如 GitHub Windows runner 的 UTC）改變測試語意。
+  let currentDate = new Date(2026, 6, 16, 8, 5, 14, 322);
   const renders = [];
   const timers = [];
   const clock = createDisplayClock({
@@ -57,7 +59,7 @@ test('Clock 立即顯示並依校時偏移對齊下一個整分鐘', async () =>
   assert.equal(renders[0].dateTime, '09:06');
   assert.equal(timers[0].delay, 44_678);
 
-  currentDate = new Date('2026-07-16T08:05:59.007+08:00');
+  currentDate = new Date(2026, 6, 16, 8, 5, 59, 7);
   timers[0].callback();
   assert.equal(renders.length, 2);
   assert.notEqual(renders[0].text, renders[1].text);
@@ -73,7 +75,7 @@ test('Clock 停用、重新設定與 dispose 都會精確清除 timer', async ()
     render(value) {
       renders.push(value);
     },
-    now: () => new Date('2026-07-16T08:05:30+08:00'),
+    now: () => new Date(2026, 6, 16, 8, 5, 30),
     setTimer(callback, delay) {
       const handle = { callback, delay, cleared: false };
       timers.push(handle);
