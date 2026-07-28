@@ -17,9 +17,20 @@ const approvedActionReferences = [
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
 ];
+const windowsCiIntegrationTests = [
+  'tests/integration/control-settings-focus.regression-1.test.js',
+  'tests/integration/control-window-smoke.test.js',
+  'tests/integration/ipc-bridge-smoke.test.js',
+  'tests/integration/main-process-smoke.test.js',
+  'tests/integration/message-liquid-lifetime-qa.test.js',
+];
 
 test('GitHub Actions 可在 Windows x64 建置並保存 DisplayCoreSetup.exe', async () => {
-  const workflow = await readFile(workflowPath, 'utf8');
+  // Windows checkout 可能將文字檔轉成 CRLF；工作流契約不應依賴換行格式。
+  const workflow = (await readFile(workflowPath, 'utf8')).replace(/\r\n?/gu, '\n');
+  const packageJson = JSON.parse(
+    await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
+  );
 
   assert.match(workflow, /^name: Build Windows installer$/m);
   assert.match(workflow, /^\s{2}workflow_dispatch:$/m);
@@ -32,7 +43,7 @@ test('GitHub Actions 可在 Windows x64 建置並保存 DisplayCoreSetup.exe', a
   assert.match(workflow, /persist-credentials: false/);
   assert.match(workflow, /node-version-file: \.nvmrc/);
   assert.match(workflow, /^\s{8}run: npm ci$/m);
-  assert.match(workflow, /^\s{8}run: npm test$/m);
+  assert.match(workflow, /^\s{8}run: npm run test:ci:windows$/m);
   assert.match(
     workflow,
     /^\s{8}run: npm run make -- --platform=win32 --arch=x64$/m,
@@ -71,6 +82,22 @@ test('GitHub Actions 可在 Windows x64 建置並保存 DisplayCoreSetup.exe', a
   );
 
   assert.deepEqual(actionReferences, approvedActionReferences);
+
+  const windowsCiCommand = packageJson.scripts['test:ci:windows'];
+  assert.equal(typeof windowsCiCommand, 'string');
+  assert.match(
+    windowsCiCommand,
+    /^node --test "tests\/unit\/\*\.test\.js"(?:\s|$)/u,
+  );
+  for (const integrationTest of windowsCiIntegrationTests) {
+    assert.match(
+      windowsCiCommand,
+      new RegExp(`(?:^|\\s)${integrationTest}(?:\\s|$)`, 'u'),
+    );
+  }
+  assert.doesNotMatch(windowsCiCommand, /display-window-smoke/u);
+  assert.doesNotMatch(windowsCiCommand, /liquid-message-prototype/u);
+  assert.doesNotMatch(windowsCiCommand, /sand-webgl-renderer-smoke/u);
 });
 
 test('Forge 固定使用 DisplayCoreSetup.exe 作為 Squirrel 安裝檔名', () => {

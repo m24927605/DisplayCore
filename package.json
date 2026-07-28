@@ -15,6 +15,7 @@
     "start:smoke": "electron-forge start -- --displaycore-smoke-test",
     "start:main-smoke": "electron-forge start -- --displaycore-main-smoke-test",
     "test": "node --test",
+    "test:ci:windows": "node --test \"tests/unit/*.test.js\" tests/integration/control-settings-focus.regression-1.test.js tests/integration/control-window-smoke.test.js tests/integration/ipc-bridge-smoke.test.js tests/integration/main-process-smoke.test.js tests/integration/message-liquid-lifetime-qa.test.js",
     "package": "electron-forge package",
     "make": "electron-forge make"
   },
