@@ -174,6 +174,14 @@ test('ad-hoc 簽章使用固定 codesign 參數且保留既有安全 metadata', 
 test('依 packageAfterCopy 平台解析尚未改名的 Electron 執行檔', () => {
   const buildPath = path.resolve('/tmp', 'DisplayCore', 'resources', 'app');
   const bundleRoot = path.resolve('/tmp', 'DisplayCore');
+  const darwinBuildPath = path.resolve(
+    '/tmp',
+    'Electron.app',
+    'Contents',
+    'Resources',
+    'app',
+  );
+  const darwinBundleRoot = path.resolve('/tmp', 'Electron.app', 'Contents');
 
   assert.equal(
     resolveElectronExecutable(buildPath, 'win32'),
@@ -184,11 +192,8 @@ test('依 packageAfterCopy 平台解析尚未改名的 Electron 執行檔', () =
     path.join(bundleRoot, 'electron'),
   );
   assert.equal(
-    resolveElectronExecutable(
-      path.join('/tmp', 'Electron.app', 'Contents', 'Resources', 'app'),
-      'darwin',
-    ),
-    path.join('/tmp', 'Electron.app', 'Contents', 'MacOS', 'Electron'),
+    resolveElectronExecutable(darwinBuildPath, 'darwin'),
+    path.join(darwinBundleRoot, 'MacOS', 'Electron'),
   );
 });
 
