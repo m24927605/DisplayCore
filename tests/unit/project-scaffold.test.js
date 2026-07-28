@@ -135,6 +135,7 @@ test('Electron 封裝排除測試、覆蓋率、QA 報告與 AIT 資料', () => 
   assert.equal(isIgnored('/assets/wait/config.json'), false);
   assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
   assert.equal(isIgnored('/.gstack/qa-reports/baseline.json'), true);
+  assert.equal(isIgnored('/.github/workflows/windows-installer.yml'), true);
   assert.equal(isIgnored('/node_modules/example/index.js'), false);
   assert.equal(typeof forgeConfig.hooks.packageAfterCopy, 'function');
   assert.equal(typeof forgeConfig.hooks.postPackage, 'function');
