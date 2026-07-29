@@ -21,6 +21,7 @@ module.exports = {
       /^\/coverage(?:\/|$)/,
       /^\/\.gstack(?:\/|$)/,
       /^\/\.github(?:\/|$)/,
+      /^\/release(?:\/|$)/,
       /^\/node_modules\/.*\/(?:test|tests|coverage)(?:\/|$)/,
       /^\/(?:.*\/)?\.?ait(?:\/|$)/i,
       /\.ait$/i,

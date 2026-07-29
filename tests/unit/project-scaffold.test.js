@@ -112,7 +112,7 @@ test('Forge 開發工具鏈覆寫為已修補的封裝與暫存套件', async ()
   assert.equal(packageJson.overrides.tmp, '0.2.7');
 });
 
-test('Electron 封裝排除測試、覆蓋率、QA 報告與 AIT 資料', () => {
+test('Electron 封裝排除開發資料與版本控制中的安裝檔', () => {
   const forgeConfig = require('../../forge.config');
   const ignoredPaths = forgeConfig.packagerConfig.ignore;
   const isIgnored = (relativePath) =>
@@ -136,6 +136,11 @@ test('Electron 封裝排除測試、覆蓋率、QA 報告與 AIT 資料', () => 
   assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
   assert.equal(isIgnored('/.gstack/qa-reports/baseline.json'), true);
   assert.equal(isIgnored('/.github/workflows/windows-installer.yml'), true);
+  assert.equal(
+    isIgnored('/release/windows-x64/DisplayCoreSetup.exe'),
+    true,
+  );
+  assert.equal(isIgnored('/assets/release/example.jpg'), false);
   assert.equal(isIgnored('/node_modules/example/index.js'), false);
   assert.equal(typeof forgeConfig.hooks.packageAfterCopy, 'function');
   assert.equal(typeof forgeConfig.hooks.postPackage, 'function');
