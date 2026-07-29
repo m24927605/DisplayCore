@@ -16,6 +16,7 @@ const approvedActionReferences = [
   'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1',
   'actions/setup-node@820762786026740c76f36085b0efc47a31fe5020',
   'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
+  'actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a',
 ];
 const windowsCiIntegrationTests = [
   'tests/integration/control-settings-focus.regression-1.test.js',
@@ -101,6 +102,19 @@ test('GitHub Actions 可在 Windows x64 建置並驗證 EXE 與 MSI 安裝器', 
   assert.match(workflow, /msi_install_smoke=passed/);
   assert.match(workflow, /msiexec\.exe/);
   assert.match(workflow, /APPLICATIONFOLDER=\$msiInstallDirectory/);
+  assert.equal(
+    workflow.match(/-TimeoutSeconds 600/g)?.length,
+    2,
+  );
+  assert.equal(workflow.match(/'\/l\*v!'/g)?.length, 2);
+  assert.match(
+    workflow,
+    /Get-Content[\s\S]*-LiteralPath \$msiInstallLog[\s\S]*-Tail 200/,
+  );
+  assert.match(
+    workflow,
+    /Get-Content[\s\S]*-LiteralPath \$msiUninstallLog[\s\S]*-Tail 200/,
+  );
   assert.match(workflow, /@\(0,\s*3010\)/);
   assert.match(
     workflow,
@@ -126,6 +140,12 @@ test('GitHub Actions 可在 Windows x64 建置並驗證 EXE 與 MSI 安裝器', 
   assert.match(workflow, /image_version=\$env:ImageVersion/);
   assert.match(workflow, /authenticode=unsigned/);
   assert.match(workflow, /steps\.upload-installer\.outputs\.artifact-digest/);
+  assert.match(workflow, /name: Upload MSI diagnostics on failure/);
+  assert.match(workflow, /^\s{8}if: failure\(\)$/m);
+  assert.match(workflow, /name: DisplayCore-msi-diagnostics-\$\{\{ github\.run_id \}\}/);
+  assert.match(workflow, /displaycore-msi-install\.log/);
+  assert.match(workflow, /displaycore-msi-uninstall\.log/);
+  assert.match(workflow, /retention-days: 7/);
   assert.match(
     workflow,
     /^ {10}"- GitHub artifact digest:.*" >> \$env:GITHUB_STEP_SUMMARY$/m,

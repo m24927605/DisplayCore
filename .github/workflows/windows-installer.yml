@@ -242,19 +242,29 @@ jobs:
             -Force `
             -ErrorAction SilentlyContinue
 
-          Invoke-CheckedProcess `
-            -Path $msiexec `
-            -Arguments @(
-              '/i'
-              $resolvedMsi
-              '/qn'
-              '/norestart'
-              "APPLICATIONFOLDER=$msiInstallDirectory"
-              '/l*v'
-              $msiInstallLog
-            ) `
-            -TimeoutSeconds 180 `
-            -SuccessExitCodes @(0, 3010)
+          try {
+            Invoke-CheckedProcess `
+              -Path $msiexec `
+              -Arguments @(
+                '/i'
+                $resolvedMsi
+                '/qn'
+                '/norestart'
+                "APPLICATIONFOLDER=$msiInstallDirectory"
+                '/l*v!'
+                $msiInstallLog
+              ) `
+              -TimeoutSeconds 600 `
+              -SuccessExitCodes @(0, 3010)
+          } catch {
+            Write-Host '--- MSI install log (last 200 lines) ---'
+            Get-Content `
+              -LiteralPath $msiInstallLog `
+              -Tail 200 `
+              -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host $_ }
+            throw
+          }
 
           $msiInstalledPayload = Join-Path `
             $msiInstallDirectory `
@@ -280,18 +290,28 @@ jobs:
             -Arguments @('--displaycore-main-smoke-test') `
             -TimeoutSeconds 60
 
-          Invoke-CheckedProcess `
-            -Path $msiexec `
-            -Arguments @(
-              '/x'
-              $resolvedMsi
-              '/qn'
-              '/norestart'
-              '/l*v'
-              $msiUninstallLog
-            ) `
-            -TimeoutSeconds 180 `
-            -SuccessExitCodes @(0, 3010)
+          try {
+            Invoke-CheckedProcess `
+              -Path $msiexec `
+              -Arguments @(
+                '/x'
+                $resolvedMsi
+                '/qn'
+                '/norestart'
+                '/l*v!'
+                $msiUninstallLog
+              ) `
+              -TimeoutSeconds 600 `
+              -SuccessExitCodes @(0, 3010)
+          } catch {
+            Write-Host '--- MSI uninstall log (last 200 lines) ---'
+            Get-Content `
+              -LiteralPath $msiUninstallLog `
+              -Tail 200 `
+              -ErrorAction SilentlyContinue |
+                ForEach-Object { Write-Host $_ }
+            throw
+          }
 
           if (Test-Path -LiteralPath $msiInstalledPayload -PathType Leaf) {
             throw "MSI 解除安裝後仍殘留 DisplayCore.exe：$msiInstallDirectory"
@@ -351,6 +371,17 @@ jobs:
           "- Runner image: ``$env:ImageOS $env:ImageVersion``" >> $env:GITHUB_STEP_SUMMARY
           "- EXE and MSI custom installation, launch and uninstall: verified" >> $env:GITHUB_STEP_SUMMARY
           "- Authenticode: unsigned" >> $env:GITHUB_STEP_SUMMARY
+
+      - name: Upload MSI diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: DisplayCore-msi-diagnostics-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/displaycore-msi-install.log
+            ${{ runner.temp }}/displaycore-msi-uninstall.log
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Upload Windows installers
         id: upload-installer
