@@ -108,6 +108,10 @@ let runtimeDataRoot = null;
 // 導致測試對已隱藏的 2D canvas 做出錯誤斷言。
 app.disableHardwareAcceleration();
 app.commandLine.appendSwitch('disable-webgl');
+if (process.env.DISPLAYCORE_EMERGENCY_MATERIAL_QA_ONLY === '1') {
+  // 緊急材質驗收要求實體 4K compositor，不可依賴測試主機目前是否為 Retina。
+  app.commandLine.appendSwitch('force-device-scale-factor', '2');
+}
 
 registerAppScheme(protocol);
 
