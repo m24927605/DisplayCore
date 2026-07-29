@@ -8,6 +8,7 @@ const DEFAULT_STANDBY = Object.freeze({
   backgroundMode: 'fixed',
   backgroundImagePaths: Object.freeze([]),
   slideDurationSeconds: 10,
+  sandEffectEnabled: true,
 });
 const DEFAULT_LOGO_SIZE_PERCENT = 100;
 
@@ -196,6 +197,7 @@ function createV8Config() {
   legacy.appearance.standbyClockSizePercent = 185;
   legacy.playback.pageDurationSeconds = 11;
   delete legacy.appearance.messageLiquidEffectEnabled;
+  delete legacy.standby.sandEffectEnabled;
   delete legacy.display.controlDisplayId;
   return legacy;
 }
@@ -204,6 +206,7 @@ function createV8Config() {
 function createV9Config() {
   const legacy = structuredClone(defaultConfig);
   legacy.configVersion = 9;
+  delete legacy.standby.sandEffectEnabled;
   legacy.display = {
     selectionMode: 'manual',
     defaultDisplayId: 84,
@@ -213,18 +216,31 @@ function createV9Config() {
   return legacy;
 }
 
-test('canonical v8 嚴格遷移為 v10，補倒酒開關並安全改用自動螢幕分工', () => {
+/** v10 已具備雙螢幕與倒酒開關，但還沒有待機風吹沙開關。 */
+function createV10Config() {
+  const legacy = structuredClone(defaultConfig);
+  legacy.configVersion = 10;
+  delete legacy.standby.sandEffectEnabled;
+  return legacy;
+}
+
+test('canonical v8 嚴格遷移為 v11，補特效開關並安全改用自動螢幕分工', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV8Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
 
-  assert.equal(defaultConfig.configVersion, 10);
+  assert.equal(defaultConfig.configVersion, 11);
   assert.equal(defaultConfig.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(defaultConfig.standby.sandEffectEnabled, true);
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 10,
+    configVersion: 11,
+    standby: {
+      ...legacy.standby,
+      sandEffectEnabled: true,
+    },
     appearance: {
       ...legacy.appearance,
       messageLiquidEffectEnabled: true,
@@ -238,14 +254,18 @@ test('canonical v8 嚴格遷移為 v10，補倒酒開關並安全改用自動螢
   assert.equal(Object.isFrozen(result.value.appearance), true);
 });
 
-test('canonical v7 外觀嚴格遷移為 v10 並維持原有純色視覺比例', () => {
+test('canonical v7 外觀嚴格遷移為 v11 並維持原有純色視覺比例', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV7Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 10);
+  assert.equal(result.value.configVersion, 11);
+  assert.deepEqual(result.value.standby, {
+    ...legacy.standby,
+    sandEffectEnabled: true,
+  });
   assert.deepEqual(result.value.appearance, {
     ...legacy.appearance,
     backgroundColor: '#102030',
@@ -257,13 +277,13 @@ test('canonical v7 外觀嚴格遷移為 v10 並維持原有純色視覺比例',
   assert.equal(Object.isFrozen(result.value.appearance), true);
 });
 
-test('合法 v1 設定保留舊值並由 v10 預設補上新欄位', () => {
+test('合法 v1 設定保留舊值並由 v11 預設補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV1Config(), defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 10);
+  assert.equal(result.value.configVersion, 11);
   assert.deepEqual(result.value, {
     ...defaultConfig,
     logo: {
@@ -287,7 +307,7 @@ test('合法 v1 設定保留舊值並由 v10 預設補上新欄位', () => {
   });
 });
 
-test('合法 v2 設定嚴格遷移為 v10，保留舊值並只補上新欄位', () => {
+test('合法 v2 設定嚴格遷移為 v11，保留舊值並只補上新欄位', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(createV2Config(), defaultConfig);
 
@@ -328,7 +348,7 @@ test('合法 v2 設定嚴格遷移為 v10，保留舊值並只補上新欄位', 
   });
 });
 
-test('合法 v3 設定嚴格遷移為 v10，只補預設欄位並安全改用自動螢幕分工', () => {
+test('合法 v3 設定嚴格遷移為 v11，只補預設欄位並安全改用自動螢幕分工', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV3Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -337,7 +357,7 @@ test('合法 v3 設定嚴格遷移為 v10，只補預設欄位並安全改用自
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 10,
+    configVersion: 11,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -363,7 +383,7 @@ test('合法 v3 設定嚴格遷移為 v10，只補預設欄位並安全改用自
   });
 });
 
-test('合法 v4 設定嚴格遷移為 v10，保留舊值並安全改用自動螢幕分工', () => {
+test('合法 v4 設定嚴格遷移為 v11，保留舊值並安全改用自動螢幕分工', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV4Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -372,7 +392,7 @@ test('合法 v4 設定嚴格遷移為 v10，保留舊值並安全改用自動螢
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 10,
+    configVersion: 11,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -399,7 +419,7 @@ test('合法 v4 設定嚴格遷移為 v10，保留舊值並安全改用自動螢
   assert.equal(Object.isFrozen(result.value.standby), true);
 });
 
-test('合法 v5 設定嚴格遷移為 v10，保留背景並安全改用自動螢幕分工', () => {
+test('合法 v5 設定嚴格遷移為 v11，保留背景並安全改用自動螢幕分工', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV5Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
@@ -408,7 +428,7 @@ test('合法 v5 設定嚴格遷移為 v10，保留背景並安全改用自動螢
   assert.equal(result.migrated, true);
   assert.deepEqual(result.value, {
     ...legacy,
-    configVersion: 10,
+    configVersion: 11,
     logo: {
       ...legacy.logo,
       sizePercent: DEFAULT_LOGO_SIZE_PERCENT,
@@ -429,6 +449,7 @@ test('合法 v5 設定嚴格遷移為 v10，保留背景並安全改用自動螢
       backgroundMode: 'fixed',
       backgroundImagePaths: [legacy.standby.backgroundImagePath],
       slideDurationSeconds: 10,
+      sandEffectEnabled: true,
     },
     display: {
       ...defaultConfig.display,
@@ -442,14 +463,14 @@ test('合法 v5 設定嚴格遷移為 v10，保留背景並安全改用自動螢
   );
 });
 
-test('合法 v6 設定嚴格遷移為 v10，保留 Logo 尺寸與單張背景', () => {
+test('合法 v6 設定嚴格遷移為 v11，保留 Logo 尺寸與單張背景', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV6Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 10);
+  assert.equal(result.value.configVersion, 11);
   assert.equal(result.value.logo.sizePercent, 175);
   assert.equal(result.value.appearance.messageBackgroundPreset, 'solid');
   assert.equal(result.value.appearance.messageLiquidEffectEnabled, true);
@@ -461,6 +482,7 @@ test('合法 v6 設定嚴格遷移為 v10，保留 Logo 尺寸與單張背景', 
     backgroundMode: 'fixed',
     backgroundImagePaths: [legacy.standby.backgroundImagePath],
     slideDurationSeconds: 10,
+    sandEffectEnabled: true,
   });
   assert.deepEqual(result.value.display, {
     ...defaultConfig.display,
@@ -468,14 +490,18 @@ test('合法 v6 設定嚴格遷移為 v10，保留 Logo 尺寸與單張背景', 
   });
 });
 
-test('canonical v9 嚴格遷移為 v10，保留解析度並安全改用自動螢幕分工', () => {
+test('canonical v9 嚴格遷移為 v11，保留解析度並安全改用自動螢幕分工', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const legacy = createV9Config();
   const result = migrateStoredConfig(legacy, defaultConfig);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 10);
+  assert.equal(result.value.configVersion, 11);
+  assert.deepEqual(result.value.standby, {
+    ...legacy.standby,
+    sandEffectEnabled: true,
+  });
   assert.deepEqual(result.value.display, {
     ...defaultConfig.display,
     renderResolution: legacy.display.renderResolution,
@@ -483,17 +509,36 @@ test('canonical v9 嚴格遷移為 v10，保留解析度並安全改用自動螢
   assert.equal(Object.isFrozen(result.value.display), true);
 });
 
-test('canonical v10 設定不會被誤判為遷移資料', () => {
+test('canonical v10 缺少風吹沙開關時嚴格遷移為 v11 並補 true', () => {
+  const { migrateStoredConfig } = require('../../config/config-migrations');
+  const legacy = createV10Config();
+  const result = migrateStoredConfig(legacy, defaultConfig);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.migrated, true);
+  assert.deepEqual(result.value, {
+    ...legacy,
+    configVersion: 11,
+    standby: {
+      ...legacy.standby,
+      sandEffectEnabled: true,
+    },
+  });
+  assert.equal(Object.isFrozen(result.value), true);
+  assert.equal(Object.isFrozen(result.value.standby), true);
+});
+
+test('canonical v11 設定不會被誤判為遷移資料', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const result = migrateStoredConfig(defaultConfig, defaultConfig);
 
-  assert.equal(defaultConfig.configVersion, 10);
+  assert.equal(defaultConfig.configVersion, 11);
   assert.equal(result.ok, true);
   assert.equal(result.migrated, false);
   assert.deepEqual(result.value, defaultConfig);
 });
 
-test('遷移拒絕畸形 v1 至 v9、未知欄位與未知版本', () => {
+test('遷移拒絕畸形 v1 至 v10、未知欄位與未知版本', () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const v1 = createV1Config();
   const v2 = createV2Config();
@@ -504,6 +549,7 @@ test('遷移拒絕畸形 v1 至 v9、未知欄位與未知版本', () => {
   const v7 = createV7Config();
   const v8 = createV8Config();
   const v9 = createV9Config();
+  const v10 = createV10Config();
 
   const invalidCandidates = [
     { ...v1, unexpected: true },
@@ -554,6 +600,12 @@ test('遷移拒絕畸形 v1 至 v9、未知欄位與未知版本', () => {
       display: { ...v9.display, renderResolution: '1280x720' },
     },
     { ...v9, configVersion: 10 },
+    { ...v10, unexpected: true },
+    {
+      ...v10,
+      standby: { ...v10.standby, sandEffectEnabled: true },
+    },
+    { ...v10, configVersion: 11 },
     { ...defaultConfig, configVersion: 99 },
   ];
 

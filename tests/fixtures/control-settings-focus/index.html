@@ -129,6 +129,12 @@
               checked
             >
             <input
+              id="standby-sand-effect-enabled-input"
+              type="checkbox"
+              checked
+            >
+            <p id="standby-sand-effect-error" hidden></p>
+            <input
               id="inspection-background-color-picker"
               type="color"
               value="#000000"
@@ -194,7 +200,7 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 10,
+        configVersion: 11,
         logo: Object.freeze({
           enabled: false,
           path: null,
@@ -204,6 +210,7 @@
           backgroundMode: 'fixed',
           backgroundImagePaths: Object.freeze([]),
           slideDurationSeconds: 10,
+          sandEffectEnabled: true,
         }),
         appearance: Object.freeze({
           backgroundColor: '#000000',
@@ -282,8 +289,11 @@
       view.bind();
 
       async function openAndCloseSettings({
+        scenario = '未命名情境',
         dirtyPlayback = false,
         dirtyAssignment = false,
+        toggleMessageEffect = false,
+        toggleStandbyEffect = false,
       } = {}) {
         const closeSettled = new Promise((resolve) => {
           dialog.addEventListener(
@@ -296,7 +306,11 @@
         await new Promise((resolve) => setTimeout(resolve, 0));
 
         if (!dialog.open) {
-          throw new Error('設定對話框未開啟。');
+          throw new Error(
+            `設定對話框未開啟：${scenario}；` +
+            `入口 disabled=${standardTrigger.disabled}；` +
+            `狀態=${document.getElementById('settings-status').textContent}。`,
+          );
         }
 
         const pageDuration = document.getElementById('page-duration-input');
@@ -316,6 +330,9 @@
         );
         const messageLiquidEffect = document.getElementById(
           'message-liquid-effect-enabled-input',
+        );
+        const standbySandEffect = document.getElementById(
+          'standby-sand-effect-enabled-input',
         );
         const controlDisplay = document.getElementById(
           'control-display-select',
@@ -339,16 +356,26 @@
           }));
           standbyClockSize.value = '150';
           standbyClockSize.dispatchEvent(new Event('input', { bubbles: true }));
-          messageLiquidEffect.checked = false;
-          messageLiquidEffect.dispatchEvent(new Event('change', {
-            bubbles: true,
-          }));
           pageDuration.value = '4';
           pageDuration.dispatchEvent(new Event('input', { bubbles: true }));
           roundCount.value = '2';
           roundCount.dispatchEvent(new Event('input', { bubbles: true }));
           repeatContinuous.checked = true;
           repeatContinuous.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        if (toggleMessageEffect) {
+          messageLiquidEffect.checked = false;
+          messageLiquidEffect.dispatchEvent(new Event('change', {
+            bubbles: true,
+          }));
+        }
+
+        if (toggleStandbyEffect) {
+          standbySandEffect.checked = false;
+          standbySandEffect.dispatchEvent(new Event('change', {
+            bubbles: true,
+          }));
         }
 
         if (dirtyAssignment) {
@@ -372,6 +399,7 @@
           closeButtonText: closeButton.textContent,
           saveDisabled: saveButton.disabled,
           messageLiquidEffectEnabled: messageLiquidEffect.checked,
+          standbySandEffectEnabled: standbySandEffect.checked,
           controlDisplayId: controlDisplay.value,
           defaultDisplayId: defaultDisplay.value,
           connectedDisplayOptions,
@@ -404,6 +432,7 @@
             messageBackgroundPreset: messageBackground.value,
             standbyClockSizePercent: standbyClockSize.value,
             messageLiquidEffectEnabled: messageLiquidEffect.checked,
+            standbySandEffectEnabled: standbySandEffect.checked,
             controlDisplayId: controlDisplay.value,
             defaultDisplayId: defaultDisplay.value,
           },
@@ -412,13 +441,26 @@
 
       window.runFocusRegression = async () => {
         standardTrigger.focus();
-        const clean = await openAndCloseSettings();
+        const clean = await openAndCloseSettings({ scenario: 'baseline' });
+        standardTrigger.focus();
+        const messageEffect = await openAndCloseSettings({
+          scenario: '訊息特效',
+          toggleMessageEffect: true,
+        });
+        standardTrigger.focus();
+        const standbyEffect = await openAndCloseSettings({
+          scenario: '待機風吹沙特效',
+          toggleStandbyEffect: true,
+        });
         standardTrigger.focus();
         const dirty = await openAndCloseSettings({
+          scenario: '兩項特效與其他設定',
           dirtyPlayback: true,
           dirtyAssignment: true,
+          toggleMessageEffect: true,
+          toggleStandbyEffect: true,
         });
-        return { clean, dirty };
+        return { clean, messageEffect, standbyEffect, dirty };
       };
     </script>
   </body>

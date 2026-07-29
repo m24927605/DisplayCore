@@ -978,7 +978,11 @@ function clearStandbySandCanvas({ releaseBuffers = false } = {}) {
     elements.sandParticleCanvas.width,
     elements.sandParticleCanvas.height,
   );
-  sandWebglRenderer?.clear();
+  if (releaseBuffers) {
+    sandWebglRenderer?.releaseSourceTexture();
+  } else {
+    sandWebglRenderer?.clear();
+  }
   sandMaskContext?.clearRect(0, 0, sandMaskCanvas.width, sandMaskCanvas.height);
   sandParticleSourceContext?.clearRect(
     0,
@@ -1037,6 +1041,7 @@ function scheduleStandbySandPreparation() {
   }
 
   if (
+    currentSettings.standby.sandEffectEnabled !== true ||
     currentPresentation?.mode !== 'blank' ||
     !activeStandbyBackgroundImage ||
     currentSettings.standby.backgroundMode !== 'slideshow' ||
@@ -1076,6 +1081,7 @@ function scheduleStandbySandPreparation() {
 
     sandPreparationHandle = null;
     if (
+      currentSettings.standby.sandEffectEnabled !== true ||
       currentPresentation?.mode !== 'blank' ||
       activeStandbyBackgroundImage !== expectedImage ||
       createStandbyScrimSignature(currentSettings.appearance.fontColor) !==
@@ -1737,6 +1743,10 @@ function drawStandbySandFrame(frame) {
  * 若 Canvas 無法使用則立即切換，絕不讓待機輪播停住。
  */
 function startStandbySandTransition(image, url) {
+  if (currentSettings.standby.sandEffectEnabled !== true) {
+    return false;
+  }
+
   const outgoingImage = activeStandbyBackgroundImage;
   const width = elements.standbyBackgroundLayer.clientWidth;
   const height = elements.standbyBackgroundLayer.clientHeight;
@@ -2091,6 +2101,11 @@ async function waitForCurrentMessageBackground() {
 function applyDisplaySettings(snapshot) {
   cancelPendingFit();
   currentSettings = snapshot;
+  if (snapshot.standby.sandEffectEnabled === false) {
+    // 關閉後立刻停止當前轉場與預建，輪播本身仍由背景播放器繼續。
+    cancelScheduledSandPreparation();
+    cancelStandbySandTransition({ releaseBuffers: true });
+  }
   if (snapshot.appearance.messageLiquidEffectEnabled === false) {
     // 管理員關閉後立即停止裝飾時鐘並移除 SVG，保留固定純白字。
     messageLiquidAnimator.reset();

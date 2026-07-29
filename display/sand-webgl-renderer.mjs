@@ -1028,6 +1028,34 @@ export function createSandWebglRenderer({ canvas, random = Math.random } = {}) {
       gl.clear(gl.COLOR_BUFFER_BIT);
     },
 
+    /** 將來源貼圖縮回 1×1，釋放已上傳的 4K 圖片記憶體但保留可重用 context。 */
+    releaseSourceTexture() {
+      if (disposed) {
+        return false;
+      }
+
+      gl.bindTexture(gl.TEXTURE_2D, texture);
+      gl.texImage2D(
+        gl.TEXTURE_2D,
+        0,
+        gl.RGBA,
+        1,
+        1,
+        0,
+        gl.RGBA,
+        gl.UNSIGNED_BYTE,
+        null,
+      );
+      ready = false;
+      cropUniform = null;
+      particleColumns = 1;
+      particleRows = 1;
+      particleSourceCount = 1;
+      particleCount = 1;
+      gl.clear(gl.COLOR_BUFFER_BIT);
+      return gl.getError() === gl.NO_ERROR;
+    },
+
     dispose() {
       if (disposed) {
         return;

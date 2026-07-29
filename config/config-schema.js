@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 10;
+const CONFIG_VERSION = 11;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -77,6 +77,7 @@ const LOGO_KEYS = Object.freeze(['enabled', 'path', 'sizePercent']);
 const STANDBY_KEYS = Object.freeze([
   'backgroundImagePaths',
   'backgroundMode',
+  'sandEffectEnabled',
   'slideDurationSeconds',
 ]);
 const APPEARANCE_KEYS = Object.freeze([
@@ -214,6 +215,13 @@ function validateStandby(standby) {
     );
   }
 
+  if (typeof standby.sandEffectEnabled !== 'boolean') {
+    return validationFailure(
+      '待機頁面風吹沙效果開關格式不正確。',
+      'standby.sandEffectEnabled',
+    );
+  }
+
   if (!Array.isArray(standby.backgroundImagePaths)) {
     return validationFailure(
       '待機背景圖片必須使用清單格式。',
@@ -273,6 +281,7 @@ function validateStandby(standby) {
     value: {
       backgroundMode: standby.backgroundMode,
       backgroundImagePaths: [...standby.backgroundImagePaths],
+      sandEffectEnabled: standby.sandEffectEnabled,
       slideDurationSeconds: standby.slideDurationSeconds,
     },
   };
@@ -553,7 +562,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v10。 */
+/** 驗證、正規化並深層複製完整的 canonical config v11。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');

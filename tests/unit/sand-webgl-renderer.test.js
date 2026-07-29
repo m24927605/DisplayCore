@@ -1,7 +1,11 @@
 'use strict';
 
 const assert = require('node:assert/strict');
+const { readFile } = require('node:fs/promises');
+const path = require('node:path');
 const test = require('node:test');
+
+const projectRoot = path.resolve(__dirname, '..', '..');
 
 test('GPU 風吹砂在 4K 使用有界 1080p 級像素量，比例不得變形', async () => {
   const { calculateSandRenderSize } = await import(
@@ -34,6 +38,25 @@ test('DOM 上緣裁切座標會轉為 WebGL 左下原點座標', async () => {
   assert.ok(Math.abs(crop.y - 0.1) < Number.EPSILON);
   assert.ok(Math.abs(crop.width - 0.8) < Number.EPSILON);
   assert.ok(Math.abs(crop.height - 0.8) < Number.EPSILON);
+});
+
+test('關閉待機特效會釋放 WebGL 來源 texture，而非只清空畫面', async () => {
+  const [rendererSource, appSource] = await Promise.all([
+    readFile(
+      path.join(projectRoot, 'display', 'sand-webgl-renderer.mjs'),
+      'utf8',
+    ),
+    readFile(path.join(projectRoot, 'display', 'app.mjs'), 'utf8'),
+  ]);
+
+  assert.match(
+    rendererSource,
+    /releaseSourceTexture\(\)\s*\{[\s\S]*?texImage2D\([\s\S]*?\b1,\s*\b1,\s*\b0,[\s\S]*?null[\s\S]*?ready\s*=\s*false;[\s\S]*?cropUniform\s*=\s*null;/,
+  );
+  assert.match(
+    appSource,
+    /function clearStandbySandCanvas\(\{\s*releaseBuffers\s*=\s*false\s*\}\s*=\s*\{\}\)[\s\S]*?releaseBuffers[\s\S]*?sandWebglRenderer\?\.releaseSourceTexture\(\)/,
+  );
 });
 
 test('shader 必須從固定來源格點向右搬運真實圖片砂粒', async () => {

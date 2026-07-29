@@ -167,7 +167,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 10);
+  assert.equal(config.configVersion, 11);
   assert.deepEqual(Object.keys(config.logo).sort(), [
     'enabled',
     'path',
@@ -177,10 +177,12 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
   assert.deepEqual(Object.keys(config.standby).sort(), [
     'backgroundImagePaths',
     'backgroundMode',
+    'sandEffectEnabled',
     'slideDurationSeconds',
   ]);
   assert.equal(config.standby.backgroundMode, 'fixed');
   assert.deepEqual(config.standby.backgroundImagePaths, []);
+  assert.equal(config.standby.sandEffectEnabled, true);
   assert.equal(config.standby.slideDurationSeconds, 10);
   assert.equal(typeof config.appearance.backgroundColor, 'string');
   assert.equal(typeof config.appearance.fontFamily, 'string');

@@ -83,7 +83,7 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV10(
+function hasExpectedConfigV11(
   config,
   offsetSeconds,
   renderResolution,
@@ -94,16 +94,18 @@ function hasExpectedConfigV10(
   standbyBackgroundMode = 'fixed',
   standbyBackgroundImagePaths = [],
   standbySlideDurationSeconds = 10,
+  standbySandEffectEnabled = true,
 ) {
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 10 &&
+    config.configVersion === 11 &&
     hasExactKeys(config.logo, ['enabled', 'path', 'sizePercent']) &&
     config.logo.sizePercent === logoSizePercent &&
     hasExactKeys(config.standby, [
       'backgroundImagePaths',
       'backgroundMode',
+      'sandEffectEnabled',
       'slideDurationSeconds',
     ]) &&
     config.standby.backgroundMode === standbyBackgroundMode &&
@@ -111,6 +113,7 @@ function hasExpectedConfigV10(
     JSON.stringify(config.standby.backgroundImagePaths) ===
       JSON.stringify(standbyBackgroundImagePaths) &&
     config.standby.slideDurationSeconds === standbySlideDurationSeconds &&
+    config.standby.sandEffectEnabled === standbySandEffectEnabled &&
     config.appearance?.messageLiquidEffectEnabled === true &&
     config.dateTime?.enabled === true &&
     config.dateTime?.offsetSeconds === offsetSeconds &&
@@ -138,12 +141,13 @@ function isExpectedSettingsSnapshot(
   standbyBackgroundMode = 'fixed',
   standbyBackgroundImagePaths = [],
   standbySlideDurationSeconds = 10,
+  standbySandEffectEnabled = true,
 ) {
   return (
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV10(
+    hasExpectedConfigV11(
       snapshot.config,
       offsetSeconds,
       renderResolution,
@@ -154,8 +158,9 @@ function isExpectedSettingsSnapshot(
       standbyBackgroundMode,
       standbyBackgroundImagePaths,
       standbySlideDurationSeconds,
+      standbySandEffectEnabled,
     ) &&
-    hasExpectedConfigV10(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
+    hasExpectedConfigV11(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
   );
 }
 
@@ -215,6 +220,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     nextConfig.standby = {
       backgroundMode: 'slideshow',
       backgroundImagePaths: selectedBackgroundPaths,
+      sandEffectEnabled: false,
       slideDurationSeconds: 12,
     };
     const savedSettings = await window.displayCoreControl.saveSettings(
@@ -236,6 +242,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         'slideshow',
         selectedBackgroundPaths,
         12,
+        false,
       )
     ) {
       document.title = 'DISPLAYCORE_CONTROL_IPC_FAILED';

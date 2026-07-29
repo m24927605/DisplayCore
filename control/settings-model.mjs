@@ -125,7 +125,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 10) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 11) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -170,6 +170,7 @@ function normalizeConfig(candidate) {
     !hasExactKeys(standby, [
       'backgroundImagePaths',
       'backgroundMode',
+      'sandEffectEnabled',
       'slideDurationSeconds',
     ])
   ) {
@@ -180,6 +181,13 @@ function normalizeConfig(candidate) {
     !STANDBY_BACKGROUND_MODES.includes(standby.backgroundMode)
   ) {
     return failure('standby.backgroundMode', '請選擇有效的待機背景顯示方式。');
+  }
+
+  if (typeof standby.sandEffectEnabled !== 'boolean') {
+    return failure(
+      'standby.sandEffectEnabled',
+      '待機頁面風吹沙效果開關格式不正確。',
+    );
   }
 
   if (
@@ -433,7 +441,7 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 10,
+      configVersion: 11,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -442,6 +450,7 @@ function normalizeConfig(candidate) {
       standby: {
         backgroundMode: standby.backgroundMode,
         backgroundImagePaths: [...standby.backgroundImagePaths],
+        sandEffectEnabled: standby.sandEffectEnabled,
         slideDurationSeconds: standby.slideDurationSeconds,
       },
       appearance: {
@@ -531,6 +540,7 @@ export function buildSettingsDraft({
   standbyBackgroundMode,
   standbyBackgroundImagePaths,
   standbySlideDurationSeconds,
+  standbySandEffectEnabled,
   backgroundColor,
   messageBackgroundPreset,
   fontFamily,
@@ -643,7 +653,7 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 10,
+    configVersion: 11,
     logo: {
       enabled: logoEnabled,
       path: logoPath,
@@ -652,6 +662,7 @@ export function buildSettingsDraft({
     standby: {
       backgroundMode: standbyBackgroundMode,
       backgroundImagePaths: standbyBackgroundImagePaths,
+      sandEffectEnabled: standbySandEffectEnabled,
       slideDurationSeconds: Number(standbySlideDurationSeconds),
     },
     appearance: {

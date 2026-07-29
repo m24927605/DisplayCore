@@ -18,6 +18,7 @@ const bundledDefaultPath = path.join(projectRoot, 'config.json');
 const DEFAULT_STANDBY = Object.freeze({
   backgroundMode: 'fixed',
   backgroundImagePaths: Object.freeze([]),
+  sandEffectEnabled: true,
   slideDurationSeconds: 10,
 });
 
@@ -60,8 +61,9 @@ test('首次啟動以原廠預設值原子建立 userData/config.json', async (t
 
   assert.deepEqual(snapshot.config, defaults);
   assert.deepEqual(snapshot.defaults, defaults);
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(snapshot.config.standby.sandEffectEnabled, true);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -96,7 +98,7 @@ test('有效使用者設定支援 UTF-8 BOM，載入時不擅自重寫檔案', a
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 v1 使用者設定在記憶體升級為 v10 且不擅自覆寫原檔', async (t) => {
+test('既有 v1 使用者設定在記憶體升級為 v11 且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 1,
@@ -120,7 +122,7 @@ test('既有 v1 使用者設定在記憶體升級為 v10 且不擅自覆寫原�
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -153,7 +155,7 @@ test('既有 v1 使用者設定在記憶體升級為 v10 且不擅自覆寫原�
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    10,
+    11,
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).logo.sizePercent,
@@ -162,7 +164,7 @@ test('既有 v1 使用者設定在記憶體升級為 v10 且不擅自覆寫原�
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v2 使用者設定在記憶體升級為 v10 且不擅自覆寫原檔', async (t) => {
+test('既有 v2 使用者設定在記憶體升級為 v11 且不擅自覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 2,
@@ -192,7 +194,7 @@ test('既有 v2 使用者設定在記憶體升級為 v10 且不擅自覆寫原�
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -222,7 +224,7 @@ test('既有 v2 使用者設定在記憶體升級為 v10 且不擅自覆寫原�
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).configVersion,
-    10,
+    11,
   );
   assert.equal(
     JSON.parse(await fileSystem.readFile(configPath, 'utf8')).logo.sizePercent,
@@ -231,7 +233,7 @@ test('既有 v2 使用者設定在記憶體升級為 v10 且不擅自覆寫原�
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v3 使用者設定在記憶體升級為 v10 且安全改用自動螢幕分工', async (t) => {
+test('既有 v3 使用者設定在記憶體升級為 v11 且安全改用自動螢幕分工', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 3,
@@ -262,7 +264,7 @@ test('既有 v3 使用者設定在記憶體升級為 v10 且安全改用自動�
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.deepEqual(snapshot.config.logo, {
     enabled: false,
     path: null,
@@ -287,14 +289,14 @@ test('既有 v3 使用者設定在記憶體升級為 v10 且安全改用自動�
     snapshot.revision,
   );
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
-  assert.equal(persisted.configVersion, 10);
+  assert.equal(persisted.configVersion, 11);
   assert.equal(persisted.logo.sizePercent, 100);
   assert.deepEqual(persisted.playback, snapshot.defaults.playback);
   assert.deepEqual(persisted.standby, DEFAULT_STANDBY);
   assert.equal(saved.revision, 1);
 });
 
-test('既有 v4 使用者設定在記憶體升級為 v10，不覆寫原檔且安全自動分工', async (t) => {
+test('既有 v4 使用者設定在記憶體升級為 v11，不覆寫原檔且安全自動分工', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 4,
@@ -333,7 +335,7 @@ test('既有 v4 使用者設定在記憶體升級為 v10，不覆寫原檔且安
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.equal(snapshot.config.appearance.messageBackgroundPreset, 'solid');
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(snapshot.config.appearance.standbyClockSizePercent, 135);
@@ -356,7 +358,7 @@ test('既有 v4 使用者設定在記憶體升級為 v10，不覆寫原檔且安
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(persisted.configVersion, 10);
+  assert.equal(persisted.configVersion, 11);
   assert.equal(persisted.logo.sizePercent, 100);
   assert.deepEqual(persisted.playback, legacy.playback);
   assert.deepEqual(
@@ -365,7 +367,7 @@ test('既有 v4 使用者設定在記憶體升級為 v10，不覆寫原檔且安
   );
 });
 
-test('既有 v5 使用者設定在記憶體升級為 v10，保留背景並安全自動分工', async (t) => {
+test('既有 v5 使用者設定在記憶體升級為 v11，保留背景並安全自動分工', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = {
     configVersion: 5,
@@ -408,7 +410,7 @@ test('既有 v5 使用者設定在記憶體升級為 v10，保留背景並安全
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.equal(snapshot.config.appearance.messageBackgroundPreset, 'solid');
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(snapshot.config.appearance.standbyClockSizePercent, 135);
@@ -419,6 +421,7 @@ test('既有 v5 使用者設定在記憶體升級為 v10，保留背景並安全
   assert.deepEqual(snapshot.config.standby, {
     backgroundMode: 'fixed',
     backgroundImagePaths: [legacy.standby.backgroundImagePath],
+    sandEffectEnabled: true,
     slideDurationSeconds: 10,
   });
   assert.deepEqual(snapshot.config.playback, legacy.playback);
@@ -436,14 +439,14 @@ test('既有 v5 使用者設定在記憶體升級為 v10，保留背景並安全
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(persisted.configVersion, 10);
+  assert.equal(persisted.configVersion, 11);
   assert.deepEqual(persisted.logo, {
     ...legacy.logo,
     sizePercent: 100,
   });
 });
 
-test('既有 v6 使用者設定嚴格升級為 v10 且儲存前不覆寫原檔', async (t) => {
+test('既有 v6 使用者設定嚴格升級為 v11 且儲存前不覆寫原檔', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = await readBundledDefault();
   legacy.configVersion = 6;
@@ -461,7 +464,7 @@ test('既有 v6 使用者設定嚴格升級為 v10 且儲存前不覆寫原檔',
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.equal(snapshot.config.logo.sizePercent, 375);
   assert.equal(snapshot.config.appearance.messageBackgroundPreset, 'solid');
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
@@ -469,6 +472,7 @@ test('既有 v6 使用者設定嚴格升級為 v10 且儲存前不覆寫原檔',
   assert.deepEqual(snapshot.config.standby, {
     backgroundMode: 'fixed',
     backgroundImagePaths: [legacy.standby.backgroundImagePath],
+    sandEffectEnabled: true,
     slideDurationSeconds: 10,
   });
   assert.deepEqual(
@@ -479,7 +483,7 @@ test('既有 v6 使用者設定嚴格升級為 v10 且儲存前不覆寫原檔',
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 canonical v7 使用者設定升級為 v10 並維持純色與待機時間比例', async (t) => {
+test('既有 canonical v7 使用者設定升級為 v11 並維持純色與待機時間比例', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = await readBundledDefault();
   legacy.configVersion = 7;
@@ -488,17 +492,19 @@ test('既有 canonical v7 使用者設定升級為 v10 並維持純色與待機�
   delete legacy.appearance.messageBackgroundPreset;
   delete legacy.appearance.messageLiquidEffectEnabled;
   delete legacy.appearance.standbyClockSizePercent;
+  delete legacy.standby.sandEffectEnabled;
   delete legacy.display.controlDisplayId;
   const originalText = JSON.stringify(legacy);
   await fileSystem.writeFile(configPath, originalText, 'utf8');
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.equal(snapshot.config.appearance.backgroundColor, '#123ABC');
   assert.equal(snapshot.config.appearance.messageBackgroundPreset, 'solid');
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(snapshot.config.appearance.standbyClockSizePercent, 175);
+  assert.equal(snapshot.config.standby.sandEffectEnabled, true);
   assert.deepEqual(
     snapshot.config.display,
     expectedSafeDisplay(snapshot.defaults.display, legacy.display),
@@ -507,7 +513,7 @@ test('既有 canonical v7 使用者設定升級為 v10 並維持純色與待機�
   assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
-test('既有 canonical v8 使用者設定升級為 v10，下次儲存才寫回新格式', async (t) => {
+test('既有 canonical v8 使用者設定升級為 v11，下次儲存才寫回新格式', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = await readBundledDefault();
   legacy.configVersion = 8;
@@ -516,17 +522,19 @@ test('既有 canonical v8 使用者設定升級為 v10，下次儲存才寫回�
   legacy.appearance.standbyClockSizePercent = 185;
   legacy.playback.pageDurationSeconds = 17;
   delete legacy.appearance.messageLiquidEffectEnabled;
+  delete legacy.standby.sandEffectEnabled;
   delete legacy.display.controlDisplayId;
   const originalText = `\uFEFF${JSON.stringify(legacy)}`;
   await fileSystem.writeFile(configPath, originalText, 'utf8');
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
   assert.equal(snapshot.config.appearance.backgroundColor, '#123ABC');
   assert.equal(snapshot.config.appearance.messageBackgroundPreset, 'walnut');
   assert.equal(snapshot.config.appearance.standbyClockSizePercent, 185);
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(snapshot.config.standby.sandEffectEnabled, true);
   assert.equal(snapshot.config.playback.pageDurationSeconds, 17);
   assert.deepEqual(
     snapshot.config.display,
@@ -542,13 +550,13 @@ test('既有 canonical v8 使用者設定升級為 v10，下次儲存才寫回�
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(persisted.configVersion, 10);
+  assert.equal(persisted.configVersion, 11);
   assert.equal(persisted.appearance.messageLiquidEffectEnabled, true);
   assert.equal(persisted.appearance.messageBackgroundPreset, 'walnut');
   assert.equal(persisted.playback.pageDurationSeconds, 17);
 });
 
-test('既有 canonical v9 手動螢幕設定升級為 v10 時採安全自動分工', async (t) => {
+test('既有 canonical v9 手動螢幕設定升級為 v11 時採安全自動分工', async (t) => {
   const { configPath, manager } = await createHarness(t);
   const legacy = await readBundledDefault();
   legacy.configVersion = 9;
@@ -558,12 +566,14 @@ test('既有 canonical v9 手動螢幕設定升級為 v10 時採安全自動分�
     fullscreen: false,
     renderResolution: '1600x900',
   };
+  delete legacy.standby.sandEffectEnabled;
   const originalText = JSON.stringify(legacy);
   await fileSystem.writeFile(configPath, originalText, 'utf8');
 
   const snapshot = await manager.initialize();
 
-  assert.equal(snapshot.config.configVersion, 10);
+  assert.equal(snapshot.config.configVersion, 11);
+  assert.equal(snapshot.config.standby.sandEffectEnabled, true);
   assert.deepEqual(snapshot.config.display, {
     selectionMode: 'auto',
     controlDisplayId: null,
@@ -581,8 +591,28 @@ test('既有 canonical v9 手動螢幕設定升級為 v10 時採安全自動分�
   const persisted = JSON.parse(await fileSystem.readFile(configPath, 'utf8'));
 
   assert.equal(saved.revision, 1);
-  assert.equal(persisted.configVersion, 10);
+  assert.equal(persisted.configVersion, 11);
   assert.deepEqual(persisted.display, snapshot.config.display);
+});
+
+test('既有 canonical v10 設定升級為 v11 時補上待機風吹沙開關', async (t) => {
+  const { configPath, manager } = await createHarness(t);
+  const legacy = await readBundledDefault();
+  legacy.configVersion = 10;
+  legacy.standby.backgroundMode = 'slideshow';
+  legacy.standby.slideDurationSeconds = 17;
+  delete legacy.standby.sandEffectEnabled;
+  const originalText = JSON.stringify(legacy);
+  await fileSystem.writeFile(configPath, originalText, 'utf8');
+
+  const snapshot = await manager.initialize();
+
+  assert.equal(snapshot.config.configVersion, 11);
+  assert.equal(snapshot.config.standby.backgroundMode, 'slideshow');
+  assert.equal(snapshot.config.standby.slideDurationSeconds, 17);
+  assert.equal(snapshot.config.standby.sandEffectEnabled, true);
+  assert.equal(snapshot.notice, null);
+  assert.equal(await fileSystem.readFile(configPath, 'utf8'), originalText);
 });
 
 test('損壞或過大的使用者設定保留原檔，記憶體安全降級為預設值', async (t) => {
@@ -697,6 +727,7 @@ test('多張待機背景設定只在驗證與原子寫入成功後持久化', as
       'standby-backgrounds/0123456789abcdef01234567.png',
       'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
     ],
+    sandEffectEnabled: false,
     slideDurationSeconds: 8,
   };
 
@@ -711,6 +742,7 @@ test('多張待機背景設定只在驗證與原子寫入成功後持久化', as
       'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
     ],
   );
+  assert.equal(saved.config.standby.sandEffectEnabled, false);
   assert.equal(Object.isFrozen(saved.config.standby), true);
   assert.equal(
     Object.isFrozen(saved.config.standby.backgroundImagePaths),
@@ -725,8 +757,10 @@ test('無效設定與過期 revision 不會改變既有檔案或記憶體', asyn
   const originalText = await fileSystem.readFile(configPath, 'utf8');
   const invalid = structuredClone(initial.config);
   const invalidEffect = structuredClone(initial.config);
+  const invalidStandbyEffect = structuredClone(initial.config);
   invalid.appearance.fontColor = 'red';
   invalidEffect.appearance.messageLiquidEffectEnabled = 'false';
+  invalidStandbyEffect.standby.sandEffectEnabled = 'false';
 
   await assert.rejects(
     manager.saveConfig(invalid, initial.revision),
@@ -740,6 +774,12 @@ test('無效設定與過期 revision 不會改變既有檔案或記憶體', asyn
       error instanceof ConfigValidationError &&
       error.validationError.field ===
         'appearance.messageLiquidEffectEnabled',
+  );
+  await assert.rejects(
+    manager.saveConfig(invalidStandbyEffect, initial.revision),
+    (error) =>
+      error instanceof ConfigValidationError &&
+      error.validationError.field === 'standby.sandEffectEnabled',
   );
   await assert.rejects(
     manager.saveConfig(initial.config, initial.revision + 1),

@@ -13,13 +13,15 @@ function createSnapshot(
   backgroundImageUrls = [],
   logoSizePercent = 100,
   messageLiquidEffectEnabled = true,
+  sandEffectEnabled = true,
 ) {
   return {
-    configVersion: 10,
+    configVersion: 11,
     logo: { enabled: false, url: null, sizePercent: logoSizePercent },
     standby: {
       backgroundMode: backgroundImageUrls.length > 1 ? 'slideshow' : 'fixed',
       backgroundImageUrls,
+      sandEffectEnabled,
       slideDurationSeconds: 10,
     },
     appearance: {
@@ -188,6 +190,7 @@ test('畸形待機背景 URL 不覆蓋最後有效設定', async () => {
     standby: {
       backgroundMode: 'fixed',
       backgroundImageUrls: [],
+      sandEffectEnabled: true,
       slideDurationSeconds: 10,
       extra: true,
     },

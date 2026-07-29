@@ -29,13 +29,14 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v10 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v11 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 10);
+  assert.equal(CONFIG_VERSION, 11);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
+  assert.equal(source.standby.sandEffectEnabled, true);
   assert.notEqual(result.value, source);
   assert.notEqual(result.value.appearance, source.appearance);
   assert.equal(Object.isFrozen(result.value), true);
@@ -67,6 +68,7 @@ test('顏色正規化，但受管理圖片路徑與字型名稱不改寫', async
       'standby-backgrounds/0123456789abcdef01234567.png',
     ],
     slideDurationSeconds: 15,
+    sandEffectEnabled: false,
   };
   source.appearance.backgroundColor = '#a1b2c3';
   source.appearance.fontColor = '#d4e5f6';
@@ -101,7 +103,8 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 7 },
     { ...source, configVersion: 8 },
     { ...source, configVersion: 9 },
-    { ...source, configVersion: 11 },
+    { ...source, configVersion: 10 },
+    { ...source, configVersion: 12 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -124,6 +127,7 @@ test('待機背景接受固定／輪播模式、零至二十張唯一圖片與�
       backgroundImagePaths: [],
       slideDurationSeconds:
         CONFIG_LIMITS.MINIMUM_STANDBY_SLIDE_DURATION_SECONDS,
+      sandEffectEnabled: true,
     },
     {
       backgroundMode: 'slideshow',
@@ -134,11 +138,13 @@ test('待機背景接受固定／輪播模式、零至二十張唯一圖片與�
       ],
       slideDurationSeconds:
         CONFIG_LIMITS.MAXIMUM_STANDBY_SLIDE_DURATION_SECONDS,
+      sandEffectEnabled: false,
     },
     {
       backgroundMode: 'fixed',
       backgroundImagePaths: twentyPaths,
       slideDurationSeconds: 10,
+      sandEffectEnabled: true,
     },
   ]) {
     const result = validateConfig({ ...source, standby });
@@ -164,10 +170,16 @@ test('待機背景拒絕非 exact shape、重複或過多圖片、錯誤模式�
     backgroundMode: 'fixed',
     backgroundImagePaths: [validPath],
     slideDurationSeconds: 10,
+    sandEffectEnabled: true,
   };
+  const {
+    sandEffectEnabled: _sandEffectEnabled,
+    ...missingSandEffectEnabled
+  } = valid;
 
   for (const standby of [
     {},
+    missingSandEffectEnabled,
     { ...valid, unexpected: true },
     { ...valid, backgroundMode: 'random' },
     { ...valid, backgroundImagePaths: 'not-an-array' },
@@ -184,6 +196,11 @@ test('待機背景拒絕非 exact shape、重複或過多圖片、錯誤模式�
     { ...valid, slideDurationSeconds: 3_601 },
     { ...valid, slideDurationSeconds: 1.5 },
     { ...valid, slideDurationSeconds: '10' },
+    { ...valid, sandEffectEnabled: null },
+    { ...valid, sandEffectEnabled: 0 },
+    { ...valid, sandEffectEnabled: 1 },
+    { ...valid, sandEffectEnabled: 'true' },
+    { ...valid, sandEffectEnabled: 'false' },
   ]) {
     const result = validateConfig({ ...source, standby });
     assert.equal(result.ok, false, JSON.stringify(standby));
@@ -224,6 +241,7 @@ test('待機背景拒絕本機路徑、網路路徑與非受管理圖片', async
         backgroundMode: 'fixed',
         backgroundImagePaths: [backgroundImagePath],
         slideDurationSeconds: 10,
+        sandEffectEnabled: true,
       },
     });
     assert.equal(result.ok, false, String(backgroundImagePath));
@@ -387,10 +405,10 @@ test('外觀設定限制色碼、字型、最小字級、字體比例與行距�
   }
 });
 
-test('v10 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
+test('v11 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
   const source = await readDefaultConfig();
 
-  assert.equal(source.configVersion, 10);
+  assert.equal(source.configVersion, 11);
   assert.equal(source.appearance.messageBackgroundPreset, 'obsidian');
   assert.equal(source.appearance.standbyClockSizePercent, 100);
 
@@ -446,7 +464,7 @@ test('v10 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大�
   }
 });
 
-test('v10 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
+test('v11 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
   const source = await readDefaultConfig();
 
   assert.equal(source.appearance.messageLiquidEffectEnabled, true);
@@ -486,7 +504,7 @@ test('v10 訊息字體倒酒效果開關只接受 boolean 並完整保留值', a
   }
 });
 
-test('v10 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
+test('v11 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
   const source = await readDefaultConfig();
   const {
     messageBackgroundPreset: _messageBackgroundPreset,

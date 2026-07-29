@@ -29,17 +29,35 @@ async function runElectronFixture() {
     );
 
     const clean = result?.clean;
+    const messageEffect = result?.messageEffect;
+    const standbyEffect = result?.standbyEffect;
     const dirty = result?.dirty;
     if (
       clean?.restoredFocusId !== 'open-settings-button' ||
       clean?.preservedNewFocusId !== 'next-action-input' ||
       clean?.beforeClose?.messageLiquidEffectEnabled !== true ||
+      clean?.beforeClose?.standbySandEffectEnabled !== true ||
+      messageEffect?.beforeClose?.dirtyStatus !== '有未儲存變更' ||
+      messageEffect?.beforeClose?.closeButtonText !== '捨棄變更' ||
+      messageEffect?.beforeClose?.saveDisabled !== false ||
+      messageEffect?.beforeClose?.messageLiquidEffectEnabled !== false ||
+      messageEffect?.beforeClose?.standbySandEffectEnabled !== true ||
+      messageEffect?.afterClose?.messageLiquidEffectEnabled !== true ||
+      messageEffect?.afterClose?.standbySandEffectEnabled !== true ||
+      standbyEffect?.beforeClose?.dirtyStatus !== '有未儲存變更' ||
+      standbyEffect?.beforeClose?.closeButtonText !== '捨棄變更' ||
+      standbyEffect?.beforeClose?.saveDisabled !== false ||
+      standbyEffect?.beforeClose?.messageLiquidEffectEnabled !== true ||
+      standbyEffect?.beforeClose?.standbySandEffectEnabled !== false ||
+      standbyEffect?.afterClose?.messageLiquidEffectEnabled !== true ||
+      standbyEffect?.afterClose?.standbySandEffectEnabled !== true ||
       dirty?.restoredFocusId !== 'open-settings-button' ||
       dirty?.preservedNewFocusId !== 'next-action-input' ||
       dirty?.beforeClose?.dirtyStatus !== '有未儲存變更' ||
       dirty?.beforeClose?.closeButtonText !== '捨棄變更' ||
       dirty?.beforeClose?.saveDisabled !== false ||
       dirty?.beforeClose?.messageLiquidEffectEnabled !== false ||
+      dirty?.beforeClose?.standbySandEffectEnabled !== false ||
       dirty?.beforeClose?.controlDisplayId !== '1' ||
       dirty?.beforeClose?.defaultDisplayId !== '2' ||
       dirty?.beforeClose?.controlOptions?.[1]?.textContent !==
@@ -59,6 +77,7 @@ async function runElectronFixture() {
       dirty?.afterClose?.messageBackgroundPreset !== 'obsidian' ||
       dirty?.afterClose?.standbyClockSizePercent !== '100' ||
       dirty?.afterClose?.messageLiquidEffectEnabled !== true ||
+      dirty?.afterClose?.standbySandEffectEnabled !== true ||
       dirty?.afterClose?.controlDisplayId !== 'auto' ||
       dirty?.afterClose?.defaultDisplayId !== 'auto'
     ) {

@@ -85,6 +85,7 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
     standby: {
       backgroundMode: config.standby.backgroundMode,
       backgroundImageUrls,
+      sandEffectEnabled: config.standby.sandEffectEnabled,
       slideDurationSeconds: config.standby.slideDurationSeconds,
     },
     appearance: {

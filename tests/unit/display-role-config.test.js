@@ -11,10 +11,10 @@ const {
 } = require('../../config/config-schema');
 const { migrateStoredConfig } = require('../../config/config-migrations');
 
-function createV10Defaults() {
+function createV11Defaults() {
   return structuredClone({
     ...bundledConfig,
-    configVersion: 10,
+    configVersion: 11,
     display: {
       selectionMode: DISPLAY_SELECTION_MODES.AUTO,
       controlDisplayId: null,
@@ -26,7 +26,7 @@ function createV10Defaults() {
 }
 
 test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不得相同', () => {
-  const defaults = createV10Defaults();
+  const defaults = createV11Defaults();
   const manual = structuredClone({
     ...defaults,
     display: {
@@ -39,7 +39,7 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
 
   const accepted = validateConfig(manual);
 
-  assert.equal(CONFIG_VERSION, 10);
+  assert.equal(CONFIG_VERSION, 11);
   assert.equal(accepted.ok, true);
   assert.deepEqual(accepted.value.display, {
     selectionMode: 'manual',
@@ -62,7 +62,7 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
 });
 
 test('自動分工不保存硬體 ID，手動分工必須同時提供兩個 ID', () => {
-  const defaults = createV10Defaults();
+  const defaults = createV11Defaults();
 
   assert.equal(validateConfig(defaults).ok, true);
 
@@ -89,8 +89,8 @@ test('自動分工不保存硬體 ID，手動分工必須同時提供兩個 ID',
   }
 });
 
-test('既有 canonical v9 設定遷移到 v10 時保留外觀與解析度並採安全自動分工', () => {
-  const defaults = createV10Defaults();
+test('既有 canonical v9 設定遷移到 v11 時保留外觀、解析度並補上風吹沙開關', () => {
+  const defaults = createV11Defaults();
   const legacyV9 = structuredClone({
     ...bundledConfig,
     configVersion: 9,
@@ -105,13 +105,15 @@ test('既有 canonical v9 設定遷移到 v10 時保留外觀與解析度並採�
       renderResolution: '2560x1440',
     },
   });
+  delete legacyV9.standby.sandEffectEnabled;
 
   const migrated = migrateStoredConfig(legacyV9, defaults);
 
   assert.equal(migrated.ok, true);
   assert.equal(migrated.migrated, true);
-  assert.equal(migrated.value.configVersion, 10);
+  assert.equal(migrated.value.configVersion, 11);
   assert.equal(migrated.value.appearance.fontSizePercent, 135);
+  assert.equal(migrated.value.standby.sandEffectEnabled, true);
   assert.deepEqual(migrated.value.display, {
     selectionMode: 'auto',
     controlDisplayId: null,

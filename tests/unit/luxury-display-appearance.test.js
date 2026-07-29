@@ -55,7 +55,7 @@ function readJpegDimensions(contents) {
   assert.fail('JPEG 缺少可讀取尺寸的 Start Of Frame segment');
 }
 
-test('高級顯示預設具備離線字型、材質背景、倒酒開關與獨立待機時間大小', async () => {
+test('高級顯示預設具備離線字型、材質背景、獨立特效開關與待機時間大小', async () => {
   const [configSource, html, css, appSource] = await Promise.all([
     readProjectFile('config.json'),
     readProjectFile('control', 'index.html'),
@@ -64,9 +64,10 @@ test('高級顯示預設具備離線字型、材質背景、倒酒開關與獨�
   ]);
   const config = JSON.parse(configSource);
 
-  assert.equal(config.configVersion, 10);
+  assert.equal(config.configVersion, 11);
   assert.equal(config.appearance.messageBackgroundPreset, 'obsidian');
   assert.equal(config.appearance.messageLiquidEffectEnabled, true);
+  assert.equal(config.standby.sandEffectEnabled, true);
   assert.equal(config.appearance.standbyClockSizePercent, 100);
   assert.match(config.appearance.fontFamily, /DisplayCore Source Han Serif TC/);
 
@@ -86,7 +87,11 @@ test('高級顯示預設具備離線字型、材質背景、倒酒開關與獨�
   );
   assert.match(
     html,
-    /<label[^>]+for="message-liquid-effect-enabled-input"[\s\S]*?<strong>訊息字體倒酒效果<\/strong>[\s\S]*?<input[^>]+id="message-liquid-effect-enabled-input"[^>]+type="checkbox"/,
+    /<label[^>]+for="message-liquid-effect-enabled-input"[\s\S]*?<strong>訊息特效<\/strong>[\s\S]*?<input[^>]+id="message-liquid-effect-enabled-input"[^>]+type="checkbox"/,
+  );
+  assert.match(
+    html,
+    /<label[^>]+for="standby-sand-effect-enabled-input"[\s\S]*?<strong>待機頁面特效（風吹沙）<\/strong>[\s\S]*?<input[^>]+id="standby-sand-effect-enabled-input"[^>]+type="checkbox"/,
   );
 
   assert.match(css, /@font-face\s*{[^}]*font-family:\s*"DisplayCore Source Han Serif TC"/s);

@@ -76,6 +76,25 @@ test('正式 Display 可由設定關閉倒酒效果並安全退回固定白字',
   );
 });
 
+test('正式 Display 關閉待機風吹沙後立即釋放 Canvas 且輪播仍繼續', () => {
+  const electronBinary = require('electron');
+  const result = spawnSync(electronBinary, [fixtureRoot], {
+    encoding: 'utf8',
+    timeout: 30_000,
+    env: {
+      ...process.env,
+      DISPLAYCORE_STANDBY_EFFECT_QA_ONLY: '1',
+    },
+  });
+
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /Display window standby effect workflow succeeded/,
+  );
+});
+
 test('正式 Display 以 4K compositor 顯示紅檜木 555 與祖母綠 888 九宮格', () => {
   const electronBinary = require('electron');
   const result = spawnSync(electronBinary, [fixtureRoot], {

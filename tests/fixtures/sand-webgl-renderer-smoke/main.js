@@ -162,6 +162,7 @@ app.whenReady().then(async () => {
         )}`,
       );
     }
+    assert.equal(result.releasedAndReprepared, true);
     assert.equal(result.disposed, true);
 
     if (visualQaDirectory) {

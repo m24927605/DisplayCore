@@ -455,7 +455,7 @@ test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼�
 
   assert.equal(loaded.ok, true);
   assert.equal(loaded.data.revision, 0);
-  assert.equal(loaded.data.config.configVersion, 10);
+  assert.equal(loaded.data.config.configVersion, 11);
   assert.equal(loaded.data.config.display.controlDisplayId, null);
   assert.deepEqual(loaded.data.config.playback, defaultConfig.playback);
   assert.equal(saved.ok, true);
@@ -545,11 +545,12 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 10,
+      configVersion: 11,
       logo: { enabled: false, sizePercent: 100, url: null },
       standby: {
         backgroundMode: 'fixed',
         backgroundImageUrls: [],
+        sandEffectEnabled: true,
         slideDurationSeconds: 10,
       },
       appearance: defaultConfig.appearance,
@@ -606,11 +607,12 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 10,
+    configVersion: 11,
     logo: { enabled: false, sizePercent: 150, url: null },
     standby: {
       backgroundMode: 'fixed',
       backgroundImageUrls: [],
+      sandEffectEnabled: true,
       slideDurationSeconds: 10,
     },
     appearance: config.appearance,

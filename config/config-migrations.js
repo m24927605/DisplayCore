@@ -53,6 +53,12 @@ const LEGACY_V6_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V7_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V8_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V9_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_V10_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_LIST_STANDBY_KEYS = Object.freeze([
+  'backgroundImagePaths',
+  'backgroundMode',
+  'slideDurationSeconds',
+]);
 const LEGACY_APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -180,7 +186,16 @@ function migrateSingleStandbyBackground(legacyStandby, defaultStandby) {
       legacyStandby.backgroundImagePath === null
         ? []
         : [legacyStandby.backgroundImagePath],
+    sandEffectEnabled: defaultStandby.sandEffectEnabled,
     slideDurationSeconds: defaultStandby.slideDurationSeconds,
+  };
+}
+
+/** v7 至 v10 已使用圖片清單，只需補上新增的風吹沙效果開關。 */
+function migrateLegacyStandby(legacyStandby, defaultStandby) {
+  return {
+    ...legacyStandby,
+    sandEffectEnabled: defaultStandby.sandEffectEnabled,
   };
 }
 
@@ -200,10 +215,10 @@ function migrateLegacyDisplay(legacyDisplay, defaultDisplay) {
 }
 
 /**
- * 將磁碟上的合法 v1 至 v9 設定轉成 canonical v10。
+ * 將磁碟上的合法 v1 至 v10 設定轉成 canonical v11。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v10。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v10 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v11。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v11 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -219,9 +234,30 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V10_CONFIG_KEYS) &&
+    candidate.configVersion === 10 &&
+    hasExactKeys(candidate.appearance, LEGACY_V9_APPEARANCE_KEYS) &&
+    hasExactKeys(candidate.standby, LEGACY_LIST_STANDBY_KEYS)
+  ) {
+    const migratedV10 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      standby: migrateLegacyStandby(
+        candidate.standby,
+        defaults.value.standby,
+      ),
+    });
+
+    return migratedV10.ok
+      ? { ok: true, value: migratedV10.value, migrated: true }
+      : migratedV10;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V9_CONFIG_KEYS) &&
     candidate.configVersion === 9 &&
-    hasExactKeys(candidate.appearance, LEGACY_V9_APPEARANCE_KEYS)
+    hasExactKeys(candidate.appearance, LEGACY_V9_APPEARANCE_KEYS) &&
+    hasExactKeys(candidate.standby, LEGACY_LIST_STANDBY_KEYS)
   ) {
     const migratedV9 = validateConfig({
       ...candidate,
@@ -229,6 +265,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
       display: migrateLegacyDisplay(
         candidate.display,
         defaults.value.display,
+      ),
+      standby: migrateLegacyStandby(
+        candidate.standby,
+        defaults.value.standby,
       ),
     });
 
@@ -240,7 +280,8 @@ function migrateStoredConfig(candidate, currentDefaults) {
   if (
     hasExactKeys(candidate, LEGACY_V8_CONFIG_KEYS) &&
     candidate.configVersion === 8 &&
-    hasExactKeys(candidate.appearance, LEGACY_V8_APPEARANCE_KEYS)
+    hasExactKeys(candidate.appearance, LEGACY_V8_APPEARANCE_KEYS) &&
+    hasExactKeys(candidate.standby, LEGACY_LIST_STANDBY_KEYS)
   ) {
     const migratedV8 = validateConfig({
       ...candidate,
@@ -254,6 +295,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         candidate.display,
         defaults.value.display,
       ),
+      standby: migrateLegacyStandby(
+        candidate.standby,
+        defaults.value.standby,
+      ),
     });
 
     return migratedV8.ok
@@ -264,7 +309,8 @@ function migrateStoredConfig(candidate, currentDefaults) {
   if (
     hasExactKeys(candidate, LEGACY_V7_CONFIG_KEYS) &&
     candidate.configVersion === 7 &&
-    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS)
+    hasExactKeys(candidate.appearance, LEGACY_V2_TO_V7_APPEARANCE_KEYS) &&
+    hasExactKeys(candidate.standby, LEGACY_LIST_STANDBY_KEYS)
   ) {
     const migratedV7 = validateConfig({
       ...candidate,
@@ -276,6 +322,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
       display: migrateLegacyDisplay(
         candidate.display,
         defaults.value.display,
+      ),
+      standby: migrateLegacyStandby(
+        candidate.standby,
+        defaults.value.standby,
       ),
     });
 

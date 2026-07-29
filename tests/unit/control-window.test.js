@@ -198,6 +198,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'font-size-percent-input',
     'line-spacing-percent-input',
     'message-liquid-effect-enabled-input',
+    'standby-sand-effect-enabled-input',
     'inspection-background-color-input',
     'release-background-color-input',
     'date-time-enabled-input',
@@ -256,19 +257,40 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.match(html, /深墨玉/);
   assert.match(html, /典雅宋體（推薦）/);
   assert.match(html, /營運訊息縮字下限（rem）/);
-  assert.match(
-    html,
-    /<label[^>]+class="settings-switch settings-field-wide"[^>]+for="message-liquid-effect-enabled-input"[\s\S]*?<strong>訊息字體倒酒效果<\/strong>[\s\S]*?<input[^>]+id="message-liquid-effect-enabled-input"[^>]+type="checkbox"/,
-    '倒酒效果必須沿用既有簡潔開關，不新增獨立設定區塊',
+  const effectSwitchList = html.match(
+    /<div[^>]+class="settings-switch-list settings-field-wide"[^>]*>[\s\S]*?<\/div>/,
+  )?.[0] ?? '';
+  assert.equal(
+    (effectSwitchList.match(/class="settings-switch"/g) ?? []).length,
+    2,
+    '兩項特效必須收在同一個緊湊開關清單，避免增加設定頁資訊密度',
   );
   assert.match(
-    html,
-    /訊息字體倒酒效果[\s\S]*?只套用於一般訊息；關閉後顯示固定白字。待機、營運訊息及 555／888 不受影響/,
+    effectSwitchList,
+    /<label[^>]+class="settings-switch"[^>]+for="message-liquid-effect-enabled-input"[\s\S]*?<strong>訊息特效<\/strong>[\s\S]*?<input[^>]+id="message-liquid-effect-enabled-input"[^>]+type="checkbox"/,
   );
+  assert.match(
+    effectSwitchList,
+    /<label[^>]+class="settings-switch"[^>]+for="standby-sand-effect-enabled-input"[\s\S]*?<strong>待機頁面特效（風吹沙）<\/strong>[\s\S]*?<input[^>]+id="standby-sand-effect-enabled-input"[^>]+type="checkbox"/,
+  );
+  assert.match(
+    effectSwitchList,
+    /訊息特效[\s\S]*?關閉後顯示固定白字[\s\S]*?營運訊息與 555／888 不受影響/,
+  );
+  assert.match(
+    effectSwitchList,
+    /待機頁面特效（風吹沙）[\s\S]*?多張待機背景切換時使用[\s\S]*?關閉後直接切換圖片[\s\S]*?固定圖片不受影響/,
+  );
+  assert.doesNotMatch(html, /<strong>訊息字體倒酒效果<\/strong>/);
   assert.ok(
     html.indexOf('id="message-liquid-effect-enabled-input"') <
       html.indexOf('<strong>滿屏代碼背景</strong>'),
-    '一般訊息的倒酒開關必須位於 555／888 設定之前，避免誤認會套用緊急畫面',
+      '一般訊息的倒酒開關必須位於 555／888 設定之前，避免誤認會套用緊急畫面',
+  );
+  assert.ok(
+    html.indexOf('id="standby-sand-effect-enabled-input"') <
+      html.indexOf('<strong>滿屏代碼背景</strong>'),
+    '待機風吹沙開關必須與訊息特效放在同一區，不混入 555／888 設定',
   );
   assert.match(html, /一般訊息過長時使用；關閉則水平壓縮/);
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);

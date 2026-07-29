@@ -296,6 +296,30 @@ async function runSmokeWorkflow() {
     particleTransportImage,
   );
   const fullHdDrawTimes = measureFullHdDrawTimes(renderer, gl, image);
+  assert(
+    renderer.releaseSourceTexture(),
+    'WebGL2 renderer 無法釋放來源 texture。',
+  );
+  assert(
+    renderer.draw(0.5) === false,
+    '釋放來源 texture 後仍使用舊圖片繪製。',
+  );
+  assert(renderer.prepare({
+    image,
+    crop: {
+      sourceX: 0,
+      sourceY: 0,
+      sourceWidth: image.naturalWidth,
+      sourceHeight: image.naturalHeight,
+    },
+    width: TEST_WIDTH,
+    height: TEST_HEIGHT,
+    scrim: { red: 0, green: 0, blue: 0, alpha: 0 },
+  }), '釋放來源 texture 後無法重新準備 Renderer。');
+  assert(
+    renderer.draw(0.5),
+    '釋放來源 texture 後無法重新上傳並繪製。',
+  );
 
   renderer.dispose();
   assert(renderer.draw(0.5) === false, 'dispose 後仍可繼續繪製。');
@@ -310,6 +334,7 @@ async function runSmokeWorkflow() {
     frames,
     particleTransport,
     fullHdDrawTimes,
+    releasedAndReprepared: true,
     disposed: true,
   });
 }

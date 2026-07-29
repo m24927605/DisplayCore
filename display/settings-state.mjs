@@ -29,6 +29,7 @@ const LOGO_KEYS = Object.freeze(['enabled', 'sizePercent', 'url']);
 const STANDBY_KEYS = Object.freeze([
   'backgroundImageUrls',
   'backgroundMode',
+  'sandEffectEnabled',
   'slideDurationSeconds',
 ]);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
@@ -118,6 +119,7 @@ function isValidStandby(standby) {
   if (
     !hasExactKeys(standby, STANDBY_KEYS) ||
     !['fixed', 'slideshow'].includes(standby.backgroundMode) ||
+    typeof standby.sandEffectEnabled !== 'boolean' ||
     !Array.isArray(standby.backgroundImageUrls) ||
     standby.backgroundImageUrls.length > MAXIMUM_STANDBY_BACKGROUND_COUNT ||
     !Number.isSafeInteger(standby.slideDurationSeconds) ||
@@ -210,7 +212,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 10 &&
+    candidate.configVersion === 11 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -248,6 +250,7 @@ function cloneSettings(candidate) {
     standby: {
       backgroundMode: candidate.standby.backgroundMode,
       backgroundImageUrls: [...candidate.standby.backgroundImageUrls],
+      sandEffectEnabled: candidate.standby.sandEffectEnabled,
       slideDurationSeconds: candidate.standby.slideDurationSeconds,
     },
     appearance: {
@@ -281,11 +284,12 @@ function cloneSettings(candidate) {
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 10,
+  configVersion: 11,
   logo: { enabled: false, url: null, sizePercent: 100 },
   standby: {
     backgroundMode: 'fixed',
     backgroundImageUrls: [],
+    sandEffectEnabled: false,
     slideDurationSeconds: 10,
   },
   appearance: {

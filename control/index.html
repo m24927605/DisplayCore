@@ -432,16 +432,33 @@
                 <input id="minimum-font-size-input" type="number" min="1" max="12" step="0.25" inputmode="decimal">
                 <p id="minimum-font-size-error" class="field-error" hidden></p>
               </div>
-              <label
-                class="settings-switch settings-field-wide"
-                for="message-liquid-effect-enabled-input"
-              >
-                <span>
-                  <strong>訊息字體倒酒效果</strong>
-                  <small>只套用於一般訊息；關閉後顯示固定白字。待機、營運訊息及 555／888 不受影響。</small>
-                </span>
-                <input id="message-liquid-effect-enabled-input" type="checkbox">
-              </label>
+              <div class="settings-switch-list settings-field-wide">
+                <label
+                  class="settings-switch"
+                  for="message-liquid-effect-enabled-input"
+                >
+                  <span>
+                    <strong>訊息特效</strong>
+                    <small>一般訊息使用字體倒酒效果；關閉後顯示固定白字。營運訊息與 555／888 不受影響。</small>
+                  </span>
+                  <input id="message-liquid-effect-enabled-input" type="checkbox">
+                </label>
+                <label
+                  class="settings-switch"
+                  for="standby-sand-effect-enabled-input"
+                >
+                  <span>
+                    <strong>待機頁面特效（風吹沙）</strong>
+                    <small>多張待機背景切換時使用；關閉後直接切換圖片。固定圖片不受影響。</small>
+                  </span>
+                  <input
+                    id="standby-sand-effect-enabled-input"
+                    type="checkbox"
+                    aria-describedby="standby-sand-effect-error"
+                  >
+                </label>
+                <p id="standby-sand-effect-error" class="field-error" hidden></p>
+              </div>
               <div class="settings-subheading settings-field-wide">
                 <strong>滿屏代碼背景</strong>
                 <small>字體大小使用上方同一設定；555 與 888 背景可分開調整。</small>

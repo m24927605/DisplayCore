@@ -6,10 +6,10 @@ const test = require('node:test');
 const currentDefaultConfig = require('../../config.json');
 const { validateConfig } = require('../../config/config-schema');
 
-// Control Renderer 測試固定宣告完整 v10 契約，不依賴遷移測試的 fixture。
+// Control Renderer 測試固定宣告完整 v11 契約，不依賴遷移測試的 fixture。
 const defaultConfig = structuredClone({
   ...currentDefaultConfig,
-  configVersion: 10,
+  configVersion: 11,
   logo: {
     ...currentDefaultConfig.logo,
     sizePercent: 100,
@@ -45,6 +45,7 @@ function createValidDraftInput(overrides = {}) {
     standbyBackgroundMode: 'fixed',
     standbyBackgroundImagePaths: [],
     standbySlideDurationSeconds: '10',
+    standbySandEffectEnabled: true,
     backgroundColor: '#000000',
     messageBackgroundPreset: 'obsidian',
     fontFamily: defaultConfig.appearance.fontFamily,
@@ -140,7 +141,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v10 設定', async () => {
+test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v11 設定', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -162,6 +163,7 @@ test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v10 �
       'standby-backgrounds/0123456789abcdef01234567.png',
     ],
     standbySlideDurationSeconds: '8',
+    standbySandEffectEnabled: false,
     backgroundColor: '#102a3c',
     messageBackgroundPreset: 'dark-marble',
     fontFamily: 'Arial, sans-serif',
@@ -186,7 +188,7 @@ test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v10 �
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 10,
+    configVersion: 11,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
@@ -198,6 +200,7 @@ test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v10 �
         'standby-backgrounds/abcdefabcdefabcdefabcdef.webp',
         'standby-backgrounds/0123456789abcdef01234567.png',
       ],
+      sandEffectEnabled: false,
       slideDurationSeconds: 8,
     },
     appearance: {
@@ -279,6 +282,9 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { messageLiquidEffectEnabled: 'true' },
     { messageLiquidEffectEnabled: 1 },
     { messageLiquidEffectEnabled: null },
+    { standbySandEffectEnabled: 'true' },
+    { standbySandEffectEnabled: 1 },
+    { standbySandEffectEnabled: null },
     { lineSpacingPercent: '-5' },
     { lineSpacingPercent: '305' },
     { inspectionBackgroundColor: 'red' },
@@ -490,6 +496,7 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   const changedMessageBackground = structuredClone(defaultConfig);
   const changedStandbyClockSize = structuredClone(defaultConfig);
   const changedMessageLiquidEffect = structuredClone(defaultConfig);
+  const changedStandbySandEffect = structuredClone(defaultConfig);
   changed.marquee.enabled = false;
   changedTime.dateTime.offsetSeconds = 1;
   changedResolution.display.renderResolution = '1920x1080';
@@ -504,6 +511,7 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   changedMessageBackground.appearance.messageBackgroundPreset = 'walnut';
   changedStandbyClockSize.appearance.standbyClockSizePercent = 150;
   changedMessageLiquidEffect.appearance.messageLiquidEffectEnabled = false;
+  changedStandbySandEffect.standby.sandEffectEnabled = false;
 
   assert.equal(settingsEqual(defaultConfig, same), true);
   assert.equal(settingsEqual(defaultConfig, changed), false);
@@ -517,5 +525,6 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   assert.equal(settingsEqual(defaultConfig, changedMessageBackground), false);
   assert.equal(settingsEqual(defaultConfig, changedStandbyClockSize), false);
   assert.equal(settingsEqual(defaultConfig, changedMessageLiquidEffect), false);
+  assert.equal(settingsEqual(defaultConfig, changedStandbySandEffect), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
 });

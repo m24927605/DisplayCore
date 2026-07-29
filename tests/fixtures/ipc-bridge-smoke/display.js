@@ -81,7 +81,7 @@ function isExpectedSettingsSnapshot(snapshot) {
       'revision',
       'standby',
     ]) &&
-    snapshot.configVersion === 10 &&
+    snapshot.configVersion === 11 &&
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'sizePercent', 'url']) &&
@@ -91,6 +91,7 @@ function isExpectedSettingsSnapshot(snapshot) {
     hasExactKeys(snapshot.standby, [
       'backgroundImageUrls',
       'backgroundMode',
+      'sandEffectEnabled',
       'slideDurationSeconds',
     ]) &&
     snapshot.standby.backgroundMode === 'slideshow' &&
@@ -100,6 +101,7 @@ function isExpectedSettingsSnapshot(snapshot) {
       'displaycore://app/managed/standby-background/abcdef0123456789abcdef01.webp',
     ]) &&
     snapshot.standby.slideDurationSeconds === 12 &&
+    snapshot.standby.sandEffectEnabled === false &&
     hasExactKeys(snapshot.appearance, [
       'backgroundColor',
       'fontColor',

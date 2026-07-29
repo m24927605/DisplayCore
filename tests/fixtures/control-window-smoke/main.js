@@ -417,6 +417,8 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('line-spacing-percent-input').value,
     messageLiquidEffectEnabled:
       document.getElementById('message-liquid-effect-enabled-input').checked,
+    standbySandEffectEnabled:
+      document.getElementById('standby-sand-effect-enabled-input').checked,
     inspectionBackground:
       document.getElementById('inspection-background-color-input').value,
     releaseBackground:
@@ -461,6 +463,7 @@ async function openPlaybackSettings(settingsManager) {
     backgroundColorPickerDisabled: true,
     lineSpacingPercent: '100',
     messageLiquidEffectEnabled: true,
+    standbySandEffectEnabled: true,
     inspectionBackground: '#000000',
     releaseBackground: '#000000',
     standbyBackgroundMode: 'fixed',
@@ -554,6 +557,7 @@ async function openPlaybackSettings(settingsManager) {
     toggle.checked = false;
     toggle.dispatchEvent(new Event('change', { bubbles: true }));
   })()`);
+  await click('standby-sand-effect-enabled-input');
 
   // Regression: ISSUE-001 — 播放設定變更未被納入系統設定 dirty state。
   // Found by /qa on 2026-07-17
@@ -640,6 +644,10 @@ async function openPlaybackSettings(settingsManager) {
     settingsManager.getSnapshot().config.appearance.messageLiquidEffectEnabled,
     false,
   );
+  assert.equal(
+    settingsManager.getSnapshot().config.standby.sandEffectEnabled,
+    false,
+  );
   assert.deepEqual(settingsManager.getSnapshot().config.playback, {
     pageDurationSeconds: 4,
     repeatMode: 'finite',
@@ -651,6 +659,7 @@ async function openPlaybackSettings(settingsManager) {
       'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
     ],
     slideDurationSeconds: 10,
+    sandEffectEnabled: false,
   });
 
   // 第二次開啟測試離線時間校正與邏輯排版解析度，避免與外觀草稿混淆。
@@ -682,6 +691,8 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('logo-size-percent-input').value,
     messageLiquidEffectEnabled:
       document.getElementById('message-liquid-effect-enabled-input').checked,
+    standbySandEffectEnabled:
+      document.getElementById('standby-sand-effect-enabled-input').checked,
   }))()`), {
     pageDuration: '4',
     rounds: '2',
@@ -693,6 +704,7 @@ async function openPlaybackSettings(settingsManager) {
     standbySlideDuration: '10',
     logoSizePercent: '1000',
     messageLiquidEffectEnabled: false,
+    standbySandEffectEnabled: false,
   });
 
   // Logo 大小與背景移除只改草稿；未儲存關閉必須一起恢復 baseline。
@@ -889,6 +901,7 @@ async function openPlaybackSettings(settingsManager) {
       'standby-backgrounds/1234567890abcdef12345678.jpg',
     ],
     slideDurationSeconds: 12,
+    sandEffectEnabled: false,
   });
 
   // 清除全部並儲存後才真正回到純色待機背景。
@@ -908,6 +921,7 @@ async function openPlaybackSettings(settingsManager) {
     backgroundMode: 'slideshow',
     backgroundImagePaths: [],
     slideDurationSeconds: 12,
+    sandEffectEnabled: false,
   });
 }
 

@@ -7,9 +7,13 @@ async function loadModule() {
   return import('../../display/settings-state.mjs');
 }
 
-function createSnapshot(revision = 0, messageLiquidEffectEnabled = true) {
+function createSnapshot(
+  revision = 0,
+  messageLiquidEffectEnabled = true,
+  sandEffectEnabled = true,
+) {
   return {
-    configVersion: 10,
+    configVersion: 11,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -22,6 +26,7 @@ function createSnapshot(revision = 0, messageLiquidEffectEnabled = true) {
         'displaycore://app/managed/standby-background/0123456789abcdef01234567.png',
       ],
       slideDurationSeconds: 15,
+      sandEffectEnabled,
     },
     appearance: {
       backgroundColor: '#102030',
@@ -79,6 +84,7 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
     result.snapshot.appearance.messageLiquidEffectEnabled,
     false,
   );
+  assert.equal(result.snapshot.standby.sandEffectEnabled, true);
 });
 
 test('Display 設定狀態完整接受倒酒效果 true 與 false', async () => {
@@ -105,6 +111,37 @@ test('Display 設定狀態拒絕缺少或非布林的倒酒效果欄位', async 
   for (const candidate of [missing, ...['true', 1, null].map((value) => {
     const snapshot = createSnapshot(1);
     snapshot.appearance.messageLiquidEffectEnabled = value;
+    return snapshot;
+  })]) {
+    assert.equal(
+      acceptDisplaySettingsSnapshot(-1, candidate).accepted,
+      false,
+      JSON.stringify(candidate),
+    );
+  }
+});
+
+test('Display 設定狀態完整接受待機風吹沙效果 true 與 false', async () => {
+  const { acceptDisplaySettingsSnapshot } = await loadModule();
+
+  for (const enabled of [true, false]) {
+    const result = acceptDisplaySettingsSnapshot(
+      -1,
+      createSnapshot(enabled ? 8 : 9, true, enabled),
+    );
+    assert.equal(result.accepted, true);
+    assert.equal(result.snapshot.standby.sandEffectEnabled, enabled);
+  }
+});
+
+test('Display 設定狀態拒絕缺少或非布林的待機風吹沙效果欄位', async () => {
+  const { acceptDisplaySettingsSnapshot } = await loadModule();
+  const missing = createSnapshot(1);
+  delete missing.standby.sandEffectEnabled;
+
+  for (const candidate of [missing, ...['true', 1, null].map((value) => {
+    const snapshot = createSnapshot(1);
+    snapshot.standby.sandEffectEnabled = value;
     return snapshot;
   })]) {
     assert.equal(
@@ -160,7 +197,8 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
   const valid = createSnapshot(1);
   const invalidCandidates = [
     { ...valid, configVersion: 8 },
-    { ...valid, configVersion: 11 },
+    { ...valid, configVersion: 10 },
+    { ...valid, configVersion: 12 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { ...valid.logo, url: null } },
@@ -318,12 +356,13 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 10,
+    configVersion: 11,
     logo: { enabled: false, url: null, sizePercent: 100 },
     standby: {
       backgroundMode: 'fixed',
       backgroundImageUrls: [],
       slideDurationSeconds: 10,
+      sandEffectEnabled: false,
     },
     appearance: {
       backgroundColor: '#000000',
@@ -357,5 +396,6 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
     SAFE_DISPLAY_SETTINGS.appearance.messageLiquidEffectEnabled,
     false,
   );
+  assert.equal(SAFE_DISPLAY_SETTINGS.standby.sandEffectEnabled, false);
   assert.equal(Object.hasOwn(SAFE_DISPLAY_SETTINGS, 'playback'), false);
 });

@@ -1,5 +1,5 @@
 {
-  "configVersion": 10,
+  "configVersion": 11,
   "logo": {
     "enabled": false,
     "path": null,
@@ -8,6 +8,7 @@
   "standby": {
     "backgroundMode": "fixed",
     "backgroundImagePaths": [],
+    "sandEffectEnabled": true,
     "slideDurationSeconds": 10
   },
   "appearance": {

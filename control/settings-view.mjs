@@ -100,6 +100,12 @@ export function createSettingsView({
     messageLiquidEffectEnabled: document.getElementById(
       'message-liquid-effect-enabled-input',
     ),
+    standbySandEffectEnabled: document.getElementById(
+      'standby-sand-effect-enabled-input',
+    ),
+    standbySandEffectError: document.getElementById(
+      'standby-sand-effect-error',
+    ),
     inspectionBackgroundColorPicker: document.getElementById(
       'inspection-background-color-picker',
     ),
@@ -197,6 +203,10 @@ export function createSettingsView({
     'standby.slideDurationSeconds': [
       elements.standbySlideDuration,
       elements.standbySlideDurationError,
+    ],
+    'standby.sandEffectEnabled': [
+      elements.standbySandEffectEnabled,
+      elements.standbySandEffectError,
     ],
     appearance: [elements.backgroundColor, elements.backgroundColorError],
     'appearance.backgroundColor': [
@@ -339,6 +349,7 @@ export function createSettingsView({
       standbyBackgroundMode: elements.standbyBackgroundMode.value,
       standbyBackgroundImagePaths: [...state.standbyBackgroundImagePaths],
       standbySlideDurationSeconds: elements.standbySlideDuration.value,
+      standbySandEffectEnabled: elements.standbySandEffectEnabled.checked,
       backgroundColor: messageBackgroundPreset === 'solid'
         ? elements.backgroundColor.value
         : state.baseline.appearance.backgroundColor,
@@ -520,6 +531,8 @@ export function createSettingsView({
     elements.standbySlideDuration.value = String(
       config.standby.slideDurationSeconds,
     );
+    elements.standbySandEffectEnabled.checked =
+      config.standby.sandEffectEnabled;
     renderStandbyBackgroundControls();
     elements.backgroundColor.value = config.appearance.backgroundColor;
     elements.backgroundColorPicker.value =
@@ -755,6 +768,7 @@ export function createSettingsView({
       elements.standbyClockSizePercent,
       elements.lineSpacingPercent,
       elements.messageLiquidEffectEnabled,
+      elements.standbySandEffectEnabled,
       elements.dateTimeEnabled,
       elements.controlDisplay,
       elements.defaultDisplay,

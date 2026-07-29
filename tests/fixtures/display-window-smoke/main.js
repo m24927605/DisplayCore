@@ -1940,6 +1940,203 @@ async function verifyMessageLiquidSettingToggle() {
   presentationService.clearPresentation();
 }
 
+/**
+ * 真實驗證待機風吹沙設定：輪播轉場進行中關閉效果時，動畫與兩個大型
+ * Canvas 必須立即釋放；下一次換圖仍要發生，但整段不得短暫重啟沙塵。
+ */
+async function verifyStandbySandEffectToggle(
+  expectedStandbyBackgroundUrls,
+  delayedSecondBackgroundRead,
+) {
+  const [firstStandbyBackgroundUrl, secondStandbyBackgroundUrl] =
+    expectedStandbyBackgroundUrls;
+
+  await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return stage.dataset.mode === 'blank' &&
+        stage.dataset.settingsRevision === '0' &&
+        image?.complete && image.naturalWidth > 0 &&
+        image.getAttribute('src') === '${firstStandbyBackgroundUrl}';
+    })()`),
+    '待機風吹沙設定 QA 載入第一張背景',
+  );
+  assert.equal(
+    settingsManager.getSnapshot().config.standby.sandEffectEnabled,
+    true,
+  );
+
+  await waitFor(
+    () => Promise.resolve(delayedSecondBackgroundRead.hasStarted()),
+    '待機風吹沙設定 QA 開始載入第二張背景',
+  );
+  delayedSecondBackgroundRead.release();
+
+  const enabledTransition = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const sand = document.getElementById('standby-sand-transition');
+      const particles = document.getElementById('standby-sand-particles');
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return stage.dataset.standbyTransition === 'sand' &&
+        image?.getAttribute('src') === '${secondStandbyBackgroundUrl}' &&
+        !sand.hidden && !particles.hidden &&
+        sand.width > 1 && sand.height > 1 &&
+        particles.width > 1 && particles.height > 1
+        ? {
+            transition: stage.dataset.standbyTransition,
+            source: image.getAttribute('src'),
+            sand: [sand.width, sand.height],
+            particles: [particles.width, particles.height],
+          }
+        : false;
+    })()`),
+    '啟用設定時第二張背景進入風吹沙轉場',
+  );
+  assert.equal(enabledTransition.transition, 'sand');
+  assert.equal(enabledTransition.source, secondStandbyBackgroundUrl);
+
+  const disabledConfig = structuredClone(settingsManager.getSnapshot().config);
+  disabledConfig.standby.sandEffectEnabled = false;
+  const disabledAt = Date.now();
+  const disabledSettingsRevision = settingsManager.publish(
+    disabledConfig,
+  ).revision;
+  const released = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const sand = document.getElementById('standby-sand-transition');
+      const particles = document.getElementById('standby-sand-particles');
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return stage.dataset.settingsRevision === '${disabledSettingsRevision}' &&
+        stage.dataset.standbyTransition === undefined &&
+        stage.dataset.sandPreparation === undefined &&
+        sand.hidden && particles.hidden &&
+        sand.width === 1 && sand.height === 1 &&
+        particles.width === 1 && particles.height === 1 &&
+        image?.complete && image.naturalWidth > 0
+        ? {
+            source: image.getAttribute('src'),
+            sand: [sand.width, sand.height],
+            particles: [particles.width, particles.height],
+          }
+        : false;
+    })()`),
+    '關閉待機特效後立即停止轉場並釋放 Canvas',
+  );
+  assert.ok(
+    Date.now() - disabledAt < 1_000,
+    '關閉效果必須立即停止，不能等待 2.8 秒沙塵轉場自然結束',
+  );
+  assert.deepEqual(released.sand, [1, 1]);
+  assert.deepEqual(released.particles, [1, 1]);
+  assert.equal(
+    settingsManager.getSnapshot().config.standby.sandEffectEnabled,
+    false,
+  );
+
+  /*
+   * 除了等待最終 DOM，還監看整段換圖過程。若實作曾短暫加回 sand dataset
+   * 或重新放大／顯示 Canvas，即使下一次輪詢時已消失也會被記錄為失敗。
+   */
+  await execute(`(() => {
+    const stage = document.getElementById('display-stage');
+    const sand = document.getElementById('standby-sand-transition');
+    const particles = document.getElementById('standby-sand-particles');
+    const images = [...document.querySelectorAll('.standby-background-image')];
+    const trace = {
+      sawSandTransition: false,
+      sawVisibleOrExpandedCanvas: false,
+      observer: null,
+      interval: null,
+    };
+    const sample = () => {
+      trace.sawSandTransition ||= stage.dataset.standbyTransition === 'sand';
+      trace.sawVisibleOrExpandedCanvas ||=
+        !sand.hidden || !particles.hidden ||
+        sand.width > 1 || sand.height > 1 ||
+        particles.width > 1 || particles.height > 1;
+    };
+    trace.observer = new MutationObserver(sample);
+    trace.observer.observe(stage, {
+      attributes: true,
+      attributeFilter: ['data-standby-transition'],
+    });
+    for (const canvas of [sand, particles]) {
+      trace.observer.observe(canvas, {
+        attributes: true,
+        attributeFilter: ['hidden', 'width', 'height'],
+      });
+    }
+    for (const image of images) {
+      trace.observer.observe(image, {
+        attributes: true,
+        attributeFilter: ['hidden', 'src'],
+      });
+    }
+    trace.interval = setInterval(sample, 16);
+    sample();
+    globalThis.__displayCoreStandbyEffectQaTrace = trace;
+  })()`);
+
+  const nextDirectSlide = await waitFor(
+    () => execute(`(() => {
+      const stage = document.getElementById('display-stage');
+      const sand = document.getElementById('standby-sand-transition');
+      const particles = document.getElementById('standby-sand-particles');
+      const image = [...document.querySelectorAll('.standby-background-image')]
+        .find((candidate) => !candidate.hidden);
+      return stage.dataset.settingsRevision === '${disabledSettingsRevision}' &&
+        image?.complete && image.naturalWidth > 0 &&
+        image.getAttribute('src') !== '${released.source}' &&
+        stage.dataset.standbyTransition === undefined &&
+        sand.hidden && particles.hidden &&
+        sand.width === 1 && sand.height === 1 &&
+        particles.width === 1 && particles.height === 1
+        ? {
+            source: image.getAttribute('src'),
+            sawSandTransition:
+              globalThis.__displayCoreStandbyEffectQaTrace
+                ?.sawSandTransition ?? true,
+            sawVisibleOrExpandedCanvas:
+              globalThis.__displayCoreStandbyEffectQaTrace
+                ?.sawVisibleOrExpandedCanvas ?? true,
+          }
+        : false;
+    })()`),
+    '關閉風吹沙後輪播仍直接切到另一張背景',
+  );
+  const finalTrace = await execute(`(() => {
+    const trace = globalThis.__displayCoreStandbyEffectQaTrace;
+    clearInterval(trace?.interval);
+    trace?.observer?.disconnect();
+    const result = {
+      sawSandTransition: trace?.sawSandTransition ?? true,
+      sawVisibleOrExpandedCanvas:
+        trace?.sawVisibleOrExpandedCanvas ?? true,
+    };
+    delete globalThis.__displayCoreStandbyEffectQaTrace;
+    return result;
+  })()`);
+
+  assert.ok(
+    [firstStandbyBackgroundUrl, secondStandbyBackgroundUrl].includes(
+      nextDirectSlide.source,
+    ),
+    '關閉效果後仍須輪播設定中的背景',
+  );
+  assert.equal(nextDirectSlide.sawSandTransition, false);
+  assert.equal(nextDirectSlide.sawVisibleOrExpandedCanvas, false);
+  assert.deepEqual(finalTrace, {
+    sawSandTransition: false,
+    sawVisibleOrExpandedCanvas: false,
+  });
+}
+
 /** 關閉 Logo 後，一般訊息的大時鐘仍必須固定在右上角。 */
 async function verifyClockWithoutLogo() {
   displayWindow.setContentSize(1_600, 900, false);
@@ -3199,6 +3396,14 @@ async function runWorkflow(
     interactiveCount: 0,
     reducedMotion: false,
   });
+
+  if (process.env.DISPLAYCORE_STANDBY_EFFECT_QA_ONLY === '1') {
+    await verifyStandbySandEffectToggle(
+      expectedStandbyBackgroundUrls,
+      delayedSecondBackgroundRead,
+    );
+    return;
+  }
 
   if (process.env.DISPLAYCORE_RUNTIME_REDUCED_MOTION_QA_ONLY === '1') {
     await verifyLiquidRuntimeReducedMotionFallback(timers);
@@ -4712,6 +4917,7 @@ async function run() {
       standbyBackgroundAssetPath,
       secondStandbyBackgroundAssetPath,
     ],
+    sandEffectEnabled: true,
     slideDurationSeconds: 1,
   };
   initialConfig.appearance = {
@@ -4827,7 +5033,11 @@ async function run() {
     ],
     delayedSecondBackgroundRead,
   );
-  finish(0, '[DisplayCore] Display window workflow succeeded.');
+  const successMessage =
+    process.env.DISPLAYCORE_STANDBY_EFFECT_QA_ONLY === '1'
+      ? '[DisplayCore] Display window standby effect workflow succeeded.'
+      : '[DisplayCore] Display window workflow succeeded.';
+  finish(0, successMessage);
 }
 
 run().catch((error) => {
