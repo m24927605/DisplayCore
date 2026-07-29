@@ -54,7 +54,10 @@ test('GitHub Actions 可在 Windows x64 建置並驗證 EXE 與 MSI 安裝器', 
     /out\/make\/installers\/x64\/DisplayCoreSetup\.msi/,
   );
   assert.match(workflow, /\/S/);
-  assert.match(workflow, /\/D=\$customInstallDirectory/);
+  assert.match(
+    workflow,
+    /-RawArguments "\/S \/D=\$customInstallDirectory"/,
+  );
   assert.match(
     workflow,
     /\$customInstallDirectory = Join-Path \$env:RUNNER_TEMP 'DisplayCore Custom Install'/,
@@ -82,7 +85,14 @@ test('GitHub Actions 可在 Windows x64 建置並驗證 EXE 與 MSI 安裝器', 
     workflow,
     /Copy-Item[\s\S]*-LiteralPath \$uninstaller\.FullName[\s\S]*-Destination \$tempUninstaller/,
   );
-  assert.match(workflow, /"_\?=\$customInstallDirectory"/);
+  assert.match(
+    workflow,
+    /-RawArguments "\/S _\?=\$customInstallDirectory"/,
+  );
+  assert.match(
+    workflow,
+    /\$PSBoundParameters\.ContainsKey\('RawArguments'\)[\s\S]*\$startInfo\.Arguments = \$RawArguments/,
+  );
   assert.match(
     workflow,
     /if \(Test-Path -LiteralPath \$customInstallDirectory -PathType Container\)/,

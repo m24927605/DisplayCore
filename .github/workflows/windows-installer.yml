@@ -107,6 +107,7 @@ jobs:
               [Parameter(Mandatory)]
               [string] $Path,
               [string[]] $Arguments = @(),
+              [string] $RawArguments,
               [int] $TimeoutSeconds = 120,
               [int[]] $SuccessExitCodes = @(0)
             )
@@ -114,8 +115,15 @@ jobs:
             $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
             $startInfo.FileName = $Path
             $startInfo.UseShellExecute = $false
-            foreach ($argument in $Arguments) {
-              [void] $startInfo.ArgumentList.Add($argument)
+            if ($PSBoundParameters.ContainsKey('RawArguments')) {
+              if ($Arguments.Count -gt 0) {
+                throw 'RawArguments 與 Arguments 不可同時使用。'
+              }
+              $startInfo.Arguments = $RawArguments
+            } else {
+              foreach ($argument in $Arguments) {
+                [void] $startInfo.ArgumentList.Add($argument)
+              }
             }
 
             $process = [System.Diagnostics.Process]::new()
@@ -156,13 +164,13 @@ jobs:
             throw "DisplayCore.exe 不是 Windows x64 執行檔：0x$($payloadMachine.ToString('x4'))"
           }
 
-          # NSIS 的 /D= 參數必須放在最後。實際安裝至非預設目錄，
-          # 驗證安裝器不只顯示選項，也確實遵守使用者指定的路徑。
+          # NSIS 的 /D= 必須放在最後，且路徑含空白時也禁止加引號，
+          # 因此必須使用原始命令列，而非會自動 quoting 的 ArgumentList。
           $customInstallDirectory = Join-Path $env:RUNNER_TEMP 'DisplayCore Custom Install'
           Remove-Item -LiteralPath $customInstallDirectory -Recurse -Force -ErrorAction SilentlyContinue
           Invoke-CheckedProcess `
             -Path (Resolve-Path -LiteralPath $source).Path `
-            -Arguments @('/S', "/D=$customInstallDirectory")
+            -RawArguments "/S /D=$customInstallDirectory"
 
           $installedPayload = Join-Path $customInstallDirectory 'DisplayCore.exe'
           if (-not (Test-Path -LiteralPath $installedPayload -PathType Leaf)) {
@@ -206,7 +214,7 @@ jobs:
           try {
             Invoke-CheckedProcess `
               -Path $tempUninstaller `
-              -Arguments @('/S', "_?=$customInstallDirectory") `
+              -RawArguments "/S _?=$customInstallDirectory" `
               -TimeoutSeconds 120
 
             if (Test-Path -LiteralPath $customInstallDirectory -PathType Container) {
