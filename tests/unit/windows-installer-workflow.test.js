@@ -25,14 +25,14 @@ const windowsCiIntegrationTests = [
   'tests/integration/message-liquid-lifetime-qa.test.js',
 ];
 
-test('GitHub Actions 可在 Windows x64 建置並驗證可選路徑的 DisplayCoreSetup.exe', async () => {
+test('GitHub Actions 可在 Windows x64 建置並驗證 EXE 與 MSI 安裝器', async () => {
   // Windows checkout 可能將文字檔轉成 CRLF；工作流契約不應依賴換行格式。
   const workflow = (await readFile(workflowPath, 'utf8')).replace(/\r\n?/gu, '\n');
   const packageJson = JSON.parse(
     await readFile(path.join(projectRoot, 'package.json'), 'utf8'),
   );
 
-  assert.match(workflow, /^name: Build Windows installer$/m);
+  assert.match(workflow, /^name: Build Windows installers$/m);
   assert.match(workflow, /^\s{2}workflow_dispatch:$/m);
   assert.doesNotMatch(workflow, /^\s{2}(?:push|pull_request):$/m);
   assert.match(workflow, /^permissions:\n\s{2}contents: read$/m);
@@ -45,7 +45,14 @@ test('GitHub Actions 可在 Windows x64 建置並驗證可選路徑的 DisplayCo
   assert.match(workflow, /^\s{8}run: npm ci$/m);
   assert.match(workflow, /^\s{8}run: npm run test:ci:windows$/m);
   assert.match(workflow, /^\s{8}run: npm run make$/m);
-  assert.match(workflow, /out\/make\/nsis\/x64\/DisplayCoreSetup\.exe/);
+  assert.match(
+    workflow,
+    /out\/make\/installers\/x64\/DisplayCoreSetup\.exe/,
+  );
+  assert.match(
+    workflow,
+    /out\/make\/installers\/x64\/DisplayCoreSetup\.msi/,
+  );
   assert.match(workflow, /\/S/);
   assert.match(workflow, /\/D=\$customInstallDirectory/);
   assert.match(
@@ -81,6 +88,18 @@ test('GitHub Actions 可在 Windows x64 建置並驗證可選路徑的 DisplayCo
     /if \(Test-Path -LiteralPath \$customInstallDirectory -PathType Container\)/,
   );
   assert.match(workflow, /custom_install_smoke=passed/);
+  assert.match(workflow, /msi_install_smoke=passed/);
+  assert.match(workflow, /msiexec\.exe/);
+  assert.match(workflow, /APPLICATIONFOLDER=\$msiInstallDirectory/);
+  assert.match(workflow, /@\(0,\s*3010\)/);
+  assert.match(
+    workflow,
+    /Copy-Item[\s\S]*\$msiSource[\s\S]*DisplayCoreSetup\.msi/,
+  );
+  assert.match(
+    workflow,
+    /DisplayCoreSetup\.msi\.sha256/,
+  );
   assert.match(workflow, /ReadUInt16\(\) -ne 0x5A4D/);
   assert.match(workflow, /ReadUInt32\(\) -ne 0x00004550/);
   assert.match(
@@ -129,7 +148,7 @@ test('GitHub Actions 可在 Windows x64 建置並驗證可選路徑的 DisplayCo
   assert.doesNotMatch(windowsCiCommand, /sand-webgl-renderer-smoke/u);
 });
 
-test('NSIS 使用安裝精靈並允許管理員選擇 DisplayCore 安裝路徑', async () => {
+test('npm run make 同時產生可選路徑的 NSIS EXE 與原生 MSI', async () => {
   const packageJson = require('../../package.json');
   const builderConfig = require('../../electron-builder.config');
   const forgeConfig = require('../../forge.config');
@@ -145,7 +164,7 @@ test('NSIS 使用安裝精靈並允許管理員選擇 DisplayCore 安裝路徑',
   );
   assert.equal(
     packageJson.scripts['installer:windows'],
-    'electron-builder --config electron-builder.config.js --win nsis --x64 --prepackaged out/DisplayCore-win32-x64 --publish never',
+    'electron-builder --config electron-builder.config.js --win nsis --win msi --x64 --prepackaged out/DisplayCore-win32-x64 --publish never',
   );
   assert.equal(packageJson.devDependencies['electron-builder'], '26.15.7');
   assert.equal(
@@ -161,10 +180,14 @@ test('NSIS 使用安裝精靈並允許管理員選擇 DisplayCore 安裝路徑',
   assert.deepEqual(forgeConfig.makers, []);
   assert.equal(builderConfig.appId, 'com.displaycore.desktop');
   assert.equal(builderConfig.productName, 'DisplayCore');
-  assert.equal(builderConfig.directories.output, 'out/make/nsis/x64');
+  assert.equal(builderConfig.directories.output, 'out/make/installers/x64');
   assert.deepEqual(builderConfig.win.target, [
     {
       target: 'nsis',
+      arch: ['x64'],
+    },
+    {
+      target: 'msi',
       arch: ['x64'],
     },
   ]);
@@ -174,4 +197,16 @@ test('NSIS 使用安裝精靈並允許管理員選擇 DisplayCore 安裝路徑',
   assert.equal(builderConfig.nsis.perMachine, true);
   assert.equal(builderConfig.nsis.allowToChangeInstallationDirectory, true);
   assert.equal(builderConfig.nsis.runAfterFinish, false);
+  assert.equal(builderConfig.msi.artifactName, 'DisplayCoreSetup.${ext}');
+  assert.equal(builderConfig.msi.oneClick, false);
+  assert.equal(builderConfig.msi.perMachine, true);
+  assert.equal(builderConfig.msi.createDesktopShortcut, true);
+  assert.equal(builderConfig.msi.createStartMenuShortcut, true);
+  assert.equal(builderConfig.msi.runAfterFinish, false);
+  assert.equal(builderConfig.msi.shortcutName, 'DisplayCore');
+  assert.equal(
+    builderConfig.msi.upgradeCode,
+    '{58070DFC-451A-49BD-878E-B877E9644506}',
+  );
+  assert.equal(builderConfig.msi.warningsAsErrors, true);
 });

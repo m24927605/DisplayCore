@@ -25,7 +25,7 @@ npm run make
 - `npm run start:main-smoke`：建立安全的 Control 與視窗化 Display，驗證後自動結束。
 - `npm start`：啟動 Control Window 與全螢幕 Display Window。
 - `npm run package`：產生目前作業系統的未安裝應用程式封裝。
-- `npm run make`：產生安裝檔；Squirrel.Windows 應於 Windows 10／11 環境執行。
+- `npm run make`：在 Windows 10／11 建立 x64 的 NSIS EXE 與原生 MSI 安裝檔。
 
 ## 離線部署原則
 
@@ -34,12 +34,14 @@ npm run make
 ```powershell
 npm ci
 npm test
-npm run make -- --platform=win32 --arch=x64
+npm run make
 ```
 
-`DisplayCoreSetup.exe` 會攜帶 Electron、正式程式、兩套字型、授權檔與四張訊息材質；安裝及執行期間不下載任何資源。若使用 `npm run package -- --platform=win32 --arch=x64` 產生的免安裝目錄，必須整個複製 `out/DisplayCore-win32-x64/`，不能只複製 `DisplayCore.exe`。
+`DisplayCoreSetup.exe` 與 `DisplayCoreSetup.msi` 都會攜帶 Electron、正式程式、兩套字型、授權檔與四張訊息材質；安裝及執行期間不下載任何資源。兩者都採整台電腦安裝、建立桌面與開始功能表捷徑，並可由安裝精靈選擇安裝路徑。MSI 使用固定的 Upgrade Code，供 Windows Installer 後續正確辨識 DisplayCore 升級。
 
-也可以在 GitHub Actions 手動執行 `Build Windows installer`。工作流只接受 `main`，完成後會保留 `DisplayCoreSetup-windows-x64` artifact 30 天，內容包含 `DisplayCoreSetup.exe`、SHA-256 與建置環境資訊。Windows runner 會執行全部單元測試，以及不依賴固定螢幕與硬體 GPU 的 Electron 整合測試；4K compositor、WebGL 視覺效果與 HDMI 仍須在真實顯示硬體驗收。目前安裝檔未做 Authenticode 簽章，Windows SmartScreen 可能顯示未知發行者警告。
+若使用 `npm run package:windows` 產生的免安裝目錄，必須整個複製 `out/DisplayCore-win32-x64/`，不能只複製 `DisplayCore.exe`。
+
+也可以在 GitHub Actions 手動執行 `Build Windows installers`。工作流只接受 `main`，完成後會保留 `DisplayCoreSetup-windows-x64` artifact 30 天，內容包含 `DisplayCoreSetup.exe`、`DisplayCoreSetup.msi`、各自的 SHA-256 與建置環境資訊。Windows runner 會對兩種安裝器實際執行自訂路徑安裝、啟動 smoke test 與解除安裝，再上傳產物；4K compositor、WebGL 視覺效果與 HDMI 仍須在真實顯示硬體驗收。目前安裝檔未做 Authenticode 簽章，Windows SmartScreen 可能顯示未知發行者警告。
 
 ## 目前進度：第 10 步軟體 QA 與 macOS 外接螢幕驗收完成；Windows 實機驗收待進行
 

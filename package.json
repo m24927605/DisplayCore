@@ -18,7 +18,7 @@
     "test:ci:windows": "node --test \"tests/unit/*.test.js\" tests/integration/control-settings-focus.regression-1.test.js tests/integration/control-window-smoke.test.js tests/integration/ipc-bridge-smoke.test.js tests/integration/main-process-smoke.test.js tests/integration/message-liquid-lifetime-qa.test.js",
     "package": "electron-forge package",
     "package:windows": "electron-forge package --platform=win32 --arch=x64",
-    "installer:windows": "electron-builder --config electron-builder.config.js --win nsis --x64 --prepackaged out/DisplayCore-win32-x64 --publish never",
+    "installer:windows": "electron-builder --config electron-builder.config.js --win nsis --win msi --x64 --prepackaged out/DisplayCore-win32-x64 --publish never",
     "make": "npm run package:windows && npm run installer:windows"
   },
   "overrides": {

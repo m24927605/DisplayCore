@@ -1,4 +1,4 @@
-name: Build Windows installer
+name: Build Windows installers
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ concurrency:
 
 jobs:
   build-windows-x64:
-    name: Build Windows x64 installer
+    name: Build Windows x64 installers
     if: github.ref == 'refs/heads/main'
     runs-on: windows-2022
     timeout-minutes: 45
@@ -40,22 +40,30 @@ jobs:
       - name: Run Windows CI test suite
         run: npm run test:ci:windows
 
-      - name: Build configurable NSIS installer
+      - name: Build configurable NSIS and MSI installers
         run: npm run make
 
-      - name: Verify installer and create checksum
+      - name: Verify installers and create checksums
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = 'out/make/nsis/x64/DisplayCoreSetup.exe'
+          $source = 'out/make/installers/x64/DisplayCoreSetup.exe'
+          $msiSource = 'out/make/installers/x64/DisplayCoreSetup.msi'
 
           if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
-            throw "找不到 Windows 安裝程式：$source"
+            throw "找不到 Windows NSIS 安裝程式：$source"
+          }
+          if (-not (Test-Path -LiteralPath $msiSource -PathType Leaf)) {
+            throw "找不到 Windows MSI 安裝程式：$msiSource"
           }
 
           $installer = Get-Item -LiteralPath $source
+          $msiInstaller = Get-Item -LiteralPath $msiSource
           if ($installer.Length -lt 1MB) {
             throw 'DisplayCoreSetup.exe 小於 1 MB，不是有效的 Electron 安裝程式。'
+          }
+          if ($msiInstaller.Length -lt 1MB) {
+            throw 'DisplayCoreSetup.msi 小於 1 MB，不是有效的 Windows Installer 套件。'
           }
 
           function Get-PeMachine {
@@ -99,21 +107,31 @@ jobs:
               [Parameter(Mandatory)]
               [string] $Path,
               [string[]] $Arguments = @(),
-              [int] $TimeoutSeconds = 120
+              [int] $TimeoutSeconds = 120,
+              [int[]] $SuccessExitCodes = @(0)
             )
 
-            $process = Start-Process `
-              -FilePath $Path `
-              -ArgumentList $Arguments `
-              -PassThru
+            $startInfo = [System.Diagnostics.ProcessStartInfo]::new()
+            $startInfo.FileName = $Path
+            $startInfo.UseShellExecute = $false
+            foreach ($argument in $Arguments) {
+              [void] $startInfo.ArgumentList.Add($argument)
+            }
+
+            $process = [System.Diagnostics.Process]::new()
+            $process.StartInfo = $startInfo
 
             try {
+              if (-not $process.Start()) {
+                throw "無法啟動程序：$Path"
+              }
+
               if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
                 Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
                 throw "$Path 執行超過 $TimeoutSeconds 秒，已強制停止。"
               }
 
-              if ($process.ExitCode -ne 0) {
+              if ($process.ExitCode -notin $SuccessExitCodes) {
                 throw "$Path 執行失敗，結束代碼：$($process.ExitCode)"
               }
             } finally {
@@ -201,19 +219,99 @@ jobs:
               -ErrorAction SilentlyContinue
           }
 
+          # 原生 MSI 必須真的能由 Windows Installer 安裝至指定目錄、
+          # 啟動封裝後程式，並使用同一 MSI 完整解除安裝。
+          $msiexec = Join-Path $env:SystemRoot 'System32/msiexec.exe'
+          $resolvedMsi = (Resolve-Path -LiteralPath $msiSource).Path
+          $msiInstallDirectory = Join-Path `
+            $env:RUNNER_TEMP `
+            'DisplayCore MSI Custom Install'
+          $msiInstallLog = Join-Path $env:RUNNER_TEMP 'displaycore-msi-install.log'
+          $msiUninstallLog = Join-Path $env:RUNNER_TEMP 'displaycore-msi-uninstall.log'
+          Remove-Item `
+            -LiteralPath $msiInstallDirectory `
+            -Recurse `
+            -Force `
+            -ErrorAction SilentlyContinue
+
+          Invoke-CheckedProcess `
+            -Path $msiexec `
+            -Arguments @(
+              '/i'
+              $resolvedMsi
+              '/qn'
+              '/norestart'
+              "APPLICATIONFOLDER=$msiInstallDirectory"
+              '/l*v'
+              $msiInstallLog
+            ) `
+            -TimeoutSeconds 180 `
+            -SuccessExitCodes @(0, 3010)
+
+          $msiInstalledPayload = Join-Path `
+            $msiInstallDirectory `
+            'DisplayCore.exe'
+          if (-not (Test-Path -LiteralPath $msiInstalledPayload -PathType Leaf)) {
+            throw "MSI 未將 DisplayCore.exe 安裝至指定路徑：$msiInstallDirectory"
+          }
+
+          $msiInstalledAsar = Join-Path `
+            $msiInstallDirectory `
+            'resources/app.asar'
+          if (-not (Test-Path -LiteralPath $msiInstalledAsar -PathType Leaf)) {
+            throw 'MSI 安裝內容缺少 resources/app.asar。'
+          }
+
+          $msiInstalledMachine = Get-PeMachine -Path $msiInstalledPayload
+          if ($msiInstalledMachine -ne 0x8664) {
+            throw "MSI 安裝的 DisplayCore.exe 不是 Windows x64 執行檔：0x$($msiInstalledMachine.ToString('x4'))"
+          }
+
+          Invoke-CheckedProcess `
+            -Path $msiInstalledPayload `
+            -Arguments @('--displaycore-main-smoke-test') `
+            -TimeoutSeconds 60
+
+          Invoke-CheckedProcess `
+            -Path $msiexec `
+            -Arguments @(
+              '/x'
+              $resolvedMsi
+              '/qn'
+              '/norestart'
+              '/l*v'
+              $msiUninstallLog
+            ) `
+            -TimeoutSeconds 180 `
+            -SuccessExitCodes @(0, 3010)
+
+          if (Test-Path -LiteralPath $msiInstalledPayload -PathType Leaf) {
+            throw "MSI 解除安裝後仍殘留 DisplayCore.exe：$msiInstallDirectory"
+          }
+
           $releaseDirectory = 'release/windows-x64'
           New-Item -ItemType Directory -Force -Path $releaseDirectory | Out-Null
           Copy-Item -LiteralPath $source -Destination "$releaseDirectory/DisplayCoreSetup.exe"
+          Copy-Item -LiteralPath $msiSource -Destination "$releaseDirectory/DisplayCoreSetup.msi"
 
-          $hash = (
+          $exeHash = (
             Get-FileHash `
               -LiteralPath "$releaseDirectory/DisplayCoreSetup.exe" `
               -Algorithm SHA256
           ).Hash.ToLowerInvariant()
+          $msiHash = (
+            Get-FileHash `
+              -LiteralPath "$releaseDirectory/DisplayCoreSetup.msi" `
+              -Algorithm SHA256
+          ).Hash.ToLowerInvariant()
 
-          "$hash  DisplayCoreSetup.exe" |
+          "$exeHash  DisplayCoreSetup.exe" |
             Set-Content `
               -LiteralPath "$releaseDirectory/DisplayCoreSetup.exe.sha256" `
+              -Encoding utf8NoBOM
+          "$msiHash  DisplayCoreSetup.msi" |
+            Set-Content `
+              -LiteralPath "$releaseDirectory/DisplayCoreSetup.msi.sha256" `
               -Encoding utf8NoBOM
 
           @(
@@ -225,26 +323,28 @@ jobs:
             "image_version=$env:ImageVersion"
             "node=$(node --version)"
             "npm=$(npm --version)"
-            'installer=nsis-assisted'
+            'installers=nsis-assisted,msi-assisted'
             'custom_install_directory=true'
             'installation_scope=per_machine'
             'custom_install_smoke=passed'
+            'msi_install_smoke=passed'
             'authenticode=unsigned'
           ) |
             Set-Content `
               -LiteralPath "$releaseDirectory/build-info.txt" `
               -Encoding utf8NoBOM
 
-          "### DisplayCore Windows x64 installer" >> $env:GITHUB_STEP_SUMMARY
-          "- File: ``DisplayCoreSetup.exe``" >> $env:GITHUB_STEP_SUMMARY
-          "- Size: $($installer.Length) bytes" >> $env:GITHUB_STEP_SUMMARY
-          "- SHA-256: ``$hash``" >> $env:GITHUB_STEP_SUMMARY
+          "### DisplayCore Windows x64 installers" >> $env:GITHUB_STEP_SUMMARY
+          "- NSIS: ``DisplayCoreSetup.exe`` ($($installer.Length) bytes)" >> $env:GITHUB_STEP_SUMMARY
+          "- NSIS SHA-256: ``$exeHash``" >> $env:GITHUB_STEP_SUMMARY
+          "- MSI: ``DisplayCoreSetup.msi`` ($($msiInstaller.Length) bytes)" >> $env:GITHUB_STEP_SUMMARY
+          "- MSI SHA-256: ``$msiHash``" >> $env:GITHUB_STEP_SUMMARY
           "- Commit: ``$env:GITHUB_SHA``" >> $env:GITHUB_STEP_SUMMARY
           "- Runner image: ``$env:ImageOS $env:ImageVersion``" >> $env:GITHUB_STEP_SUMMARY
-          "- Custom installation, launch and uninstall: verified" >> $env:GITHUB_STEP_SUMMARY
+          "- EXE and MSI custom installation, launch and uninstall: verified" >> $env:GITHUB_STEP_SUMMARY
           "- Authenticode: unsigned" >> $env:GITHUB_STEP_SUMMARY
 
-      - name: Upload Windows installer
+      - name: Upload Windows installers
         id: upload-installer
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:

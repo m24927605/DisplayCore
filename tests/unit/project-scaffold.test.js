@@ -61,6 +61,10 @@ test('package.json 定義 DisplayCore 與 Electron Forge 指令', async () => {
     packageJson.scripts.make,
     'npm run package:windows && npm run installer:windows',
   );
+  assert.equal(
+    packageJson.scripts['installer:windows'],
+    'electron-builder --config electron-builder.config.js --win nsis --win msi --x64 --prepackaged out/DisplayCore-win32-x64 --publish never',
+  );
   assert.equal(packageJson.scripts.test, 'node --test');
   assert.equal(packageJson.engines.node, '>=24.18.0 <25');
   assert.match(packageJson.devDependencies.electron, /^\d+\.\d+\.\d+$/);

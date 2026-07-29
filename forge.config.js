@@ -8,8 +8,8 @@ const {
 /**
  * Electron Forge 建置設定。
  *
- * Forge 負責安全封裝與 Electron Fuses；Windows 安裝精靈由 NSIS 對封裝結果
- * 建立完全離線的 DisplayCoreSetup.exe。
+ * Forge 負責安全封裝與 Electron Fuses；Windows 安裝精靈由 NSIS 與 WiX MSI
+ * 對同一份封裝結果建立完全離線的 DisplayCoreSetup.exe／.msi。
  */
 module.exports = {
   packagerConfig: {
