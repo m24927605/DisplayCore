@@ -175,20 +175,30 @@ jobs:
             throw "自訂路徑中找不到 DisplayCore 解除安裝程式。"
           }
 
-          Invoke-CheckedProcess `
-            -Path $uninstaller.FullName `
-            -Arguments @('/S') `
-            -TimeoutSeconds 120
+          # 直接啟動原始 uninstaller 時，NSIS 會另開暫存副本後提早結束。
+          # 主動複製至 Temp 並以最後一個 _?= 參數指定 INSTDIR，WaitForExit
+          # 才會等待真正的解除安裝程序完成。
+          $tempUninstaller = Join-Path `
+            $env:RUNNER_TEMP `
+            "DisplayCoreUninstaller-$PID.exe"
+          Copy-Item `
+            -LiteralPath $uninstaller.FullName `
+            -Destination $tempUninstaller
 
-          $uninstallDeadline = (Get-Date).AddSeconds(30)
-          while (
-            (Test-Path -LiteralPath $installedPayload -PathType Leaf) -and
-            (Get-Date) -lt $uninstallDeadline
-          ) {
-            Start-Sleep -Seconds 1
-          }
-          if (Test-Path -LiteralPath $installedPayload -PathType Leaf) {
-            throw "解除安裝完成後 DisplayCore.exe 仍留在自訂路徑。"
+          try {
+            Invoke-CheckedProcess `
+              -Path $tempUninstaller `
+              -Arguments @('/S', "_?=$customInstallDirectory") `
+              -TimeoutSeconds 120
+
+            if (Test-Path -LiteralPath $customInstallDirectory -PathType Container) {
+              throw "解除安裝完成後安裝目錄仍存在：$customInstallDirectory"
+            }
+          } finally {
+            Remove-Item `
+              -LiteralPath $tempUninstaller `
+              -Force `
+              -ErrorAction SilentlyContinue
           }
 
           $releaseDirectory = 'release/windows-x64'
