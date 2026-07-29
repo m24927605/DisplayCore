@@ -101,12 +101,49 @@ test('GitHub Actions 可在 Windows x64 建置並驗證 EXE 與 MSI 安裝器', 
   assert.match(workflow, /custom_install_smoke=passed/);
   assert.match(workflow, /msi_install_smoke=passed/);
   assert.match(workflow, /msiexec\.exe/);
-  assert.match(workflow, /APPLICATIONFOLDER=\$msiInstallDirectory/);
+  const installArgumentBlock = workflow.match(
+    /\$msiInstallArguments = @\(\n([\s\S]*?)\n\s{10}\) -join ' '/,
+  );
+  const uninstallArgumentBlock = workflow.match(
+    /\$msiUninstallArguments = @\(\n([\s\S]*?)\n\s{10}\) -join ' '/,
+  );
+
+  assert.ok(installArgumentBlock);
+  assert.ok(uninstallArgumentBlock);
+  const normalizePowerShellTokens = (block) => block
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+  assert.deepEqual(normalizePowerShellTokens(installArgumentBlock[1]), [
+    "'/i'",
+    '"`"$resolvedMsi`""',
+    "'/qn'",
+    "'/norestart'",
+    '"APPLICATIONFOLDER=`"$msiInstallDirectory`""',
+    "'/l*v!'",
+    '"`"$msiInstallLog`""',
+  ]);
+  assert.deepEqual(normalizePowerShellTokens(uninstallArgumentBlock[1]), [
+    "'/x'",
+    '"`"$resolvedMsi`""',
+    "'/qn'",
+    "'/norestart'",
+    "'/l*v!'",
+    '"`"$msiUninstallLog`""',
+  ]);
+  assert.match(
+    workflow,
+    /Invoke-CheckedProcess `\s+-Path \$msiexec `\s+-RawArguments \$msiInstallArguments `/,
+  );
+  assert.match(
+    workflow,
+    /Invoke-CheckedProcess `\s+-Path \$msiexec `\s+-RawArguments \$msiUninstallArguments `/,
+  );
   assert.equal(
     workflow.match(/-TimeoutSeconds 600/g)?.length,
     2,
   );
-  assert.equal(workflow.match(/'\/l\*v!'/g)?.length, 2);
   assert.match(
     workflow,
     /Get-Content[\s\S]*-LiteralPath \$msiInstallLog[\s\S]*-Tail 200/,

@@ -242,18 +242,23 @@ jobs:
             -Force `
             -ErrorAction SilentlyContinue
 
+          # Windows 上的 msiexec 會自行解析單一 command line。這裡明確為
+          # 含空白的路徑加上雙引號，避免 ProcessStartInfo.ArgumentList
+          # 產生 msiexec 無法辨識、且不建立安裝日誌的命令列。
+          $msiInstallArguments = @(
+            '/i'
+            "`"$resolvedMsi`""
+            '/qn'
+            '/norestart'
+            "APPLICATIONFOLDER=`"$msiInstallDirectory`""
+            '/l*v!'
+            "`"$msiInstallLog`""
+          ) -join ' '
+
           try {
             Invoke-CheckedProcess `
               -Path $msiexec `
-              -Arguments @(
-                '/i'
-                $resolvedMsi
-                '/qn'
-                '/norestart'
-                "APPLICATIONFOLDER=$msiInstallDirectory"
-                '/l*v!'
-                $msiInstallLog
-              ) `
+              -RawArguments $msiInstallArguments `
               -TimeoutSeconds 600 `
               -SuccessExitCodes @(0, 3010)
           } catch {
@@ -290,17 +295,19 @@ jobs:
             -Arguments @('--displaycore-main-smoke-test') `
             -TimeoutSeconds 60
 
+          $msiUninstallArguments = @(
+            '/x'
+            "`"$resolvedMsi`""
+            '/qn'
+            '/norestart'
+            '/l*v!'
+            "`"$msiUninstallLog`""
+          ) -join ' '
+
           try {
             Invoke-CheckedProcess `
               -Path $msiexec `
-              -Arguments @(
-                '/x'
-                $resolvedMsi
-                '/qn'
-                '/norestart'
-                '/l*v!'
-                $msiUninstallLog
-              ) `
+              -RawArguments $msiUninstallArguments `
               -TimeoutSeconds 600 `
               -SuccessExitCodes @(0, 3010)
           } catch {
