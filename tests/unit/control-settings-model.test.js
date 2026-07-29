@@ -6,10 +6,10 @@ const test = require('node:test');
 const currentDefaultConfig = require('../../config.json');
 const { validateConfig } = require('../../config/config-schema');
 
-// Control Renderer 測試固定宣告完整 v9 契約，不依賴遷移測試的 fixture。
+// Control Renderer 測試固定宣告完整 v10 契約，不依賴遷移測試的 fixture。
 const defaultConfig = structuredClone({
   ...currentDefaultConfig,
-  configVersion: 9,
+  configVersion: 10,
   logo: {
     ...currentDefaultConfig.logo,
     sizePercent: 100,
@@ -62,6 +62,8 @@ function createValidDraftInput(overrides = {}) {
     pageDurationSeconds: '3',
     repeatMode: 'finite',
     roundCount: '1',
+    controlDisplayId: 'auto',
+    defaultDisplayId: 'auto',
     renderResolution: 'auto',
     ...overrides,
   };
@@ -138,11 +140,12 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含 Logo 大小、多張待機背景、playback v9、倒酒開關、質感背景、待機時間、校時及解析度', async () => {
+test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v10 設定', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
     selectionMode: 'manual',
+    controlDisplayId: 1,
     defaultDisplayId: 42,
     fullscreen: false,
     renderResolution: '1600x900',
@@ -176,12 +179,14 @@ test('設定草稿包含 Logo 大小、多張待機背景、playback v9、倒酒
     pageDurationSeconds: '7',
     repeatMode: 'continuous',
     roundCount: '23',
+    controlDisplayId: '2',
+    defaultDisplayId: '84',
     renderResolution: '3840x2160',
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 9,
+    configVersion: 10,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
@@ -219,7 +224,8 @@ test('設定草稿包含 Logo 大小、多張待機背景、playback v9、倒酒
     },
     display: {
       selectionMode: 'manual',
-      defaultDisplayId: 42,
+      controlDisplayId: 2,
+      defaultDisplayId: 84,
       fullscreen: false,
       renderResolution: '3840x2160',
     },
@@ -286,6 +292,9 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { pageDurationSeconds: 3 },
     { repeatMode: null },
     { roundCount: 1 },
+    { controlDisplayId: 'display-1' },
+    { defaultDisplayId: '-1' },
+    { controlDisplayId: '1', defaultDisplayId: '1' },
     { renderResolution: '1024x768' },
     { renderResolution: null },
   ];
@@ -439,21 +448,31 @@ test('播放設定接受完整上下界，並以精確欄位拒絕超界與非�
   }
 });
 
-test('解析度可編輯，但已移除的螢幕選擇參數無法改變相容欄位', async () => {
+test('管理員可明確交換控制台與訊息螢幕，或恢復自動分工', async () => {
   const { buildSettingsDraft } = await loadModule();
-  const result = buildSettingsDraft(createValidDraftInput({
+  const manual = buildSettingsDraft(createValidDraftInput({
     renderResolution: '2560x1440',
-    displaySelectionMode: 'manual',
-    defaultDisplayId: '42',
-    displayFullscreen: false,
+    controlDisplayId: '2',
+    defaultDisplayId: '1',
   }));
 
-  assert.equal(result.ok, true);
-  assert.deepEqual(result.config.display, {
-    selectionMode: 'auto',
-    defaultDisplayId: null,
+  assert.equal(manual.ok, true);
+  assert.deepEqual(manual.config.display, {
+    selectionMode: 'manual',
+    controlDisplayId: 2,
+    defaultDisplayId: 1,
     fullscreen: true,
     renderResolution: '2560x1440',
+  });
+
+  const automatic = buildSettingsDraft(createValidDraftInput());
+  assert.equal(automatic.ok, true);
+  assert.deepEqual(automatic.config.display, {
+    selectionMode: 'auto',
+    controlDisplayId: null,
+    defaultDisplayId: null,
+    fullscreen: true,
+    renderResolution: 'auto',
   });
 });
 

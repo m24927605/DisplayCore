@@ -31,6 +31,9 @@ function createSnapshot(overrides = {}) {
       isPrimary: false,
       isInternal: false,
     }],
+    effectiveControlDisplayId: 1,
+    configuredControlDisplayId: null,
+    controlUsingFallback: false,
     effectiveDisplayId: 2,
     configuredDisplayId: null,
     selectionMode: 'auto',
@@ -137,6 +140,7 @@ test('exact schema、資源上限與欄位關聯任一不符時安全拒絕', as
     { ...base, displays: displaysWithSymbol },
     { ...base, displays: [base.displays[0], { ...base.displays[0] }], effectiveDisplayId: 1 },
     { ...base, effectiveDisplayId: 99 },
+    { ...base, effectiveControlDisplayId: 99 },
     { ...base, configuredDisplayId: 2 },
     { ...base, selectionMode: 'manual', configuredDisplayId: null },
     { ...base, selectionMode: 'manual', configuredDisplayId: 99, usingFallback: false },
@@ -242,6 +246,7 @@ test('routing UX 依錯誤、無目標、手動 fallback、未知、等待與已
     [
       createSnapshot({
         displays: [],
+        effectiveControlDisplayId: null,
         effectiveDisplayId: null,
         placement: {
           status: 'pending',
@@ -255,6 +260,7 @@ test('routing UX 依錯誤、無目標、手動 fallback、未知、等待與已
     [
       createSnapshot({
         selectionMode: 'manual',
+        configuredControlDisplayId: 1,
         configuredDisplayId: 99,
         usingFallback: true,
       }),

@@ -29,6 +29,9 @@ function createTopology(overrides = {}) {
       isPrimary: false,
       isInternal: false,
     }],
+    effectiveControlDisplayId: 1,
+    configuredControlDisplayId: null,
+    controlUsingFallback: false,
     effectiveDisplayId: 2,
     configuredDisplayId: null,
     selectionMode: 'auto',
@@ -83,6 +86,9 @@ test('Control 輸出快照只投影安全顯示欄位與實際 placement 狀態'
       isPrimary: false,
       isInternal: false,
     }],
+    effectiveControlDisplayId: 1,
+    configuredControlDisplayId: null,
+    controlUsingFallback: false,
     effectiveDisplayId: 2,
     configuredDisplayId: null,
     selectionMode: 'auto',
@@ -111,6 +117,7 @@ test('輸出投影接受 detecting／unknown 與尚無有效目標的 pending �
       topologyStatus: 'unknown',
       hdmiConnectionStatus: 'detecting',
       displays: [],
+      effectiveControlDisplayId: null,
       effectiveDisplayId: null,
       secondDisplayConnected: false,
     }),
@@ -128,6 +135,11 @@ test('輸出投影接受 detecting／unknown 與尚無有效目標的 pending �
 });
 
 test('輸出投影拒絕畸形 enum、重複螢幕、過量欄位與不安全數值', () => {
+  const manualTopology = createTopology({
+    selectionMode: 'manual',
+    configuredControlDisplayId: 1,
+    configuredDisplayId: 2,
+  });
   const invalidPairs = [
     [null, createPlacement()],
     [createTopology({ topologyStatus: 'loading' }), createPlacement()],
@@ -135,7 +147,26 @@ test('輸出投影拒絕畸形 enum、重複螢幕、過量欄位與不安全數
     [createTopology({ displays: Array(33).fill(createTopology().displays[0]) }), createPlacement()],
     [createTopology({ displays: [createTopology().displays[0], createTopology().displays[0]] }), createPlacement()],
     [createTopology({ effectiveDisplayId: 99 }), createPlacement()],
+    [createTopology({ effectiveControlDisplayId: 99 }), createPlacement()],
     [createTopology({ selectionMode: 'manual', configuredDisplayId: null }), createPlacement()],
+    [{ ...manualTopology, controlUsingFallback: true }, createPlacement()],
+    [{ ...manualTopology, usingFallback: true }, createPlacement()],
+    [{
+      ...manualTopology,
+      configuredControlDisplayId: 99,
+      controlUsingFallback: false,
+    }, createPlacement()],
+    [{
+      ...manualTopology,
+      configuredDisplayId: 99,
+      usingFallback: false,
+    }, createPlacement()],
+    [createTopology({
+      displays: createTopology().displays.map((display) => ({
+        ...display,
+        isPrimary: true,
+      })),
+    }), createPlacement()],
     [createTopology({ revision: -1 }), createPlacement()],
     [createTopology(), createPlacement({ status: 'done' })],
     [createTopology(), createPlacement({ displayId: -1 })],
@@ -143,10 +174,11 @@ test('輸出投影拒絕畸形 enum、重複螢幕、過量欄位與不安全數
     [createTopology(), createPlacement({ revision: 1.5 })],
   ];
 
-  for (const [topology, placement] of invalidPairs) {
+  for (const [index, [topology, placement]] of invalidPairs.entries()) {
     assert.throws(
       () => createControlOutputSnapshot(topology, placement),
       /輸出狀態/,
+      `invalidPairs[${index}] 不應通過投影`,
     );
   }
 });

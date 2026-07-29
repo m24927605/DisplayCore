@@ -7,7 +7,7 @@ const test = require('node:test');
 
 const projectRoot = path.resolve(__dirname, '..', '..');
 
-test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務', async () => {
+test('Main composition root 組合 HDMI、螢幕拓樸與雙視窗定位服務', async () => {
   const source = await readFile(path.join(projectRoot, 'main.js'), 'utf8');
 
   assert.match(source, /\bscreen\s*,/);
@@ -15,6 +15,7 @@ test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務',
   assert.match(source, /require\('\.\/main\/hdmi-detector'\)/);
   assert.match(source, /require\('\.\/main\/display-topology-service'\)/);
   assert.match(source, /require\('\.\/main\/display-placement-controller'\)/);
+  assert.match(source, /require\('\.\/main\/control-placement-controller'\)/);
   assert.match(source, /new HdmiDetector\(/);
   assert.match(source, /new DisplayTopologyService\(/);
   assert.match(
@@ -22,6 +23,15 @@ test('Main composition root 組合 HDMI、螢幕拓樸與 Display 定位服務',
     /new DisplayTopologyService\(\{[\s\S]*screen,[\s\S]*powerMonitor,/,
   );
   assert.match(source, /new DisplayPlacementController\(/);
+  assert.match(source, /new ControlPlacementController\(/);
+  assert.match(
+    source,
+    /new DisplayTopologyService\(\{[\s\S]*settingsManager,/,
+  );
+  assert.match(
+    source,
+    /configureControlWindow:[\s\S]*controlPlacementController\.applyToWindowWithRetry/,
+  );
   assert.match(
     source,
     /configureDisplayWindow:[\s\S]*displayPlacementController\.applyToWindowWithRetry/,
@@ -54,12 +64,18 @@ test('Main 在設定後初始化拓樸與定位，退出時反向解除資源', 
   const placementPosition = initializeBlock.indexOf(
     'displayPlacementController.initialize()',
   );
+  const controlPlacementPosition = initializeBlock.indexOf(
+    'controlPlacementController.initialize()',
+  );
   const ipcPosition = initializeBlock.indexOf('ipcCoordinator.register()');
 
   assert.ok(settingsPosition >= 0);
   assert.ok(topologyPosition > settingsPosition);
   assert.ok(placementPosition > topologyPosition);
+  assert.ok(controlPlacementPosition > topologyPosition);
   assert.ok(ipcPosition > placementPosition);
+  assert.ok(ipcPosition > controlPlacementPosition);
+  assert.match(shutdownBlock, /controlPlacementController\.dispose\(\)/);
   assert.match(shutdownBlock, /displayPlacementController\.dispose\(\)/);
   assert.match(shutdownBlock, /displayTopologyService\.dispose\(\)/);
 });

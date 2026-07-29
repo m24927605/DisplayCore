@@ -64,7 +64,7 @@ test('高級顯示預設具備離線字型、材質背景、倒酒開關與獨�
   ]);
   const config = JSON.parse(configSource);
 
-  assert.equal(config.configVersion, 9);
+  assert.equal(config.configVersion, 10);
   assert.equal(config.appearance.messageBackgroundPreset, 'obsidian');
   assert.equal(config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(config.appearance.standbyClockSizePercent, 100);

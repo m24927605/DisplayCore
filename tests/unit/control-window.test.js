@@ -124,7 +124,7 @@ test('555 與 888 保留獨立按鈕、確認對話框與無限期顯示提示',
   assert.match(appSource, /不受顯示時間限制/);
 });
 
-test('HDMI 與實際輸出只讀顯示，完全沒有手動螢幕或全螢幕控制', async () => {
+test('Header 保留唯讀輸出狀態，螢幕分工只放在齒輪設定內', async () => {
   const html = await readControlFile('index.html');
 
   assert.match(html, /id="hdmi-status-badge"[^>]+data-tone="detecting"/);
@@ -138,14 +138,17 @@ test('HDMI 與實際輸出只讀顯示，完全沒有手動螢幕或全螢幕控
     'display-settings-fieldset',
     'display-auto-input',
     'display-manual-input',
-    'default-display-select',
     'display-fullscreen-input',
     'output-mode',
     'output-display-count',
   ]) {
     assert.doesNotMatch(html, new RegExp(`id="${removedId}"`));
   }
-  assert.doesNotMatch(html, /指定輸出螢幕|視窗模式|管理輸出設定/);
+  assert.match(html, /id="control-display-select"/);
+  assert.match(html, /id="default-display-select"/);
+  assert.match(html, /控制台螢幕/);
+  assert.match(html, /訊息螢幕/);
+  assert.doesNotMatch(html, /視窗模式|管理輸出設定/);
 });
 
 test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不佔主畫面', async () => {
@@ -202,6 +205,9 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'clock-time-error',
     'render-resolution-select',
     'render-resolution-error',
+    'control-display-select',
+    'default-display-select',
+    'display-assignment-error',
     'marquee-enabled-input',
   ]) {
     assert.match(html, new RegExp(`id="${inputId}"`));

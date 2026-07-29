@@ -163,7 +163,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 9);
+  assert.equal(config.configVersion, 10);
   assert.deepEqual(Object.keys(config.logo).sort(), [
     'enabled',
     'path',
@@ -217,6 +217,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
   assert.ok(config.playback.roundCount >= 1);
   assert.ok(config.playback.roundCount <= 999);
   assert.deepEqual(Object.keys(config.display).sort(), [
+    'controlDisplayId',
     'defaultDisplayId',
     'fullscreen',
     'renderResolution',

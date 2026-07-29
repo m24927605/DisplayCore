@@ -17,10 +17,10 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV9Config() {
+function createV10Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 9,
+    configVersion: 10,
     logo: { enabled: false, path: null, sizePercent: 100 },
     standby: {
       backgroundMode: 'fixed',
@@ -36,7 +36,7 @@ function createV9Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV9Config();
+  const config = createV10Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
@@ -74,6 +74,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   };
   config.display = {
     selectionMode: 'manual',
+    controlDisplayId: 7,
     defaultDisplayId: 42,
     fullscreen: false,
     renderResolution: '2560x1440',
@@ -84,7 +85,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 9,
+    configVersion: 10,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -135,6 +136,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.hasOwn(projected, 'playback'), false);
   assert.deepEqual(Object.keys(projected.display), ['renderResolution']);
   assert.equal(Object.hasOwn(projected.display, 'selectionMode'), false);
+  assert.equal(Object.hasOwn(projected.display, 'controlDisplayId'), false);
   assert.equal(Object.hasOwn(projected.display, 'defaultDisplayId'), false);
   assert.equal(Object.hasOwn(projected.display, 'fullscreen'), false);
   assert.equal(Object.hasOwn(projected.logo, 'path'), false);
@@ -146,7 +148,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
 });
 
 test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
-  const config = createV9Config();
+  const config = createV10Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
@@ -168,7 +170,7 @@ test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
 
 test('Display 投影完整保留管理員啟用或停用訊息倒酒效果的布林值', () => {
   for (const enabled of [true, false]) {
-    const config = createV9Config();
+    const config = createV10Config();
     config.appearance.messageLiquidEffectEnabled = enabled;
 
     const projected = createDisplaySettingsSnapshot(
@@ -183,11 +185,11 @@ test('Display 投影完整保留管理員啟用或停用訊息倒酒效果的布
 });
 
 test('Display 投影拒絕缺少或非布林的訊息倒酒效果設定', () => {
-  const missing = createV9Config();
+  const missing = createV10Config();
   delete missing.appearance.messageLiquidEffectEnabled;
 
   for (const candidate of [missing, ...['true', 1, null].map((value) => {
-    const config = createV9Config();
+    const config = createV10Config();
     config.appearance.messageLiquidEffectEnabled = value;
     return config;
   })]) {
@@ -200,12 +202,12 @@ test('Display 投影拒絕缺少或非布林的訊息倒酒效果設定', () => 
 
 test('投影拒絕不合法 revision、設定內容與非受管理圖片識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV9Config(), -1),
-    createManagerSnapshot(createV9Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV9Config(), unknown: true }, 0),
+    createManagerSnapshot(createV10Config(), -1),
+    createManagerSnapshot(createV10Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV10Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV9Config(),
+        ...createV10Config(),
         logo: {
           enabled: true,
           path: 'logos/operator-logo.png',
@@ -216,9 +218,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV9Config(),
+        ...createV10Config(),
         standby: {
-          ...createV9Config().standby,
+          ...createV10Config().standby,
           backgroundImagePaths: ['C:\\private\\background.png'],
         },
       },
@@ -226,9 +228,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV9Config(),
+        ...createV10Config(),
         standby: {
-          ...createV9Config().standby,
+          ...createV10Config().standby,
           backgroundImagePaths: [
             'standby-backgrounds/operator-background.png',
           ],
@@ -238,9 +240,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV9Config(),
+        ...createV10Config(),
         display: {
-          ...createV9Config().display,
+          ...createV10Config().display,
           renderResolution: '1280x720',
         },
       },
@@ -248,9 +250,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV9Config(),
+        ...createV10Config(),
         playback: {
-          ...createV9Config().playback,
+          ...createV10Config().playback,
           pageDurationSeconds: 0,
         },
       },
@@ -266,7 +268,7 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
 
 test('投影拒絕超界、非 5% 步進與非整數 Logo 大小', () => {
   for (const sizePercent of [49, 1_001, 101, 100.5, '100']) {
-    const config = createV9Config();
+    const config = createV10Config();
     config.logo.sizePercent = sizePercent;
 
     assert.throws(
@@ -285,7 +287,7 @@ test('投影拒絕未知訊息背景與無效待機時間大小', () => {
     { standbyClockSizePercent: 101 },
     { standbyClockSizePercent: '100' },
   ]) {
-    const config = createV9Config();
+    const config = createV10Config();
     config.appearance = { ...config.appearance, ...appearancePatch };
 
     assert.throws(

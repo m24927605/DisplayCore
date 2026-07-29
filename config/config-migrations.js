@@ -52,6 +52,7 @@ const LEGACY_V5_CONFIG_KEYS = Object.freeze([
 const LEGACY_V6_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V7_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V8_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_V9_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_APPEARANCE_KEYS = Object.freeze([
   'backgroundColor',
   'fontColor',
@@ -76,6 +77,10 @@ const LEGACY_V8_APPEARANCE_KEYS = Object.freeze([
   'minimumFontSizeRem',
   'standbyClockSizePercent',
 ]);
+const LEGACY_V9_APPEARANCE_KEYS = Object.freeze([
+  ...LEGACY_V8_APPEARANCE_KEYS,
+  'messageLiquidEffectEnabled',
+].sort());
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -180,10 +185,25 @@ function migrateSingleStandbyBackground(legacyStandby, defaultStandby) {
 }
 
 /**
- * 將磁碟上的合法 v1 至 v8 設定轉成 canonical v9。
+ * v9 及以前雖保留單一輸出螢幕欄位，實際執行版本仍固定自動路由。
+ * 升級為雙螢幕分工時採安全自動配置，避免無法推斷 Control 螢幕卻誤放視窗；
+ * 排版解析度仍完整保留。
+ */
+function migrateLegacyDisplay(legacyDisplay, defaultDisplay) {
+  return {
+    ...defaultDisplay,
+    renderResolution:
+      typeof legacyDisplay?.renderResolution === 'string'
+        ? legacyDisplay.renderResolution
+        : defaultDisplay.renderResolution,
+  };
+}
+
+/**
+ * 將磁碟上的合法 v1 至 v9 設定轉成 canonical v10。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v9。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v9 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v10。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v10 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -199,6 +219,25 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V9_CONFIG_KEYS) &&
+    candidate.configVersion === 9 &&
+    hasExactKeys(candidate.appearance, LEGACY_V9_APPEARANCE_KEYS)
+  ) {
+    const migratedV9 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
+      ),
+    });
+
+    return migratedV9.ok
+      ? { ok: true, value: migratedV9.value, migrated: true }
+      : migratedV9;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V8_CONFIG_KEYS) &&
     candidate.configVersion === 8 &&
     hasExactKeys(candidate.appearance, LEGACY_V8_APPEARANCE_KEYS)
@@ -211,6 +250,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         messageLiquidEffectEnabled:
           defaults.value.appearance.messageLiquidEffectEnabled,
       },
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
+      ),
     });
 
     return migratedV8.ok
@@ -229,6 +272,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
       appearance: migrateLegacyAppearance(
         candidate.appearance,
         defaults.value.appearance,
+      ),
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
       ),
     });
 
@@ -254,6 +301,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
       standby: migrateSingleStandbyBackground(
         candidate.standby,
         defaults.value.standby,
+      ),
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
       ),
     });
 
@@ -284,6 +335,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         candidate.standby,
         defaults.value.standby,
       ),
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
+      ),
     });
 
     return migratedV5.ok
@@ -309,6 +364,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         defaults.value.appearance,
       ),
       standby: { ...defaults.value.standby },
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
+      ),
     });
 
     return migratedV4.ok
@@ -335,6 +394,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
       ),
       playback: { ...defaults.value.playback },
       standby: { ...defaults.value.standby },
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
+      ),
     });
 
     return migratedV3.ok
@@ -358,10 +421,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
         enabled: candidate.dateTime.enabled,
         offsetSeconds: defaults.value.dateTime.offsetSeconds,
       },
-      display: {
-        ...candidate.display,
-        renderResolution: defaults.value.display.renderResolution,
-      },
+      display: migrateLegacyDisplay(
+        candidate.display,
+        defaults.value.display,
+      ),
       playback: { ...defaults.value.playback },
       standby: { ...defaults.value.standby },
     });
@@ -399,10 +462,10 @@ function migrateStoredConfig(candidate, currentDefaults) {
     marquee: { ...candidate.marquee },
     playback: { ...defaults.value.playback },
     standby: { ...defaults.value.standby },
-    display: {
-      ...candidate.display,
-      renderResolution: defaults.value.display.renderResolution,
-    },
+    display: migrateLegacyDisplay(
+      candidate.display,
+      defaults.value.display,
+    ),
   });
 
   return migrated.ok

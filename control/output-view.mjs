@@ -39,8 +39,8 @@ function isRenderable(snapshot, ux) {
   );
 }
 
-/** Header 只讀輸出狀態，不提供螢幕選擇或全螢幕控制。 */
-export function createOutputView({ document }) {
+/** Header 維持唯讀；同一份安全快照可同步供設定頁建立螢幕選項。 */
+export function createOutputView({ document, onOutputStatus = () => {} }) {
   const elements = Object.freeze({
     cluster: document.getElementById('output-status-cluster'),
     hdmiBadge: document.getElementById('hdmi-status-badge'),
@@ -83,6 +83,13 @@ export function createOutputView({ document }) {
       elements.error.textContent = '';
       elements.error.hidden = true;
       elements.cluster.setAttribute('aria-busy', String(busy));
+
+      try {
+        onOutputStatus(snapshot);
+      } catch {
+        // 設定頁更新失敗不可連帶破壞 Header 的唯讀狀態。
+      }
+
       return true;
     },
 

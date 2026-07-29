@@ -29,11 +29,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v9 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v10 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 9);
+  assert.equal(CONFIG_VERSION, 10);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.notEqual(result.value, source);
@@ -100,7 +100,8 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 6 },
     { ...source, configVersion: 7 },
     { ...source, configVersion: 8 },
-    { ...source, configVersion: 10 },
+    { ...source, configVersion: 9 },
+    { ...source, configVersion: 11 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -386,10 +387,10 @@ test('外觀設定限制色碼、字型、最小字級、字體比例與行距�
   }
 });
 
-test('v9 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
+test('v10 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
   const source = await readDefaultConfig();
 
-  assert.equal(source.configVersion, 9);
+  assert.equal(source.configVersion, 10);
   assert.equal(source.appearance.messageBackgroundPreset, 'obsidian');
   assert.equal(source.appearance.standbyClockSizePercent, 100);
 
@@ -445,7 +446,7 @@ test('v9 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小
   }
 });
 
-test('v9 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
+test('v10 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
   const source = await readDefaultConfig();
 
   assert.equal(source.appearance.messageLiquidEffectEnabled, true);
@@ -485,7 +486,7 @@ test('v9 訊息字體倒酒效果開關只接受 boolean 並完整保留值', as
   }
 });
 
-test('v9 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
+test('v10 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
   const source = await readDefaultConfig();
   const {
     messageBackgroundPreset: _messageBackgroundPreset,
@@ -601,6 +602,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     {
       display: {
         selectionMode: DISPLAY_SELECTION_MODES.AUTO,
+        controlDisplayId: null,
         defaultDisplayId: 7,
         fullscreen: true,
         renderResolution: 'auto',
@@ -609,6 +611,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     {
       display: {
         selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
+        controlDisplayId: 7,
         defaultDisplayId: null,
         fullscreen: true,
         renderResolution: 'auto',
@@ -617,7 +620,17 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     {
       display: {
         selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
+        controlDisplayId: 7,
         defaultDisplayId: -1,
+        fullscreen: true,
+        renderResolution: 'auto',
+      },
+    },
+    {
+      display: {
+        selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
+        controlDisplayId: 42,
+        defaultDisplayId: 42,
         fullscreen: true,
         renderResolution: 'auto',
       },
@@ -633,6 +646,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     ...source,
     display: {
       selectionMode: DISPLAY_SELECTION_MODES.MANUAL,
+      controlDisplayId: 7,
       defaultDisplayId: 42,
       fullscreen: false,
       renderResolution: '1920x1080',
@@ -641,6 +655,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
   assert.equal(manual.ok, true);
   assert.deepEqual(manual.value.display, {
     selectionMode: 'manual',
+    controlDisplayId: 7,
     defaultDisplayId: 42,
     fullscreen: false,
     renderResolution: '1920x1080',

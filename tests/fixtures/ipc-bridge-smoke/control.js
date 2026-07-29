@@ -83,7 +83,7 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV9(
+function hasExpectedConfigV10(
   config,
   offsetSeconds,
   renderResolution,
@@ -98,7 +98,7 @@ function hasExpectedConfigV9(
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 9 &&
+    config.configVersion === 10 &&
     hasExactKeys(config.logo, ['enabled', 'path', 'sizePercent']) &&
     config.logo.sizePercent === logoSizePercent &&
     hasExactKeys(config.standby, [
@@ -143,7 +143,7 @@ function isExpectedSettingsSnapshot(
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV9(
+    hasExpectedConfigV10(
       snapshot.config,
       offsetSeconds,
       renderResolution,
@@ -155,7 +155,7 @@ function isExpectedSettingsSnapshot(
       standbyBackgroundImagePaths,
       standbySlideDurationSeconds,
     ) &&
-    hasExpectedConfigV9(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
+    hasExpectedConfigV10(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
   );
 }
 

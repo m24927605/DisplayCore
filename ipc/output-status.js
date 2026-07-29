@@ -104,6 +104,15 @@ function createControlOutputSnapshot(topology, placement) {
     !HDMI_STATUSES.has(topology.hdmiConnectionStatus) ||
     !Array.isArray(topology.displays) ||
     topology.displays.length > MAX_DISPLAY_COUNT ||
+    !(
+      topology.effectiveControlDisplayId === null ||
+      isDisplayId(topology.effectiveControlDisplayId)
+    ) ||
+    !(
+      topology.configuredControlDisplayId === null ||
+      isDisplayId(topology.configuredControlDisplayId)
+    ) ||
+    typeof topology.controlUsingFallback !== 'boolean' ||
     !(topology.effectiveDisplayId === null || isDisplayId(topology.effectiveDisplayId)) ||
     !(topology.configuredDisplayId === null || isDisplayId(topology.configuredDisplayId)) ||
     !SELECTION_MODES.has(topology.selectionMode) ||
@@ -116,19 +125,53 @@ function createControlOutputSnapshot(topology, placement) {
   }
 
   if (
-    (topology.selectionMode === 'auto' && topology.configuredDisplayId !== null) ||
-    (topology.selectionMode === 'manual' && topology.configuredDisplayId === null)
+    (
+      topology.selectionMode === 'auto' &&
+      (
+        topology.configuredControlDisplayId !== null ||
+        topology.configuredDisplayId !== null ||
+        topology.controlUsingFallback ||
+        topology.usingFallback
+      )
+    ) ||
+    (
+      topology.selectionMode === 'manual' &&
+      (
+        topology.configuredControlDisplayId === null ||
+        topology.configuredDisplayId === null ||
+        topology.configuredControlDisplayId === topology.configuredDisplayId
+      )
+    )
   ) {
     return invalidOutputStatus();
   }
 
   const displays = topology.displays.map(projectDisplay);
   const displayIds = new Set(displays.map(({ id }) => id));
+  const primaryDisplayCount = displays.filter(
+    ({ isPrimary }) => isPrimary,
+  ).length;
+  const configuredControlDisplayPresent = displayIds.has(
+    topology.configuredControlDisplayId,
+  );
+  const configuredDisplayPresent = displayIds.has(
+    topology.configuredDisplayId,
+  );
 
   if (
     displayIds.size !== displays.length ||
+    primaryDisplayCount !== (displays.length > 0 ? 1 : 0) ||
+    (topology.effectiveControlDisplayId !== null &&
+      !displayIds.has(topology.effectiveControlDisplayId)) ||
     (topology.effectiveDisplayId !== null &&
-      !displayIds.has(topology.effectiveDisplayId))
+      !displayIds.has(topology.effectiveDisplayId)) ||
+    (
+      topology.selectionMode === 'manual' &&
+      (
+        topology.controlUsingFallback === configuredControlDisplayPresent ||
+        topology.usingFallback === configuredDisplayPresent
+      )
+    )
   ) {
     return invalidOutputStatus();
   }
@@ -138,6 +181,9 @@ function createControlOutputSnapshot(topology, placement) {
     topologyStatus: topology.topologyStatus,
     hdmiConnectionStatus: topology.hdmiConnectionStatus,
     displays: Object.freeze(displays),
+    effectiveControlDisplayId: topology.effectiveControlDisplayId,
+    configuredControlDisplayId: topology.configuredControlDisplayId,
+    controlUsingFallback: topology.controlUsingFallback,
     effectiveDisplayId: topology.effectiveDisplayId,
     configuredDisplayId: topology.configuredDisplayId,
     selectionMode: topology.selectionMode,

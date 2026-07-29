@@ -26,6 +26,7 @@ class WindowManager {
    * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} dependencies.onDisplayAvailable
    * @param {() => void} dependencies.onDisplayUnavailable
    * @param {(error: Error) => void} dependencies.onRecoveryFailed
+   * @param {(controlWindow: Electron.BrowserWindow) => void|Promise<void>} [dependencies.configureControlWindow]
    * @param {(displayWindow: Electron.BrowserWindow) => void|Promise<void>} [dependencies.configureDisplayWindow]
    * @param {boolean} dependencies.windowedDisplay
    * @param {boolean} dependencies.controlDevTools
@@ -44,6 +45,7 @@ class WindowManager {
     onDisplayAvailable = () => {},
     onDisplayUnavailable = () => {},
     onRecoveryFailed = () => {},
+    configureControlWindow = null,
     configureDisplayWindow = null,
     windowedDisplay = false,
     controlDevTools = false,
@@ -61,6 +63,7 @@ class WindowManager {
     this.onDisplayAvailable = onDisplayAvailable;
     this.onDisplayUnavailable = onDisplayUnavailable;
     this.onRecoveryFailed = onRecoveryFailed;
+    this.configureControlWindow = configureControlWindow;
     this.configureDisplayWindow = configureDisplayWindow;
     this.windowedDisplay = windowedDisplay;
     this.controlDevTools = controlDevTools;
@@ -159,6 +162,10 @@ class WindowManager {
     this.bindWindowLifecycle(controlWindow, displayWindow);
 
     try {
+      if (this.configureControlWindow) {
+        await this.configureControlWindow(controlWindow);
+      }
+
       if (this.configureDisplayWindow) {
         await this.configureDisplayWindow(displayWindow);
       }

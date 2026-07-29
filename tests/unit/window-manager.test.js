@@ -116,6 +116,7 @@ function createManager({
   onDisplayAvailable = () => {},
   onDisplayUnavailable = () => {},
   onRecoveryFailed = () => {},
+  configureControlWindow = null,
   configureDisplayWindow = null,
   platform = 'win32',
 } = {}) {
@@ -134,6 +135,7 @@ function createManager({
     onDisplayAvailable,
     onDisplayUnavailable,
     onRecoveryFailed,
+    configureControlWindow,
     configureDisplayWindow,
     platform,
     windowedDisplay: false,
@@ -216,6 +218,32 @@ test('託管輸出在 Display 載入與顯示前完成定位及全螢幕切換',
   assert.equal(displayWindow.shownInactive, true);
 });
 
+test('Control 與 Display 都在載入及顯示前完成各自的螢幕定位', async () => {
+  const configuredRoles = [];
+  const { manager } = createManager({
+    configureControlWindow(controlWindow) {
+      assert.equal(controlWindow.loadedUrl, undefined);
+      assert.equal(controlWindow.shown, undefined);
+      configuredRoles.push(['control', controlWindow]);
+    },
+    configureDisplayWindow(displayWindow) {
+      assert.equal(displayWindow.loadedUrl, undefined);
+      assert.equal(displayWindow.shownInactive, undefined);
+      configuredRoles.push(['display', displayWindow]);
+    },
+  });
+
+  await manager.createWindows();
+  const [controlWindow, displayWindow] = FakeBrowserWindow.instances;
+
+  assert.deepEqual(configuredRoles, [
+    ['control', controlWindow],
+    ['display', displayWindow],
+  ]);
+  assert.equal(controlWindow.shown, true);
+  assert.equal(displayWindow.shownInactive, true);
+});
+
 test('Display 只有真正顯示後才通知排程器，重建後亦重新通知', async () => {
   const availableWindows = [];
   const { manager } = createManager({
@@ -285,15 +313,19 @@ test('同一 Display WebContents reload 期間暫停計時，完成後才重新 
   );
 });
 
-test('Display Renderer 重建後對新視窗重新套用目前輸出位置', async () => {
-  const configuredWindows = [];
+test('Display Renderer 重建後對兩個新視窗重新套用目前輸出位置', async () => {
+  const configuredControlWindows = [];
+  const configuredDisplayWindows = [];
   const { manager } = createManager({
+    configureControlWindow(controlWindow) {
+      configuredControlWindows.push(controlWindow);
+    },
     configureDisplayWindow(displayWindow) {
-      configuredWindows.push(displayWindow);
+      configuredDisplayWindows.push(displayWindow);
     },
   });
   await manager.createWindows();
-  const [, oldDisplayWindow] = FakeBrowserWindow.instances;
+  const [oldControlWindow, oldDisplayWindow] = FakeBrowserWindow.instances;
 
   oldDisplayWindow.webContents.emit(
     'render-process-gone',
@@ -302,8 +334,16 @@ test('Display Renderer 重建後對新視窗重新套用目前輸出位置', asy
   );
   await flushAsyncWork();
 
-  const [, , , replacementDisplayWindow] = FakeBrowserWindow.instances;
-  assert.deepEqual(configuredWindows, [oldDisplayWindow, replacementDisplayWindow]);
+  const [, , replacementControlWindow, replacementDisplayWindow] =
+    FakeBrowserWindow.instances;
+  assert.deepEqual(configuredControlWindows, [
+    oldControlWindow,
+    replacementControlWindow,
+  ]);
+  assert.deepEqual(configuredDisplayWindows, [
+    oldDisplayWindow,
+    replacementDisplayWindow,
+  ]);
   assert.equal(replacementDisplayWindow.options.fullscreen, false);
   assert.equal(replacementDisplayWindow.shownInactive, true);
 });

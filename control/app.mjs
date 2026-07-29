@@ -768,7 +768,11 @@ async function boot() {
 
   const outputController = createOutputController({
     api,
-    view: createOutputView({ document }),
+    view: createOutputView({
+      document,
+      onOutputStatus: (snapshot) =>
+        settingsView.renderOutputTopology(snapshot),
+    }),
   });
   void outputController.start();
 

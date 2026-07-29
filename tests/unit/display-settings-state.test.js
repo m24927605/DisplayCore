@@ -9,7 +9,7 @@ async function loadModule() {
 
 function createSnapshot(revision = 0, messageLiquidEffectEnabled = true) {
   return {
-    configVersion: 9,
+    configVersion: 10,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -160,7 +160,7 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
   const valid = createSnapshot(1);
   const invalidCandidates = [
     { ...valid, configVersion: 8 },
-    { ...valid, configVersion: 10 },
+    { ...valid, configVersion: 11 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { ...valid.logo, url: null } },
@@ -318,7 +318,7 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 9,
+    configVersion: 10,
     logo: { enabled: false, url: null, sizePercent: 100 },
     standby: {
       backgroundMode: 'fixed',

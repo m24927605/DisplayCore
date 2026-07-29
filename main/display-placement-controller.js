@@ -121,7 +121,9 @@ class DisplayPlacementController {
       return;
     }
 
-    this.applyToWindow(displayWindow);
+    void this.applyToWindowWithRetry(displayWindow).catch(() => {
+      this.logger.warn('[DisplayCore] Display Window 輸出位置重試失敗。');
+    });
   }
 
   updatePendingStatus() {
@@ -188,8 +190,8 @@ class DisplayPlacementController {
   }
 
   /**
-   * 新 BrowserWindow 初次建立時，Windows 可能短暫拒絕跨螢幕 bounds／fullscreen
-   * 切換。只在載入頁面前進行有限次重試；達上限仍失敗時由 WindowManager
+   * Windows 可能短暫拒絕跨螢幕 bounds／fullscreen 切換。初次建立與
+   * 執行中熱插拔都使用有限次重試；初次建立達上限時仍由 WindowManager
    * 原子銷毀雙視窗，絕不在錯誤螢幕上顯示內容。
    */
   async applyToWindowWithRetry(displayWindow) {

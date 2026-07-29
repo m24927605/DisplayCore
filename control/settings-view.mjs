@@ -14,8 +14,8 @@ const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
  * 系統設定對話框的 DOM 與草稿狀態。
  *
  * 本模組不存取 window、Node API 或 raw IPC；非同步工作由
- * settings-controller 轉交 preload 的固定用途 API。輸出螢幕由 Main
- * 全自動管理，因此此處不提供指定螢幕或全螢幕開關。
+ * settings-controller 轉交 preload 的固定用途 API。螢幕清單只使用
+ * Main 經安全投影後的輸出快照，不直接存取 Electron screen API。
  */
 export function createSettingsView({
   document,
@@ -118,6 +118,11 @@ export function createSettingsView({
     releaseBackgroundColorError: document.getElementById(
       'release-background-color-error',
     ),
+    controlDisplay: document.getElementById('control-display-select'),
+    defaultDisplay: document.getElementById('default-display-select'),
+    displayAssignmentError: document.getElementById(
+      'display-assignment-error',
+    ),
     clockTime: document.getElementById('clock-time-input'),
     clockTimeError: document.getElementById('clock-time-error'),
     dateTimeEnabled: document.getElementById('date-time-enabled-input'),
@@ -167,6 +172,7 @@ export function createSettingsView({
     bound: false,
     clockTimeTouched: false,
     clockOffsetSeconds: 0,
+    outputDisplays: [],
   };
   const eventController = new AbortController();
   const fieldTargets = Object.freeze({
@@ -233,7 +239,18 @@ export function createSettingsView({
     ],
     dateTime: [elements.clockTime, elements.clockTimeError],
     'dateTime.offsetSeconds': [elements.clockTime, elements.clockTimeError],
-    display: [elements.renderResolution, elements.renderResolutionError],
+    display: [
+      elements.controlDisplay,
+      elements.displayAssignmentError,
+    ],
+    'display.controlDisplayId': [
+      elements.controlDisplay,
+      elements.displayAssignmentError,
+    ],
+    'display.defaultDisplayId': [
+      elements.defaultDisplay,
+      elements.displayAssignmentError,
+    ],
     'display.renderResolution': [
       elements.renderResolution,
       elements.renderResolutionError,
@@ -343,6 +360,8 @@ export function createSettingsView({
         ? 'continuous'
         : 'finite',
       roundCount: elements.roundCount.value,
+      controlDisplayId: elements.controlDisplay.value,
+      defaultDisplayId: elements.defaultDisplay.value,
       renderResolution: elements.renderResolution.value,
     });
   }
@@ -397,6 +416,62 @@ export function createSettingsView({
     }
   }
 
+  function createDisplayOption(value, textContent) {
+    const option = document.createElement('option');
+    option.value = value;
+    option.textContent = textContent;
+    return option;
+  }
+
+  function renderDisplayAssignmentOptions({
+    controlDisplayId = elements.controlDisplay.value || 'auto',
+    defaultDisplayId = elements.defaultDisplay.value || 'auto',
+  } = {}) {
+    const desiredControlValue = controlDisplayId === null
+      ? 'auto'
+      : String(controlDisplayId);
+    const desiredDisplayValue = defaultDisplayId === null
+      ? 'auto'
+      : String(defaultDisplayId);
+
+    const renderSelect = (select, autoLabel, selectedValue) => {
+      const options = [
+        createDisplayOption('auto', autoLabel),
+        ...state.outputDisplays.map((display, index) => {
+          const primarySuffix = display.isPrimary ? '（主螢幕）' : '';
+          return createDisplayOption(
+            String(display.id),
+            `${index + 1}. ${display.label} · ${display.width}×${display.height}${primarySuffix}`,
+          );
+        }),
+      ];
+
+      if (
+        selectedValue !== 'auto' &&
+        !state.outputDisplays.some(({ id }) => String(id) === selectedValue)
+      ) {
+        options.push(createDisplayOption(
+          selectedValue,
+          `原指定螢幕 ID ${selectedValue}（目前未連接）`,
+        ));
+      }
+
+      select.replaceChildren(...options);
+      select.value = selectedValue;
+    };
+
+    renderSelect(
+      elements.controlDisplay,
+      '自動（Windows 主螢幕）',
+      desiredControlValue,
+    );
+    renderSelect(
+      elements.defaultDisplay,
+      '自動（外接螢幕優先）',
+      desiredDisplayValue,
+    );
+  }
+
   function renderStandbyBackgroundControls() {
     const imageCount = state.standbyBackgroundImagePaths.length;
     const slideshow = elements.standbyBackgroundMode.value === 'slideshow';
@@ -434,6 +509,10 @@ export function createSettingsView({
     ];
     state.clockOffsetSeconds = config.dateTime.offsetSeconds;
     state.clockTimeTouched = false;
+    renderDisplayAssignmentOptions({
+      controlDisplayId: config.display.controlDisplayId,
+      defaultDisplayId: config.display.defaultDisplayId,
+    });
     elements.logoEnabled.checked = config.logo.enabled;
     elements.logoPath.value = config.logo.path ?? '';
     elements.logoSizePercent.value = String(config.logo.sizePercent);
@@ -677,6 +756,8 @@ export function createSettingsView({
       elements.lineSpacingPercent,
       elements.messageLiquidEffectEnabled,
       elements.dateTimeEnabled,
+      elements.controlDisplay,
+      elements.defaultDisplay,
       elements.renderResolution,
       elements.marqueeEnabled,
       elements.pageDuration,
@@ -799,6 +880,33 @@ export function createSettingsView({
       elements.notice.textContent = snapshot.notice?.message ?? '';
       elements.notice.hidden = snapshot.notice === null;
       setDirty(false);
+    },
+
+    renderOutputTopology(snapshot) {
+      if (
+        !snapshot ||
+        !Array.isArray(snapshot.displays) ||
+        snapshot.displays.some((display) =>
+          !display ||
+          !Number.isSafeInteger(display.id) ||
+          display.id < 0 ||
+          typeof display.label !== 'string' ||
+          !Number.isSafeInteger(display.width) ||
+          !Number.isSafeInteger(display.height) ||
+          typeof display.isPrimary !== 'boolean')
+      ) {
+        return false;
+      }
+
+      state.outputDisplays = snapshot.displays.map((display) => ({
+        id: display.id,
+        label: display.label,
+        width: display.width,
+        height: display.height,
+        isPrimary: display.isPrimary,
+      }));
+      renderDisplayAssignmentOptions();
+      return true;
     },
 
     renderSettingsStatus(message) {

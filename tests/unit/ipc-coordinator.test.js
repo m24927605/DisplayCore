@@ -178,6 +178,9 @@ function createTopologySnapshot(overrides = {}) {
       isPrimary: true,
       isInternal: true,
     })]),
+    effectiveControlDisplayId: 1,
+    configuredControlDisplayId: null,
+    controlUsingFallback: false,
     effectiveDisplayId: 1,
     configuredDisplayId: null,
     selectionMode: 'auto',
@@ -347,6 +350,9 @@ test('Control 可取得拓樸與定位的最小輸出快照，Display 角色不�
         isPrimary: true,
         isInternal: true,
       }],
+      effectiveControlDisplayId: 1,
+      configuredControlDisplayId: null,
+      controlUsingFallback: false,
       effectiveDisplayId: 1,
       configuredDisplayId: null,
       selectionMode: 'auto',
@@ -449,12 +455,15 @@ test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼�
 
   assert.equal(loaded.ok, true);
   assert.equal(loaded.data.revision, 0);
+  assert.equal(loaded.data.config.configVersion, 10);
+  assert.equal(loaded.data.config.display.controlDisplayId, null);
   assert.deepEqual(loaded.data.config.playback, defaultConfig.playback);
   assert.equal(saved.ok, true);
   assert.equal(saved.data.revision, 1);
   assert.equal(saved.data.config.appearance.backgroundColor, '#102030');
   assert.deepEqual(saved.data.config.playback, config.playback);
   assert.equal(settingsManager.saved.length, 1);
+  assert.deepEqual(settingsManager.saved[0].config.display, config.display);
   assert.deepEqual(settingsManager.saved[0].config.playback, config.playback);
   assert.deepEqual(logo, {
     ok: true,
@@ -536,7 +545,7 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 9,
+      configVersion: 10,
       logo: { enabled: false, sizePercent: 100, url: null },
       standby: {
         backgroundMode: 'fixed',
@@ -597,7 +606,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 9,
+    configVersion: 10,
     logo: { enabled: false, sizePercent: 150, url: null },
     standby: {
       backgroundMode: 'fixed',
@@ -618,7 +627,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   );
   assert.doesNotMatch(
     JSON.stringify(windows.display.webContents.sent[0].payload),
-    /defaults|notice|playback|defaultDisplayId|selectionMode|fullscreen|userData/i,
+    /defaults|notice|playback|controlDisplayId|defaultDisplayId|selectionMode|fullscreen|userData/i,
   );
 });
 

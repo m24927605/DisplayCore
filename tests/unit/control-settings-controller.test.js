@@ -96,7 +96,7 @@ test('載入設定時驗證 snapshot，再交給 view 建立基準與預設值',
   assert.equal(loaded, true);
   assert.equal(harness.calls.snapshots.length, 1);
   assert.equal(harness.calls.snapshots[0].revision, 0);
-  assert.equal(harness.calls.snapshots[0].config.configVersion, 9);
+  assert.equal(harness.calls.snapshots[0].config.configVersion, 10);
   assert.equal(
     harness.calls.snapshots[0].config.appearance.messageLiquidEffectEnabled,
     true,
@@ -167,7 +167,7 @@ test('儲存設定在 await 前鎖定，連點只送出一筆並採用回傳 rev
   ]);
 });
 
-test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v9 snapshot', async () => {
+test('儲存成功 envelope 仍必須是完整 Logo 尺寸／standby／playback v10 snapshot', async () => {
   const { createSettingsController } = await loadModule();
   const invalidConfigs = [
     { ...defaultConfig, configVersion: 8 },

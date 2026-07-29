@@ -15,7 +15,7 @@ function createSnapshot(
   messageLiquidEffectEnabled = true,
 ) {
   return {
-    configVersion: 9,
+    configVersion: 10,
     logo: { enabled: false, url: null, sizePercent: logoSizePercent },
     standby: {
       backgroundMode: backgroundImageUrls.length > 1 ? 'slideshow' : 'fixed',

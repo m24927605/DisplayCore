@@ -1,7 +1,10 @@
 const SNAPSHOT_KEYS = Object.freeze([
   'configRevision',
+  'configuredControlDisplayId',
   'configuredDisplayId',
+  'controlUsingFallback',
   'displays',
+  'effectiveControlDisplayId',
   'effectiveDisplayId',
   'fullscreen',
   'hdmiConnectionStatus',
@@ -199,6 +202,15 @@ function normalizeSnapshot(candidate) {
     !TOPOLOGY_STATUSES.has(candidate.topologyStatus) ||
     !HDMI_STATUSES.has(candidate.hdmiConnectionStatus) ||
     !isBoundedDisplayArray(candidate.displays) ||
+    !(
+      candidate.effectiveControlDisplayId === null ||
+      isDisplayId(candidate.effectiveControlDisplayId)
+    ) ||
+    !(
+      candidate.configuredControlDisplayId === null ||
+      isDisplayId(candidate.configuredControlDisplayId)
+    ) ||
+    typeof candidate.controlUsingFallback !== 'boolean' ||
     !(candidate.effectiveDisplayId === null || isDisplayId(candidate.effectiveDisplayId)) ||
     !(candidate.configuredDisplayId === null || isDisplayId(candidate.configuredDisplayId)) ||
     !SELECTION_MODES.has(candidate.selectionMode) ||
@@ -230,18 +242,43 @@ function normalizeSnapshot(candidate) {
 
   const displayIds = new Set(displays.map(({ id }) => id));
   const primaryDisplayCount = displays.filter(({ isPrimary }) => isPrimary).length;
+  const configuredControlDisplayPresent = displayIds.has(
+    candidate.configuredControlDisplayId,
+  );
   const configuredDisplayPresent = displayIds.has(candidate.configuredDisplayId);
 
   if (
     displayIds.size !== displays.length ||
     primaryDisplayCount !== (displays.length > 0 ? 1 : 0) ||
-    (displays.length === 0 && candidate.effectiveDisplayId !== null) ||
-    (displays.length > 0 && !displayIds.has(candidate.effectiveDisplayId)) ||
+    (
+      displays.length === 0 &&
+      (
+        candidate.effectiveControlDisplayId !== null ||
+        candidate.effectiveDisplayId !== null
+      )
+    ) ||
+    (
+      displays.length > 0 &&
+      (
+        !displayIds.has(candidate.effectiveControlDisplayId) ||
+        !displayIds.has(candidate.effectiveDisplayId)
+      )
+    ) ||
     (candidate.selectionMode === 'auto' &&
-      (candidate.configuredDisplayId !== null || candidate.usingFallback)) ||
+      (
+        candidate.configuredControlDisplayId !== null ||
+        candidate.configuredDisplayId !== null ||
+        candidate.controlUsingFallback ||
+        candidate.usingFallback
+      )) ||
     (candidate.selectionMode === 'manual' &&
-      (candidate.configuredDisplayId === null ||
-        candidate.usingFallback === configuredDisplayPresent))
+      (
+        candidate.configuredControlDisplayId === null ||
+        candidate.configuredDisplayId === null ||
+        candidate.configuredControlDisplayId === candidate.configuredDisplayId ||
+        candidate.controlUsingFallback === configuredControlDisplayPresent ||
+        candidate.usingFallback === configuredDisplayPresent
+      ))
   ) {
     return null;
   }
@@ -251,6 +288,9 @@ function normalizeSnapshot(candidate) {
     topologyStatus: candidate.topologyStatus,
     hdmiConnectionStatus: candidate.hdmiConnectionStatus,
     displays: Object.freeze(displays),
+    effectiveControlDisplayId: candidate.effectiveControlDisplayId,
+    configuredControlDisplayId: candidate.configuredControlDisplayId,
+    controlUsingFallback: candidate.controlUsingFallback,
     effectiveDisplayId: candidate.effectiveDisplayId,
     configuredDisplayId: candidate.configuredDisplayId,
     selectionMode: candidate.selectionMode,

@@ -21,6 +21,9 @@ const {
 } = require('./config/standby-background-importer');
 const { ApplicationController } = require('./main/application-controller');
 const {
+  ControlPlacementController,
+} = require('./main/control-placement-controller');
+const {
   DisplayPlacementController,
 } = require('./main/display-placement-controller');
 const {
@@ -74,6 +77,7 @@ async function bootstrap() {
     app.setPath('userData', dataRoot);
   }
   let appSession = null;
+  let controlPlacementController = null;
   let displayPlacementController = null;
   let presentationService = null;
 
@@ -113,6 +117,18 @@ async function bootstrap() {
       console.error('[DisplayCore] 視窗自動復原失敗。', error);
       app.exit(1);
     },
+    configureControlWindow: isMainProcessSmokeTest
+      ? null
+      : async (controlWindow) => {
+        if (
+          !controlPlacementController ||
+          !(await controlPlacementController.applyToWindowWithRetry(
+            controlWindow,
+          ))
+        ) {
+          throw new Error('Control Window 無法套用目前管理位置。');
+        }
+      },
     configureDisplayWindow: isMainProcessSmokeTest
       ? null
       : async (displayWindow) => {
@@ -146,6 +162,12 @@ async function bootstrap() {
     screen,
     powerMonitor,
     hdmiDetector,
+    settingsManager,
+    logger: console,
+  });
+  controlPlacementController = new ControlPlacementController({
+    topologyService: displayTopologyService,
+    getControlWindow: () => windowManager.getControlWindow(),
     logger: console,
   });
   displayPlacementController = new DisplayPlacementController({
@@ -215,12 +237,14 @@ async function bootstrap() {
       });
       await settingsManager.initialize();
       await displayTopologyService.initialize();
+      controlPlacementController.initialize();
       displayPlacementController.initialize();
       ipcCoordinator.register();
     },
     shutdownRuntime: () => {
       ipcCoordinator.dispose();
       displayPlacementController.dispose();
+      controlPlacementController.dispose();
       displayTopologyService.dispose();
       presentationService.dispose();
     },

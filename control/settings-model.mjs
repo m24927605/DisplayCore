@@ -125,7 +125,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 9) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 10) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -406,6 +406,7 @@ function normalizeConfig(candidate) {
 
   if (
     !hasExactKeys(display, [
+      'controlDisplayId',
       'defaultDisplayId',
       'fullscreen',
       'renderResolution',
@@ -414,10 +415,17 @@ function normalizeConfig(candidate) {
     typeof display.fullscreen !== 'boolean' ||
     !RENDER_RESOLUTIONS.includes(display.renderResolution) ||
     (!isAuto && !isManual) ||
-    (isAuto && display.defaultDisplayId !== null) ||
+    (isAuto &&
+      (display.controlDisplayId !== null ||
+        display.defaultDisplayId !== null)) ||
     (isManual &&
-      (!Number.isSafeInteger(display.defaultDisplayId) ||
-        display.defaultDisplayId < 0))
+      (
+        !Number.isSafeInteger(display.controlDisplayId) ||
+        display.controlDisplayId < 0 ||
+        !Number.isSafeInteger(display.defaultDisplayId) ||
+        display.defaultDisplayId < 0 ||
+        display.controlDisplayId === display.defaultDisplayId
+      ))
   ) {
     return failure('display', '輸出螢幕設定格式不正確。');
   }
@@ -425,7 +433,7 @@ function normalizeConfig(candidate) {
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 9,
+      configVersion: 10,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -465,6 +473,7 @@ function normalizeConfig(candidate) {
       },
       display: {
         selectionMode: display.selectionMode,
+        controlDisplayId: display.controlDisplayId,
         defaultDisplayId: display.defaultDisplayId,
         fullscreen: display.fullscreen,
         renderResolution: display.renderResolution,
@@ -539,6 +548,8 @@ export function buildSettingsDraft({
   pageDurationSeconds,
   repeatMode,
   roundCount,
+  controlDisplayId,
+  defaultDisplayId,
   renderResolution,
 }) {
   const baselineResult = normalizeConfig(baseline);
@@ -579,8 +590,60 @@ export function buildSettingsDraft({
     }
   }
 
+  const controlUsesAuto = controlDisplayId === 'auto';
+  const displayUsesAuto = defaultDisplayId === 'auto';
+  let displayAssignment;
+
+  if (controlUsesAuto && displayUsesAuto) {
+    displayAssignment = {
+      selectionMode: 'auto',
+      controlDisplayId: null,
+      defaultDisplayId: null,
+    };
+  } else if (controlUsesAuto !== displayUsesAuto) {
+    return failure(
+      'display.controlDisplayId',
+      '請同時指定控制台與訊息螢幕，或同時使用自動分工。',
+    );
+  } else {
+    if (
+      typeof controlDisplayId !== 'string' ||
+      !INTEGER_NUMBER.test(controlDisplayId) ||
+      !Number.isSafeInteger(Number(controlDisplayId))
+    ) {
+      return failure(
+        'display.controlDisplayId',
+        '請選擇有效的控制台螢幕。',
+      );
+    }
+
+    if (
+      typeof defaultDisplayId !== 'string' ||
+      !INTEGER_NUMBER.test(defaultDisplayId) ||
+      !Number.isSafeInteger(Number(defaultDisplayId))
+    ) {
+      return failure(
+        'display.defaultDisplayId',
+        '請選擇有效的訊息螢幕。',
+      );
+    }
+
+    if (Number(controlDisplayId) === Number(defaultDisplayId)) {
+      return failure(
+        'display.defaultDisplayId',
+        '控制台與訊息畫面必須使用不同螢幕。',
+      );
+    }
+
+    displayAssignment = {
+      selectionMode: 'manual',
+      controlDisplayId: Number(controlDisplayId),
+      defaultDisplayId: Number(defaultDisplayId),
+    };
+  }
+
   const result = normalizeConfig({
-    configVersion: 9,
+    configVersion: 10,
     logo: {
       enabled: logoEnabled,
       path: logoPath,
@@ -616,9 +679,9 @@ export function buildSettingsDraft({
       repeatMode,
       roundCount: Number(roundCount),
     },
-    // 輸出螢幕仍自動管理；Control 只可修改邏輯排版解析度。
     display: {
-      ...baselineResult.value.display,
+      ...displayAssignment,
+      fullscreen: baselineResult.value.display.fullscreen,
       renderResolution,
     },
   });

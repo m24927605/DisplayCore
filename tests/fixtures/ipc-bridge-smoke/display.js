@@ -81,7 +81,7 @@ function isExpectedSettingsSnapshot(snapshot) {
       'revision',
       'standby',
     ]) &&
-    snapshot.configVersion === 9 &&
+    snapshot.configVersion === 10 &&
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'sizePercent', 'url']) &&

@@ -335,6 +335,44 @@ test('定位重試達上限後保留 error，不會無限循環', async () => {
   assert.equal(controller.getStatus().status, DISPLAY_PLACEMENT_STATUSES.ERROR);
 });
 
+test('執行中切換 Display 螢幕遇到暫時錯誤時也會有限重試', async () => {
+  const window = new FakeWindow();
+  const topology = new FakeTopologyService();
+  const { controller } = createController({
+    topologyService: topology,
+    getDisplayWindow: () => window,
+    logger: { warn() {} },
+    placementRetryAttempts: 2,
+    waitForRetry: () => Promise.resolve(),
+  });
+  controller.initialize();
+  let remainingFailures = 1;
+  const originalSetBounds = window.setBounds.bind(window);
+  window.setBounds = (bounds, animate) => {
+    window.throwOnBounds = remainingFailures > 0;
+    remainingFailures -= 1;
+    originalSetBounds(bounds, animate);
+  };
+  const nextTarget = createTargetDisplay({
+    id: 30,
+    bounds: Object.freeze({ x: 1920, y: 0, width: 1920, height: 1080 }),
+    workArea: Object.freeze({ x: 1920, y: 0, width: 1920, height: 1040 }),
+  });
+
+  topology.publish(
+    createTopologySnapshot({ effectiveDisplayId: 30, revision: 1 }),
+    nextTarget,
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  assert.equal(
+    window.calls.filter(({ method }) => method === 'setBounds').length,
+    3,
+  );
+  assert.equal(controller.getStatus().status, DISPLAY_PLACEMENT_STATUSES.APPLIED);
+  assert.equal(controller.getStatus().displayId, 30);
+});
+
 test('沒有有效目標時保持 pending，dispose 後不再回應拓樸事件', () => {
   const window = new FakeWindow();
   const topology = new FakeTopologyService({

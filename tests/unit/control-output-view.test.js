@@ -142,3 +142,19 @@ test('不完整狀態會安全拒絕並保留初始提示', async () => {
   assert.equal(document.getElementById('hdmi-status-text').textContent, '正在偵測 HDMI…');
   assert.equal(document.getElementById('output-target').textContent, '正在取得螢幕資訊…');
 });
+
+test('有效輸出快照會同步提供給設定頁面的螢幕選項', async () => {
+  const { createOutputView } = await loadViewModule();
+  const document = new FakeDocument();
+  const received = [];
+  const snapshot = createSnapshot();
+  const view = createOutputView({
+    document,
+    onOutputStatus: (nextSnapshot) => received.push(nextSnapshot),
+  });
+
+  assert.equal(view.renderOutputStatus(snapshot, createUx()), true);
+  assert.deepEqual(received, [snapshot]);
+  assert.equal(view.renderOutputStatus({ displays: null }, createUx()), false);
+  assert.deepEqual(received, [snapshot]);
+});

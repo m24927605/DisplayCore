@@ -43,19 +43,27 @@ function createDraftInput(config, overrides = {}) {
     pageDurationSeconds: String(config.playback.pageDurationSeconds),
     repeatMode: config.playback.repeatMode,
     roundCount: String(config.playback.roundCount),
+    controlDisplayId:
+      config.display.controlDisplayId === null
+        ? 'auto'
+        : String(config.display.controlDisplayId),
+    defaultDisplayId:
+      config.display.defaultDisplayId === null
+        ? 'auto'
+        : String(config.display.defaultDisplayId),
     renderResolution: config.display.renderResolution,
     ...overrides,
   };
 }
 
-test('canonical v9 設定預設啟用訊息倒酒效果，且只接受 boolean', async () => {
+test('canonical v10 設定預設啟用訊息倒酒效果，且只接受 boolean', async () => {
   const { CONFIG_VERSION, validateConfig } = require(
     '../../config/config-schema'
   );
   const config = await readDefaultConfig();
 
-  assert.equal(CONFIG_VERSION, 9);
-  assert.equal(config.configVersion, 9);
+  assert.equal(CONFIG_VERSION, 10);
+  assert.equal(config.configVersion, 10);
   assert.equal(config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(validateConfig(config).ok, true);
 
@@ -96,7 +104,7 @@ test('canonical v9 設定預設啟用訊息倒酒效果，且只接受 boolean',
   assert.equal(validateConfig(missing).ok, false);
 });
 
-test('磁碟 canonical v8 嚴格遷移至 v9，保留舊值並預設啟用效果', async () => {
+test('磁碟 canonical v8 嚴格遷移至 v10，保留舊值並預設啟用效果', async () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const defaults = await readDefaultConfig();
   const legacy = structuredClone(defaults);
@@ -104,12 +112,13 @@ test('磁碟 canonical v8 嚴格遷移至 v9，保留舊值並預設啟用效果
   legacy.appearance.backgroundColor = '#123456';
   legacy.playback.roundCount = 27;
   delete legacy.appearance.messageLiquidEffectEnabled;
+  delete legacy.display.controlDisplayId;
 
   const result = migrateStoredConfig(legacy, defaults);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 9);
+  assert.equal(result.value.configVersion, 10);
   assert.equal(result.value.appearance.backgroundColor, '#123456');
   assert.equal(result.value.appearance.messageLiquidEffectEnabled, true);
   assert.equal(result.value.playback.roundCount, 27);
@@ -150,7 +159,7 @@ test('Control 草稿可儲存關閉值，並將開關差異視為未儲存變更
   const result = buildSettingsDraft(createDraftInput(config));
 
   assert.equal(result.ok, true);
-  assert.equal(result.config.configVersion, 9);
+  assert.equal(result.config.configVersion, 10);
   assert.equal(result.config.appearance.messageLiquidEffectEnabled, false);
   assert.equal(settingsEqual(config, result.config), false);
   assert.equal(

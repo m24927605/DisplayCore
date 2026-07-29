@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 9;
+const CONFIG_VERSION = 10;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -102,6 +102,7 @@ const PLAYBACK_KEYS = Object.freeze([
   'roundCount',
 ]);
 const DISPLAY_KEYS = Object.freeze([
+  'controlDisplayId',
   'defaultDisplayId',
   'fullscreen',
   'renderResolution',
@@ -484,22 +485,39 @@ function validateDisplay(display) {
 
   if (
     display.selectionMode === DISPLAY_SELECTION_MODES.AUTO &&
-    display.defaultDisplayId !== null
+    (
+      display.controlDisplayId !== null ||
+      display.defaultDisplayId !== null
+    )
   ) {
     return validationFailure(
-      '自動選擇螢幕時 defaultDisplayId 必須為 null。',
-      'display.defaultDisplayId',
+      '自動分配螢幕時不得保存控制台或訊息螢幕 ID。',
+      'display.controlDisplayId',
     );
   }
 
   if (
     display.selectionMode === DISPLAY_SELECTION_MODES.MANUAL &&
-    (!Number.isSafeInteger(display.defaultDisplayId) ||
-      display.defaultDisplayId < 0)
+    (
+      !Number.isSafeInteger(display.controlDisplayId) ||
+      display.controlDisplayId < 0 ||
+      !Number.isSafeInteger(display.defaultDisplayId) ||
+      display.defaultDisplayId < 0
+    )
   ) {
     return validationFailure(
-      '手動選擇螢幕時必須提供有效的螢幕 ID。',
-      'display.defaultDisplayId',
+      '手動分配螢幕時必須同時提供有效的控制台與訊息螢幕 ID。',
+      'display.controlDisplayId',
+    );
+  }
+
+  if (
+    display.selectionMode === DISPLAY_SELECTION_MODES.MANUAL &&
+    display.controlDisplayId === display.defaultDisplayId
+  ) {
+    return validationFailure(
+      '控制台與訊息畫面必須指定不同螢幕。',
+      'display.controlDisplayId',
     );
   }
 
@@ -507,6 +525,7 @@ function validateDisplay(display) {
     ok: true,
     value: {
       selectionMode: display.selectionMode,
+      controlDisplayId: display.controlDisplayId,
       defaultDisplayId: display.defaultDisplayId,
       fullscreen: display.fullscreen,
       renderResolution: display.renderResolution,
@@ -534,7 +553,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v9。 */
+/** 驗證、正規化並深層複製完整的 canonical config v10。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');

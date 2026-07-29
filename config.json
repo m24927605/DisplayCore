@@ -1,5 +1,5 @@
 {
-  "configVersion": 9,
+  "configVersion": 10,
   "logo": {
     "enabled": false,
     "path": null,
@@ -39,6 +39,7 @@
   },
   "display": {
     "selectionMode": "auto",
+    "controlDisplayId": null,
     "defaultDisplayId": null,
     "fullscreen": true,
     "renderResolution": "auto"

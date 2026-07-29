@@ -214,10 +214,13 @@ function createTopologySnapshot(overrides = {}) {
       isInternal: false,
     }],
     effectiveDisplayId: 2,
+    effectiveControlDisplayId: 1,
     configuredDisplayId: null,
+    configuredControlDisplayId: null,
     selectionMode: 'auto',
     fullscreen: true,
     usingFallback: false,
+    controlUsingFallback: false,
     secondDisplayConnected: true,
     configRevision: 0,
     revision: 0,
@@ -381,7 +384,16 @@ async function openPlaybackSettings(settingsManager) {
       'input[name="repeat-mode"][value="finite"]'
     ).checked,
     hasManualDisplay: document.getElementById('display-manual-input') !== null,
-    hasDisplaySelect: document.getElementById('default-display-select') !== null,
+    controlDisplay:
+      document.getElementById('control-display-select')?.value ?? null,
+    messageDisplay:
+      document.getElementById('default-display-select')?.value ?? null,
+    controlDisplayOptions: [...document.getElementById(
+      'control-display-select'
+    ).options].map(({ value }) => value),
+    messageDisplayOptions: [...document.getElementById(
+      'default-display-select'
+    ).options].map(({ value }) => value),
     hasFullscreenToggle:
       document.getElementById('display-fullscreen-input') !== null,
     logoSizePercent:
@@ -433,7 +445,10 @@ async function openPlaybackSettings(settingsManager) {
     rounds: '1',
     finiteChecked: true,
     hasManualDisplay: false,
-    hasDisplaySelect: false,
+    controlDisplay: 'auto',
+    messageDisplay: 'auto',
+    controlDisplayOptions: ['auto', '1', '2'],
+    messageDisplayOptions: ['auto', '1', '2'],
     hasFullscreenToggle: false,
     logoSizePercent: '100',
     logoSizeMinimum: '50',

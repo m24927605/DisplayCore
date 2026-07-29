@@ -153,6 +153,13 @@
           </fieldset>
 
           <fieldset id="behavior-settings-fieldset">
+            <select id="control-display-select">
+              <option value="auto">自動（Windows 主螢幕）</option>
+            </select>
+            <select id="default-display-select">
+              <option value="auto">自動（外接螢幕優先）</option>
+            </select>
+            <p id="display-assignment-error" hidden></p>
             <input id="date-time-enabled-input" type="checkbox">
             <input
               id="clock-time-input"
@@ -187,7 +194,7 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 9,
+        configVersion: 10,
         logo: Object.freeze({
           enabled: false,
           path: null,
@@ -222,6 +229,7 @@
         }),
         display: Object.freeze({
           selectionMode: 'auto',
+          controlDisplayId: null,
           defaultDisplayId: null,
           fullscreen: true,
           renderResolution: 'auto',
@@ -246,6 +254,21 @@
       };
 
       const view = createSettingsView({ document });
+      view.renderOutputTopology({
+        displays: [{
+          id: 1,
+          label: '管理螢幕',
+          width: 1920,
+          height: 1080,
+          isPrimary: true,
+        }, {
+          id: 2,
+          label: 'HDMI 電視',
+          width: 3840,
+          height: 2160,
+          isPrimary: false,
+        }],
+      });
       view.connectController({
         async loadSettings() {
           view.renderSettingsSnapshot(snapshot);
@@ -258,7 +281,10 @@
       });
       view.bind();
 
-      async function openAndCloseSettings({ dirtyPlayback = false } = {}) {
+      async function openAndCloseSettings({
+        dirtyPlayback = false,
+        dirtyAssignment = false,
+      } = {}) {
         const closeSettled = new Promise((resolve) => {
           dialog.addEventListener(
             'close',
@@ -291,9 +317,18 @@
         const messageLiquidEffect = document.getElementById(
           'message-liquid-effect-enabled-input',
         );
+        const controlDisplay = document.getElementById(
+          'control-display-select',
+        );
+        const defaultDisplay = document.getElementById(
+          'default-display-select',
+        );
         const dirtyStatus = document.getElementById('settings-dirty-status');
         const closeButton = document.getElementById('settings-close-button');
         const saveButton = document.getElementById('save-settings-button');
+        const connectedDisplayOptions = [...defaultDisplay.options].map(
+          ({ value, textContent }) => ({ value, textContent }),
+        );
 
         if (dirtyPlayback) {
           logoSize.value = '150';
@@ -316,11 +351,36 @@
           repeatContinuous.dispatchEvent(new Event('change', { bubbles: true }));
         }
 
+        if (dirtyAssignment) {
+          controlDisplay.value = '1';
+          controlDisplay.dispatchEvent(new Event('change', { bubbles: true }));
+          defaultDisplay.value = '2';
+          defaultDisplay.dispatchEvent(new Event('change', { bubbles: true }));
+          view.renderOutputTopology({
+            displays: [{
+              id: 1,
+              label: '管理螢幕',
+              width: 1920,
+              height: 1080,
+              isPrimary: true,
+            }],
+          });
+        }
+
         const beforeClose = {
           dirtyStatus: dirtyStatus.textContent,
           closeButtonText: closeButton.textContent,
           saveDisabled: saveButton.disabled,
           messageLiquidEffectEnabled: messageLiquidEffect.checked,
+          controlDisplayId: controlDisplay.value,
+          defaultDisplayId: defaultDisplay.value,
+          connectedDisplayOptions,
+          controlOptions: [...controlDisplay.options].map(
+            ({ value, textContent }) => ({ value, textContent }),
+          ),
+          displayOptions: [...defaultDisplay.options].map(
+            ({ value, textContent }) => ({ value, textContent }),
+          ),
         };
 
         document.getElementById('settings-close-button').click();
@@ -344,6 +404,8 @@
             messageBackgroundPreset: messageBackground.value,
             standbyClockSizePercent: standbyClockSize.value,
             messageLiquidEffectEnabled: messageLiquidEffect.checked,
+            controlDisplayId: controlDisplay.value,
+            defaultDisplayId: defaultDisplay.value,
           },
         };
       }
@@ -352,7 +414,10 @@
         standardTrigger.focus();
         const clean = await openAndCloseSettings();
         standardTrigger.focus();
-        const dirty = await openAndCloseSettings({ dirtyPlayback: true });
+        const dirty = await openAndCloseSettings({
+          dirtyPlayback: true,
+          dirtyAssignment: true,
+        });
         return { clean, dirty };
       };
     </script>
