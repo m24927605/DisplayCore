@@ -67,6 +67,19 @@ test('GitHub Actions 可在 Windows x64 建置並驗證可選路徑的 DisplayCo
   assert.match(workflow, /--displaycore-main-smoke-test/);
   assert.match(workflow, /Get-ChildItem[\s\S]*Uninstall\*\.exe/);
   assert.match(workflow, /WaitForExit\(\$TimeoutSeconds \* 1000\)/);
+  assert.match(
+    workflow,
+    /\$tempUninstaller = Join-Path[\s\S]*"DisplayCoreUninstaller-\$PID\.exe"/,
+  );
+  assert.match(
+    workflow,
+    /Copy-Item[\s\S]*-LiteralPath \$uninstaller\.FullName[\s\S]*-Destination \$tempUninstaller/,
+  );
+  assert.match(workflow, /"_\?=\$customInstallDirectory"/);
+  assert.match(
+    workflow,
+    /if \(Test-Path -LiteralPath \$customInstallDirectory -PathType Container\)/,
+  );
   assert.match(workflow, /custom_install_smoke=passed/);
   assert.match(workflow, /ReadUInt16\(\) -ne 0x5A4D/);
   assert.match(workflow, /ReadUInt32\(\) -ne 0x00004550/);
