@@ -57,7 +57,10 @@ test('package.json 定義 DisplayCore 與 Electron Forge 指令', async () => {
     'electron-forge start -- --displaycore-main-smoke-test',
   );
   assert.equal(packageJson.scripts.package, 'electron-forge package');
-  assert.equal(packageJson.scripts.make, 'electron-forge make');
+  assert.equal(
+    packageJson.scripts.make,
+    'npm run package:windows && npm run installer:windows',
+  );
   assert.equal(packageJson.scripts.test, 'node --test');
   assert.equal(packageJson.engines.node, '>=24.18.0 <25');
   assert.match(packageJson.devDependencies.electron, /^\d+\.\d+\.\d+$/);
@@ -136,6 +139,7 @@ test('Electron 封裝排除開發資料與版本控制中的安裝檔', () => {
   assert.equal(isIgnored('/assets/legacy-logo.ait'), true);
   assert.equal(isIgnored('/.gstack/qa-reports/baseline.json'), true);
   assert.equal(isIgnored('/.github/workflows/windows-installer.yml'), true);
+  assert.equal(isIgnored('/electron-builder.config.js'), true);
   assert.equal(
     isIgnored('/release/windows-x64/DisplayCoreSetup.exe'),
     true,

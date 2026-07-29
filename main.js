@@ -13,7 +13,6 @@ const {
   screen,
   session,
 } = require('electron');
-const isSquirrelStartup = require('electron-squirrel-startup');
 
 const { ConfigManager } = require('./config/config-manager');
 const { LogoImporter } = require('./config/logo-importer');
@@ -55,12 +54,6 @@ const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
  * 設定持久化與顯示排程仍由各自模組處理。
  */
 async function bootstrap() {
-  // Squirrel.Windows 安裝或解除安裝時會短暫啟動程式，此時不可建立視窗。
-  if (isSquirrelStartup) {
-    app.quit();
-    return;
-  }
-
   // 保留第 2 步的純 Electron 環境煙霧測試，不建立 Chromium 視窗。
   if (process.argv.includes(SCAFFOLD_SMOKE_FLAG)) {
     await app.whenReady();

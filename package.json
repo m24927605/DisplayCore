@@ -17,19 +17,18 @@
     "test": "node --test",
     "test:ci:windows": "node --test \"tests/unit/*.test.js\" tests/integration/control-settings-focus.regression-1.test.js tests/integration/control-window-smoke.test.js tests/integration/ipc-bridge-smoke.test.js tests/integration/main-process-smoke.test.js tests/integration/message-liquid-lifetime-qa.test.js",
     "package": "electron-forge package",
-    "make": "electron-forge make"
+    "package:windows": "electron-forge package --platform=win32 --arch=x64",
+    "installer:windows": "electron-builder --config electron-builder.config.js --win nsis --x64 --prepackaged out/DisplayCore-win32-x64 --publish never",
+    "make": "npm run package:windows && npm run installer:windows"
   },
   "overrides": {
     "tar": "7.5.20",
     "tmp": "0.2.7"
   },
-  "dependencies": {
-    "electron-squirrel-startup": "1.0.1"
-  },
   "devDependencies": {
     "@electron-forge/cli": "7.11.2",
-    "@electron-forge/maker-squirrel": "7.11.2",
     "@electron/fuses": "2.1.3",
-    "electron": "43.1.1"
+    "electron": "43.1.1",
+    "electron-builder": "26.15.7"
   }
 }
