@@ -8,7 +8,8 @@ const {
 /**
  * Electron Forge 建置設定。
  *
- * DisplayCore 只產生 Windows Squirrel 安裝程式，不設定發布或自動更新服務。
+ * Forge 負責安全封裝與 Electron Fuses；Windows 安裝精靈由 NSIS 對封裝結果
+ * 建立完全離線的 DisplayCoreSetup.exe。
  */
 module.exports = {
   packagerConfig: {
@@ -22,6 +23,7 @@ module.exports = {
       /^\/\.gstack(?:\/|$)/,
       /^\/\.github(?:\/|$)/,
       /^\/release(?:\/|$)/,
+      /^\/electron-builder\.config\.js$/,
       /^\/node_modules\/.*\/(?:test|tests|coverage)(?:\/|$)/,
       /^\/(?:.*\/)?\.?ait(?:\/|$)/i,
       /\.ait$/i,
@@ -41,13 +43,5 @@ module.exports = {
     postPackage: async (forgeConfig, packageResult) =>
       finalizeDarwinSignature({ forgeConfig, packageResult }),
   },
-  makers: [
-    {
-      name: '@electron-forge/maker-squirrel',
-      config: {
-        name: 'displaycore',
-        setupExe: 'DisplayCoreSetup.exe',
-      },
-    },
-  ],
+  makers: [],
 };

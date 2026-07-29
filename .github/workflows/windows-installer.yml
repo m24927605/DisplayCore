@@ -40,14 +40,14 @@ jobs:
       - name: Run Windows CI test suite
         run: npm run test:ci:windows
 
-      - name: Build Squirrel.Windows installer
-        run: npm run make -- --platform=win32 --arch=x64
+      - name: Build configurable NSIS installer
+        run: npm run make
 
       - name: Verify installer and create checksum
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $source = 'out/make/squirrel.windows/x64/DisplayCoreSetup.exe'
+          $source = 'out/make/nsis/x64/DisplayCoreSetup.exe'
 
           if (-not (Test-Path -LiteralPath $source -PathType Leaf)) {
             throw "找不到 Windows 安裝程式：$source"
@@ -94,8 +94,35 @@ jobs:
             }
           }
 
-          # Squirrel 的 Setup 是通用 bootstrapper，可能是 x86；真正的應用程式
-          # payload 才必須符合本工作流指定的 x64 架構。
+          function Invoke-CheckedProcess {
+            param(
+              [Parameter(Mandatory)]
+              [string] $Path,
+              [string[]] $Arguments = @(),
+              [int] $TimeoutSeconds = 120
+            )
+
+            $process = Start-Process `
+              -FilePath $Path `
+              -ArgumentList $Arguments `
+              -PassThru
+
+            try {
+              if (-not $process.WaitForExit($TimeoutSeconds * 1000)) {
+                Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+                throw "$Path 執行超過 $TimeoutSeconds 秒，已強制停止。"
+              }
+
+              if ($process.ExitCode -ne 0) {
+                throw "$Path 執行失敗，結束代碼：$($process.ExitCode)"
+              }
+            } finally {
+              $process.Dispose()
+            }
+          }
+
+          # NSIS 的 Setup 是通用 bootstrapper，可能是 x86；真正的應用程式
+          # payload 與安裝後執行檔才必須符合本工作流指定的 x64 架構。
           $setupMachine = Get-PeMachine -Path $source
           if ($setupMachine -notin @(0x014c, 0x8664)) {
             throw "DisplayCoreSetup.exe 使用不支援的 PE machine：0x$($setupMachine.ToString('x4'))"
@@ -109,6 +136,59 @@ jobs:
           $payloadMachine = Get-PeMachine -Path $payload
           if ($payloadMachine -ne 0x8664) {
             throw "DisplayCore.exe 不是 Windows x64 執行檔：0x$($payloadMachine.ToString('x4'))"
+          }
+
+          # NSIS 的 /D= 參數必須放在最後。實際安裝至非預設目錄，
+          # 驗證安裝器不只顯示選項，也確實遵守使用者指定的路徑。
+          $customInstallDirectory = Join-Path $env:RUNNER_TEMP 'DisplayCore Custom Install'
+          Remove-Item -LiteralPath $customInstallDirectory -Recurse -Force -ErrorAction SilentlyContinue
+          Invoke-CheckedProcess `
+            -Path (Resolve-Path -LiteralPath $source).Path `
+            -Arguments @('/S', "/D=$customInstallDirectory")
+
+          $installedPayload = Join-Path $customInstallDirectory 'DisplayCore.exe'
+          if (-not (Test-Path -LiteralPath $installedPayload -PathType Leaf)) {
+            throw "安裝器未將 DisplayCore.exe 安裝至指定路徑：$customInstallDirectory"
+          }
+
+          $installedAsar = Join-Path $customInstallDirectory 'resources/app.asar'
+          if (-not (Test-Path -LiteralPath $installedAsar -PathType Leaf)) {
+            throw "自訂路徑安裝內容缺少 resources/app.asar。"
+          }
+
+          $installedPayloadMachine = Get-PeMachine -Path $installedPayload
+          if ($installedPayloadMachine -ne 0x8664) {
+            throw "自訂路徑中的 DisplayCore.exe 不是 Windows x64 執行檔：0x$($installedPayloadMachine.ToString('x4'))"
+          }
+
+          Invoke-CheckedProcess `
+            -Path $installedPayload `
+            -Arguments @('--displaycore-main-smoke-test') `
+            -TimeoutSeconds 60
+
+          $uninstaller = Get-ChildItem `
+            -LiteralPath $customInstallDirectory `
+            -Filter 'Uninstall*.exe' `
+            -File |
+              Select-Object -First 1
+          if ($null -eq $uninstaller) {
+            throw "自訂路徑中找不到 DisplayCore 解除安裝程式。"
+          }
+
+          Invoke-CheckedProcess `
+            -Path $uninstaller.FullName `
+            -Arguments @('/S') `
+            -TimeoutSeconds 120
+
+          $uninstallDeadline = (Get-Date).AddSeconds(30)
+          while (
+            (Test-Path -LiteralPath $installedPayload -PathType Leaf) -and
+            (Get-Date) -lt $uninstallDeadline
+          ) {
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path -LiteralPath $installedPayload -PathType Leaf) {
+            throw "解除安裝完成後 DisplayCore.exe 仍留在自訂路徑。"
           }
 
           $releaseDirectory = 'release/windows-x64'
@@ -135,6 +215,10 @@ jobs:
             "image_version=$env:ImageVersion"
             "node=$(node --version)"
             "npm=$(npm --version)"
+            'installer=nsis-assisted'
+            'custom_install_directory=true'
+            'installation_scope=per_machine'
+            'custom_install_smoke=passed'
             'authenticode=unsigned'
           ) |
             Set-Content `
@@ -147,6 +231,7 @@ jobs:
           "- SHA-256: ``$hash``" >> $env:GITHUB_STEP_SUMMARY
           "- Commit: ``$env:GITHUB_SHA``" >> $env:GITHUB_STEP_SUMMARY
           "- Runner image: ``$env:ImageOS $env:ImageVersion``" >> $env:GITHUB_STEP_SUMMARY
+          "- Custom installation, launch and uninstall: verified" >> $env:GITHUB_STEP_SUMMARY
           "- Authenticode: unsigned" >> $env:GITHUB_STEP_SUMMARY
 
       - name: Upload Windows installer

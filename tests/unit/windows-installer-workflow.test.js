@@ -25,7 +25,7 @@ const windowsCiIntegrationTests = [
   'tests/integration/message-liquid-lifetime-qa.test.js',
 ];
 
-test('GitHub Actions 可在 Windows x64 建置並保存 DisplayCoreSetup.exe', async () => {
+test('GitHub Actions 可在 Windows x64 建置並驗證可選路徑的 DisplayCoreSetup.exe', async () => {
   // Windows checkout 可能將文字檔轉成 CRLF；工作流契約不應依賴換行格式。
   const workflow = (await readFile(workflowPath, 'utf8')).replace(/\r\n?/gu, '\n');
   const packageJson = JSON.parse(
@@ -44,14 +44,30 @@ test('GitHub Actions 可在 Windows x64 建置並保存 DisplayCoreSetup.exe', a
   assert.match(workflow, /node-version-file: \.nvmrc/);
   assert.match(workflow, /^\s{8}run: npm ci$/m);
   assert.match(workflow, /^\s{8}run: npm run test:ci:windows$/m);
+  assert.match(workflow, /^\s{8}run: npm run make$/m);
+  assert.match(workflow, /out\/make\/nsis\/x64\/DisplayCoreSetup\.exe/);
+  assert.match(workflow, /\/S/);
+  assert.match(workflow, /\/D=\$customInstallDirectory/);
   assert.match(
     workflow,
-    /^\s{8}run: npm run make -- --platform=win32 --arch=x64$/m,
+    /\$customInstallDirectory = Join-Path \$env:RUNNER_TEMP 'DisplayCore Custom Install'/,
   );
   assert.match(
     workflow,
-    /out\/make\/squirrel\.windows\/x64\/DisplayCoreSetup\.exe/,
+    /\$installedPayload = Join-Path \$customInstallDirectory 'DisplayCore\.exe'/,
   );
+  assert.match(
+    workflow,
+    /Test-Path -LiteralPath \$installedPayload -PathType Leaf/,
+  );
+  assert.match(
+    workflow,
+    /\$installedAsar = Join-Path \$customInstallDirectory 'resources\/app\.asar'/,
+  );
+  assert.match(workflow, /--displaycore-main-smoke-test/);
+  assert.match(workflow, /Get-ChildItem[\s\S]*Uninstall\*\.exe/);
+  assert.match(workflow, /WaitForExit\(\$TimeoutSeconds \* 1000\)/);
+  assert.match(workflow, /custom_install_smoke=passed/);
   assert.match(workflow, /ReadUInt16\(\) -ne 0x5A4D/);
   assert.match(workflow, /ReadUInt32\(\) -ne 0x00004550/);
   assert.match(
@@ -100,12 +116,49 @@ test('GitHub Actions 可在 Windows x64 建置並保存 DisplayCoreSetup.exe', a
   assert.doesNotMatch(windowsCiCommand, /sand-webgl-renderer-smoke/u);
 });
 
-test('Forge 固定使用 DisplayCoreSetup.exe 作為 Squirrel 安裝檔名', () => {
+test('NSIS 使用安裝精靈並允許管理員選擇 DisplayCore 安裝路徑', async () => {
+  const packageJson = require('../../package.json');
+  const builderConfig = require('../../electron-builder.config');
   const forgeConfig = require('../../forge.config');
-  const squirrelMaker = forgeConfig.makers.find(
-    (maker) => maker.name === '@electron-forge/maker-squirrel',
-  );
+  const mainSource = await readFile(path.join(projectRoot, 'main.js'), 'utf8');
 
-  assert.ok(squirrelMaker);
-  assert.equal(squirrelMaker.config.setupExe, 'DisplayCoreSetup.exe');
+  assert.equal(
+    packageJson.scripts.make,
+    'npm run package:windows && npm run installer:windows',
+  );
+  assert.equal(
+    packageJson.scripts['package:windows'],
+    'electron-forge package --platform=win32 --arch=x64',
+  );
+  assert.equal(
+    packageJson.scripts['installer:windows'],
+    'electron-builder --config electron-builder.config.js --win nsis --x64 --prepackaged out/DisplayCore-win32-x64 --publish never',
+  );
+  assert.equal(packageJson.devDependencies['electron-builder'], '26.15.7');
+  assert.equal(
+    packageJson.devDependencies['@electron-forge/maker-squirrel'],
+    undefined,
+  );
+  assert.equal(
+    packageJson.dependencies?.['electron-squirrel-startup'],
+    undefined,
+  );
+  assert.doesNotMatch(mainSource, /electron-squirrel-startup/u);
+
+  assert.deepEqual(forgeConfig.makers, []);
+  assert.equal(builderConfig.appId, 'com.displaycore.desktop');
+  assert.equal(builderConfig.productName, 'DisplayCore');
+  assert.equal(builderConfig.directories.output, 'out/make/nsis/x64');
+  assert.deepEqual(builderConfig.win.target, [
+    {
+      target: 'nsis',
+      arch: ['x64'],
+    },
+  ]);
+  assert.equal(builderConfig.win.executableName, 'DisplayCore');
+  assert.equal(builderConfig.nsis.artifactName, 'DisplayCoreSetup.${ext}');
+  assert.equal(builderConfig.nsis.oneClick, false);
+  assert.equal(builderConfig.nsis.perMachine, true);
+  assert.equal(builderConfig.nsis.allowToChangeInstallationDirectory, true);
+  assert.equal(builderConfig.nsis.runAfterFinish, false);
 });
