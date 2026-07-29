@@ -192,6 +192,16 @@ test('npm run make 同時產生可選路徑的 NSIS EXE 與原生 MSI', async ()
     },
   ]);
   assert.equal(builderConfig.win.executableName, 'DisplayCore');
+  assert.equal(builderConfig.win.icon, 'assets/app-icon.png');
+  const appIcon = await readFile(
+    path.join(projectRoot, builderConfig.win.icon),
+  );
+  assert.deepEqual(
+    Array.from(appIcon.subarray(0, 8)),
+    [0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a],
+  );
+  assert.equal(appIcon.readUInt32BE(16), 512);
+  assert.equal(appIcon.readUInt32BE(20), 512);
   assert.equal(builderConfig.nsis.artifactName, 'DisplayCoreSetup.${ext}');
   assert.equal(builderConfig.nsis.oneClick, false);
   assert.equal(builderConfig.nsis.perMachine, true);

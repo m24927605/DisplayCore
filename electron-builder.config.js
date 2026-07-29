@@ -14,6 +14,8 @@ module.exports = {
   },
   win: {
     executableName: 'DisplayCore',
+    // MSI 捷徑必須有實體圖示，否則 WiX 會產生找不到 Icon 的連結錯誤。
+    icon: 'assets/app-icon.png',
     target: [
       {
         target: 'nsis',
