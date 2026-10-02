@@ -564,7 +564,7 @@ test('遷移拒絕畸形 v1 至 v10、未知欄位與未知版本', () => {
     { ...v3, logo: { ...v3.logo, sizePercent: 100 } },
     {
       ...v3,
-      display: { ...v3.display, renderResolution: '1280x720' },
+      display: { ...v3.display, renderResolution: '1024x768' },
     },
     { ...v4, unexpected: true },
     { ...v4, standby: { backgroundImagePath: null } },
@@ -597,7 +597,7 @@ test('遷移拒絕畸形 v1 至 v10、未知欄位與未知版本', () => {
     { ...v9, unexpected: true },
     {
       ...v9,
-      display: { ...v9.display, renderResolution: '1280x720' },
+      display: { ...v9.display, renderResolution: '1024x768' },
     },
     { ...v9, configVersion: 10 },
     { ...v10, unexpected: true },

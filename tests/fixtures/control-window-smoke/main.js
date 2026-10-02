@@ -476,6 +476,7 @@ async function openPlaybackSettings(settingsManager) {
     renderResolution: 'auto',
     renderResolutionOptions: [
       'auto',
+      '1280x720',
       '1366x768',
       '1600x900',
       '1920x1080',

@@ -232,6 +232,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
   assert.equal(typeof config.display.fullscreen, 'boolean');
   assert.ok([
     'auto',
+    '1280x720',
     '1366x768',
     '1600x900',
     '1920x1080',

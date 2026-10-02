@@ -95,8 +95,8 @@ npm run make
 - 管理員可用 `HH:mm:ss` 校正 DisplayCore 顯示時間；程式只保存日內偏移，不修改 Windows 系統時間，也不需要網路或系統管理員權限。
 - 一般畫面會為同列的 Logo 與右上角時間保留比例式頂部安全區；臨檢滿屏會隱藏所有裝飾資訊。
 - 一般與自定義訊息固定置頂靠左；營運訊息「請輕聲細語」、555／888 與待機時間維持置中或其專用位置。對齊方式由 Main 明確傳遞，Display 不解析文字內容猜測用途。
-- 管理員可選自動、1366×768、1600×900、1920×1080、2560×1440 或 3840×2160 排版基準；Display 以等比例 contain 置中縮放，不裁切或拉伸。排版基準與下方的螢幕分工彼此獨立，兩者都不變更 Windows 的實體輸出模式。
-- 真實 Electron Renderer 自動驗證 1366×768、1600×900、1920×1080、2560×1440 與 3840×2160，包含溢位、重疊、字體縮放、跑馬燈切換及即時設定更新。
+- 管理員可選自動、1280×720、1366×768、1600×900、1920×1080、2560×1440 或 3840×2160 排版基準；Display 以等比例 contain 置中縮放，不裁切或拉伸。排版基準與下方的螢幕分工彼此獨立，兩者都不變更 Windows 的實體輸出模式。
+- 真實 Electron Renderer 自動驗證 1280×720、1366×768、1600×900、1920×1080、2560×1440 與 3840×2160，包含溢位、重疊、字體縮放、跑馬燈切換及即時設定更新。
 - Main Process 透過 Electron `screen` 維護可用螢幕拓樸，監聽新增、移除、尺寸／DPI 變更，以及系統恢復與解鎖。
 - 預設自動分工由 Control 優先使用 Windows 主螢幕、Display 優先使用外接螢幕；有兩台可用螢幕時會避免兩個視窗重疊。設定頁也可分別指定兩個角色使用的螢幕。
 - 指定螢幕暫時拔除時只回退目前有效位置，不清除保存的硬體 ID；重新接入後會自動返回原指派。
@@ -106,7 +106,7 @@ npm run make
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
 - 完整自動化測試覆蓋播放設定持久化、一鍵顯示、Logo 最高 1000%／透明度處理／高亮、單一連續沙丘侵蝕面且不使用 slide／wipe 的待機背景輪播、一般訊息固定三槽、跨頁到期提醒色階、內嵌 Didot 數字、雙螢幕分工與拔插回復、原生全螢幕回歸、離線校時、排版解析度、顯示清單獨立分頁與刪除、555／888 無限時、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
-- 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與五種目標解析度，且沒有 Renderer console error 或 warning。
+- 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與六種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait`、`.gstack` QA 產物或 `.github` CI 設定；Forge 規則有正例及 `wait/` 負例測試。
 - 正式執行依賴的 `npm audit --omit=dev` 為 0 vulnerabilities；開發／封裝工具鏈仍有上游 advisories，但不會進入離線 runtime。封裝已驗證安全 Electron fuses、ASAR integrity 與 macOS code signature。

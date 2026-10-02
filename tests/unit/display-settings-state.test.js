@@ -336,7 +336,7 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
       emergency: { ...valid.emergency, releaseBackgroundColor: '#00000080' },
     },
     { ...valid, marquee: { enabled: 1 } },
-    { ...valid, display: { renderResolution: '1280x720' } },
+    { ...valid, display: { renderResolution: '1024x768' } },
     {
       ...valid,
       display: { renderResolution: '1920x1080', selectionMode: 'auto' },

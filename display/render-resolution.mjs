@@ -1,4 +1,5 @@
 const RESOLUTION_PROFILES = Object.freeze({
+  '1280x720': Object.freeze({ width: 1280, height: 720 }),
   '1366x768': Object.freeze({ width: 1366, height: 768 }),
   '1600x900': Object.freeze({ width: 1600, height: 900 }),
   '1920x1080': Object.freeze({ width: 1920, height: 1080 }),

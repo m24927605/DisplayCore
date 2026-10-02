@@ -296,6 +296,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
   for (const resolution of [
     'auto',
+    '1280x720',
     '1366x768',
     '1600x900',
     '1920x1080',

@@ -948,6 +948,7 @@ async function verifyLogoSizeScaling(mode) {
   }
 
   const maximumResolutions = [
+    [1280, 720],
     [1366, 768],
     [1600, 900],
     [1920, 1080],
@@ -1055,6 +1056,7 @@ async function verifyLogoSizeScaling(mode) {
 
 async function verifyResponsiveResolutions() {
   const resolutions = [
+    [1280, 720],
     [1366, 768],
     [1600, 900],
     [1920, 1080],
@@ -1230,6 +1232,7 @@ async function verifyResponsiveResolutions() {
 async function verifyConfiguredRenderResolutions() {
   const viewport = { width: 1600, height: 900 };
   const profiles = [
+    ['1280x720', 1280, 720],
     ['1366x768', 1366, 768],
     ['1600x900', 1600, 900],
     ['1920x1080', 1920, 1080],

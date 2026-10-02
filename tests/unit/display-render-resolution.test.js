@@ -27,9 +27,10 @@ test('auto 使用目前 viewport 作為邏輯尺寸且不縮放', async () => {
   assert.equal(Object.isFrozen(result), true);
 });
 
-test('五種固定解析度皆建立相同尺寸的邏輯畫布', async () => {
+test('六種固定解析度皆建立相同尺寸的邏輯畫布', async () => {
   const { resolveRenderResolution } = await loadModule();
   const profiles = [
+    ['1280x720', 1280, 720],
     ['1366x768', 1366, 768],
     ['1600x900', 1600, 900],
     ['1920x1080', 1920, 1080],
@@ -94,7 +95,7 @@ test('拒絕未知 profile、非正整數 viewport 與額外型別', async () =>
     null,
     {},
     { ...valid, profile: '1920×1080' },
-    { ...valid, profile: '1280x720' },
+    { ...valid, profile: '1024x768' },
     { ...valid, profile: null },
     { ...valid, viewportWidth: 0 },
     { ...valid, viewportWidth: -1 },

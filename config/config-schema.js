@@ -55,6 +55,7 @@ const CONFIG_LIMITS = Object.freeze({
 
 const RENDER_RESOLUTIONS = Object.freeze([
   'auto',
+  '1280x720',
   '1366x768',
   '1600x900',
   '1920x1080',

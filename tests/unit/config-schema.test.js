@@ -16,6 +16,7 @@ const {
 const projectRoot = path.resolve(__dirname, '..', '..');
 const VALID_RENDER_RESOLUTIONS = Object.freeze([
   'auto',
+  '1280x720',
   '1366x768',
   '1600x900',
   '1920x1080',
@@ -583,7 +584,7 @@ test('時間偏移只接受 -43199 至 43200 秒的完整數與精確欄位', as
   }
 });
 
-test('顯示解析度只接受 auto 與五種固定預設，display 不接受缺少或多餘欄位', async () => {
+test('顯示解析度只接受 auto 與六種固定預設，display 不接受缺少或多餘欄位', async () => {
   const source = await readDefaultConfig();
 
   for (const renderResolution of VALID_RENDER_RESOLUTIONS) {
@@ -600,7 +601,7 @@ test('顯示解析度只接受 auto 與五種固定預設，display 不接受缺
     source.display;
   for (const display of [
     missingResolution,
-    { ...source.display, renderResolution: '1280x720' },
+    { ...source.display, renderResolution: '1024x768' },
     { ...source.display, renderResolution: '1920×1080' },
     { ...source.display, renderResolution: 1920 },
     { ...source.display, unexpected: true },

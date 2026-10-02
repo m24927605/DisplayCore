@@ -276,7 +276,7 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
         ...createV11Config(),
         display: {
           ...createV11Config().display,
-          renderResolution: '1280x720',
+          renderResolution: '1024x768',
         },
       },
       0,
