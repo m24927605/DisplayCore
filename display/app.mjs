@@ -751,8 +751,9 @@ function scheduleFit() {
 function updateChromeVisibility() {
   const pageVisible = currentPresentation?.mode === 'page';
   const standbyVisible = currentPresentation?.mode === 'blank';
+  // 待機畫面只顯示時間；Logo 只出現在訊息畫面。
   const showLogo =
-    (pageVisible || standbyVisible) &&
+    pageVisible &&
     currentSettings.logo.enabled &&
     logoReady;
   const showStandbyBackground =
@@ -2113,10 +2114,6 @@ function applyDisplaySettings(snapshot) {
   rootStyle.setProperty(
     '--logo-page-size-scale',
     String(logoScales.pageScale),
-  );
-  rootStyle.setProperty(
-    '--logo-standby-size-scale',
-    String(logoScales.standbyScale),
   );
   rootStyle.setProperty(
     '--message-font-scale',

@@ -55,7 +55,7 @@ function readJpegDimensions(contents) {
   assert.fail('JPEG 缺少可讀取尺寸的 Start Of Frame segment');
 }
 
-test('高級顯示預設具備離線字型、材質背景、獨立特效開關與待機時間大小', async () => {
+test('高級顯示預設具備離線字型、材質背景、獨立特效開關與待機畫面時間字體大小', async () => {
   const [configSource, html, css, appSource] = await Promise.all([
     readProjectFile('config.json'),
     readProjectFile('control', 'index.html'),

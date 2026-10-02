@@ -13,24 +13,19 @@ test('Logo 50% 至 200% 保持原比例，超過 200% 後持續壓縮成長至�
   assert.deepEqual(calculateLogoLayoutScales(50), {
     configuredScale: 0.5,
     pageScale: 0.5,
-    standbyScale: 0.5,
   });
   assert.deepEqual(calculateLogoLayoutScales(200), {
     configuredScale: 2,
     pageScale: 2,
-    standbyScale: 2,
   });
 
   const fiveHundred = calculateLogoLayoutScales(500);
   const oneThousand = calculateLogoLayoutScales(1_000);
   assert.ok(fiveHundred.pageScale > 2);
   assert.ok(oneThousand.pageScale > fiveHundred.pageScale);
-  assert.ok(fiveHundred.standbyScale > 2);
-  assert.ok(oneThousand.standbyScale > fiveHundred.standbyScale);
   assert.deepEqual(oneThousand, {
     configuredScale: 10,
     pageScale: 3.2,
-    standbyScale: 4.4,
   });
 });
 
@@ -42,7 +37,6 @@ test('Logo 分段映射在每個 5% 設定步進皆單調成長', async () => {
     const current = calculateLogoLayoutScales(sizePercent);
     assert.ok(current.configuredScale > previous.configuredScale);
     assert.ok(current.pageScale > previous.pageScale);
-    assert.ok(current.standbyScale > previous.standbyScale);
     previous = current;
   }
 });

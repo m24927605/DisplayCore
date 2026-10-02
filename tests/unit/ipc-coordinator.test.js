@@ -586,7 +586,11 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
     ok: true,
     data: {
       configVersion: 12,
-      logo: { enabled: false, sizePercent: 100, url: null },
+      logo: {
+        enabled: true,
+        sizePercent: 100,
+        url: 'displaycore://app/managed/logo/6a1befac78d5883759cd1112.png',
+      },
       standby: {
         backgroundMode: 'fixed',
         backgroundImageUrls: [],
@@ -645,7 +649,11 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
     configVersion: 12,
-    logo: { enabled: false, sizePercent: 150, url: null },
+    logo: {
+      enabled: true,
+      sizePercent: 150,
+      url: 'displaycore://app/managed/logo/6a1befac78d5883759cd1112.png',
+    },
     standby: {
       backgroundMode: 'fixed',
       backgroundImageUrls: [],

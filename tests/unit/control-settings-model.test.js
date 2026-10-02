@@ -362,7 +362,7 @@ test('Logo 大小只接受 50% 至 1000% 且以 5% 遞增的十進位整數', as
   }
 });
 
-test('訊息背景只接受五種固定預設，待機時間大小接受 50% 至 300%', async () => {
+test('訊息背景只接受五種固定預設，待機畫面時間字體大小接受 50% 至 300%', async () => {
   const { buildSettingsDraft } = await loadModule();
 
   for (const messageBackgroundPreset of [

@@ -156,26 +156,20 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /\.display-logo\s*{[^}]*object-fit:\s*contain/s);
   assert.match(css, /--logo-size-scale:\s*1/);
   assert.match(css, /--logo-page-size-scale:\s*1/);
-  assert.match(css, /--logo-standby-size-scale:\s*1/);
-  assert.match(
-    css,
-    /--logo-mode-size-scale:\s*var\(--logo-page-size-scale\)/,
-  );
+  // Logo 只顯示於訊息畫面，不再有待機專用尺寸。
+  assert.doesNotMatch(css, /--logo-standby-/);
+  assert.doesNotMatch(css, /--logo-mode-/);
   assert.match(css, /--logo-max-inline:\s*92cqw/);
   assert.match(css, /--logo-page-max-block:\s*30cqh/);
-  assert.match(css, /--logo-standby-max-block:\s*42cqh/);
   assert.match(
     css,
-    /\.logo-frame\s*{[^}]*block-size:\s*min\([^;]*var\(--logo-mode-size-scale\)[^;]*var\(--logo-mode-max-block\)[^}]*max-inline-size:\s*var\(--logo-max-inline\)/s,
+    /\.logo-frame\s*{[^}]*block-size:\s*min\([^;]*var\(--logo-page-size-scale\)[^;]*var\(--logo-page-max-block\)[^}]*max-inline-size:\s*var\(--logo-max-inline\)/s,
   );
   assert.match(
     css,
     /\.display-logo\s*{[^}]*block-size:\s*100%[^}]*max-inline-size:\s*100%[^}]*max-block-size:\s*100%/s,
   );
-  assert.match(
-    css,
-    /\.display-stage\[data-mode="blank"\]\s+\.logo-frame\s*{[^}]*--logo-mode-max-block:\s*var\(--logo-standby-max-block\)/s,
-  );
+  assert.doesNotMatch(css, /\.display-stage\[data-mode="blank"\]\s+\.logo-frame/);
   assert.match(
     css,
     /\.logo-frame\[data-logo-treatment="bright-white"\]\s+\.display-logo\s*{[^}]*filter:\s*brightness\(0\)\s*invert\(1\)\s*drop-shadow\([^;]*rgb\(255 255 255 \/ 45%\)[^;]*\)\s*drop-shadow\([^;]*rgb\(0 0 0 \/ 70%\)[^;]*\)/s,
@@ -213,10 +207,6 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(
     css,
     /\.display-stage\[data-mode="blank"\]\s+\.display-clock\s*{[^}]*grid-column:\s*1[^}]*text-align:\s*center/s,
-  );
-  assert.match(
-    css,
-    /\.display-stage\[data-mode="blank"\]\s+\.logo-frame\s*{[^}]*justify-self:\s*center/s,
   );
   assert.doesNotMatch(css, /\.standby-message\s*{/);
   assert.match(
@@ -300,7 +290,8 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /calculateLogoLayoutScales\(snapshot\.logo\.sizePercent\)/);
   assert.match(source, /'--logo-size-scale'/);
   assert.match(source, /'--logo-page-size-scale'/);
-  assert.match(source, /'--logo-standby-size-scale'/);
+  assert.doesNotMatch(source, /'--logo-standby-size-scale'/);
+  assert.match(source, /const showLogo =\s*pageVisible &&/);
   assert.match(source, /'--emergency-background'/);
   assert.doesNotMatch(source, /'--viewport-background'/);
   assert.match(source, /standby\.backgroundImageUrls/);

@@ -67,7 +67,7 @@ const MESSAGE_BACKGROUND_PRESETS = Object.freeze([
 const PERCENTAGE_FIELD_LABELS = Object.freeze({
   fontSizePercent: '字體大小',
   lineSpacingPercent: '行距',
-  standbyClockSizePercent: '待機時間大小',
+  standbyClockSizePercent: '待機畫面時間字體大小',
 });
 
 // 'auto' 維持螢幕目前模式；其他值是輸出螢幕實際支援的「寬x高」。
@@ -616,7 +616,7 @@ export function buildSettingsDraft({
     [
       standbyClockSizePercent,
       'appearance.standbyClockSizePercent',
-      '待機時間大小',
+      '待機畫面時間字體大小',
     ],
     [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
     [pageDurationSeconds, 'playback.pageDurationSeconds', '每頁顯示秒數'],

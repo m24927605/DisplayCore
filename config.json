@@ -1,8 +1,8 @@
 {
   "configVersion": 12,
   "logo": {
-    "enabled": false,
-    "path": null,
+    "enabled": true,
+    "path": "logos/6a1befac78d5883759cd1112.png",
     "sizePercent": 100
   },
   "standby": {

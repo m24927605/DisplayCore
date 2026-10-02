@@ -64,9 +64,10 @@ test('首次啟動以原廠預設值原子建立 userData/config.json', async (t
   assert.equal(snapshot.config.configVersion, 12);
   assert.equal(snapshot.config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(snapshot.config.standby.sandEffectEnabled, true);
+  // 原廠預設啟用內建的富春居 Logo（只顯示於訊息畫面）。
   assert.deepEqual(snapshot.config.logo, {
-    enabled: false,
-    path: null,
+    enabled: true,
+    path: 'logos/6a1befac78d5883759cd1112.png',
     sizePercent: 100,
   });
   assert.deepEqual(snapshot.config.standby, DEFAULT_STANDBY);

@@ -367,7 +367,7 @@ function validateAppearance(appearance) {
             ? '字體大小'
             : field === 'lineSpacingPercent'
               ? '行距'
-              : '待機時間大小'
+              : '待機畫面時間字體大小'
         }必須是 ${minimum}% 至 ${maximum}% 的整數，並以 ${CONFIG_LIMITS.PERCENTAGE_STEP}% 遞增。`,
         `appearance.${field}`,
       );

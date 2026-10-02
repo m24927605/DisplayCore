@@ -309,7 +309,7 @@ test('投影拒絕超界、非 5% 步進與非整數 Logo 大小', () => {
   }
 });
 
-test('投影拒絕未知訊息背景與無效待機時間大小', () => {
+test('投影拒絕未知訊息背景與無效待機畫面時間字體大小', () => {
   for (const appearancePatch of [
     { messageBackgroundPreset: 'gold' },
     { standbyClockSizePercent: 45 },

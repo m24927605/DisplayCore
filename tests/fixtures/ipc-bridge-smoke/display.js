@@ -84,8 +84,9 @@ function isExpectedSettingsSnapshot(snapshot) {
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'sizePercent', 'url']) &&
-    snapshot.logo.enabled === false &&
-    snapshot.logo.url === null &&
+    snapshot.logo.enabled === true &&
+    snapshot.logo.url ===
+      'displaycore://app/managed/logo/6a1befac78d5883759cd1112.png' &&
     snapshot.logo.sizePercent === 150 &&
     hasExactKeys(snapshot.standby, [
       'backgroundImageUrls',

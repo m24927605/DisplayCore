@@ -194,7 +194,7 @@ function createV7Config() {
   };
 }
 
-/** v8 已具備材質背景與待機時間大小，但還沒有訊息字體倒酒開關。 */
+/** v8 已具備材質背景與待機畫面時間字體大小，但還沒有訊息字體倒酒開關。 */
 function createV8Config() {
   const legacy = structuredClone(defaultConfig);
   legacy.configVersion = 8;

@@ -407,7 +407,7 @@ test('外觀設定限制色碼、字型、最小字級、字體比例與行距�
   }
 });
 
-test('v12 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
+test('v12 外觀設定接受五種訊息材質與 50% 至 300% 待機畫面時間字體大小', async () => {
   const source = await readDefaultConfig();
 
   assert.equal(source.configVersion, 12);

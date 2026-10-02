@@ -72,7 +72,7 @@ test('正式 Display 在各解析度與設定極值下訊息、Logo 與時間互
   assert.equal(result.status, 0, result.stderr || result.stdout);
   assert.match(
     `${result.stdout}\n${result.stderr}`,
-    /Layout collision matrix inspected 252 layouts/,
+    /Layout collision matrix inspected 324 layouts/,
   );
 });
 

@@ -41,12 +41,8 @@
   --logo-outline: rgb(255 255 255 / 10%);
   --logo-size-scale: 1;
   --logo-page-size-scale: 1;
-  --logo-standby-size-scale: 1;
-  --logo-mode-size-scale: var(--logo-page-size-scale);
   --logo-max-inline: 92cqw;
   --logo-page-max-block: 30cqh;
-  --logo-standby-max-block: 42cqh;
-  --logo-mode-max-block: var(--logo-page-max-block);
   --standby-scrim: rgb(0 0 0 / 48%);
   --display-safe-block: clamp(1rem, 3.5cqh, 12rem);
   --display-safe-inline: clamp(1.5rem, 4cqw, 16rem);
@@ -269,7 +265,7 @@ body {
   gap: 0;
 }
 
-/* 待機時只呈現置中的時間；啟用 Logo 時排列於時間上方。 */
+/* 待機時只呈現置中的時間；Logo 只顯示於訊息畫面。 */
 .display-stage[data-mode="blank"] .normal-layer {
   grid-template-rows: auto;
   gap: clamp(1rem, 3.5cqh, 8rem);
@@ -281,14 +277,6 @@ body {
   grid-template-columns: minmax(0, 1fr);
   grid-auto-flow: row;
   justify-items: center;
-}
-
-.display-stage[data-mode="blank"] .logo-frame {
-  --logo-mode-max-block: var(--logo-standby-max-block);
-  --logo-mode-size-scale: var(--logo-standby-size-scale);
-  grid-column: 1;
-  justify-self: center;
-  place-items: center;
 }
 
 .display-chrome {
@@ -305,14 +293,14 @@ body {
   justify-self: start;
   block-size: min(
     clamp(
-      calc(3rem * var(--logo-mode-size-scale)),
-      calc(9cqh * var(--logo-mode-size-scale)),
-      calc(16rem * var(--logo-mode-size-scale))
+      calc(3rem * var(--logo-page-size-scale)),
+      calc(9cqh * var(--logo-page-size-scale)),
+      calc(16rem * var(--logo-page-size-scale))
     ),
-    var(--logo-mode-max-block)
+    var(--logo-page-max-block)
   );
   max-inline-size: var(--logo-max-inline);
-  max-block-size: var(--logo-mode-max-block);
+  max-block-size: var(--logo-page-max-block);
   place-items: center start;
 }
 

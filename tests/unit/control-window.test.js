@@ -231,7 +231,7 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   );
   assert.match(
     logoFieldset,
-    /id="logo-size-percent-help"[^>]*>[^<]*一般訊息[^<]*待機[^<]*Logo[^<]*亮白輪廓[^<]*亮白底襯/,
+    /id="logo-size-percent-help"[^>]*>[^<]*只顯示於訊息畫面[^<]*待機畫面不顯示 Logo[^<]*亮白輪廓[^<]*亮白底襯/,
   );
   assert.match(logoFieldset, /id="logo-size-percent-error"[^>]+class="field-error"[^>]+hidden/);
   assert.equal(
@@ -301,6 +301,10 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   );
   assert.match(html, /一般訊息過長時使用；關閉則水平壓縮/);
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
+  assert.match(
+    html,
+    /<label for="standby-clock-size-percent-input">待機畫面時間字體大小（%）<\/label>/,
+  );
   // 解析度選項由 Main 回報訊息螢幕支援的模式動態產生，HTML 只保留自動。
   assert.match(html, /<option value="auto">維持目前解析度<\/option>/);
   assert.doesNotMatch(html, /value="1920x1080"/);

@@ -821,22 +821,18 @@ async function verifyDisplayedClockOffset(expectedOffsetSeconds, description) {
   assert.ok(measurement.circularDifference <= 1);
 }
 
-/** 真實 BrowserWindow 驗證待機只顯示大時鐘並保留 Logo、背景層級。 */
-async function verifyStandbyPresentation(
-  expectedLogoUrl,
-  expectedStandbyBackgroundUrl,
-) {
+/** 真實 BrowserWindow 驗證待機只顯示大時鐘與背景，不顯示 Logo。 */
+async function verifyStandbyPresentation(expectedStandbyBackgroundUrl) {
   await waitFor(
     () => execute(`(() => {
       const background = [...document.querySelectorAll('.standby-background-image')]
         .find((image) => !image.hidden);
-      const logo = document.getElementById('display-logo');
       return document.getElementById('display-stage').dataset.mode === 'blank' &&
         background && !background.hidden && background.complete &&
-        background.naturalWidth > 0 && logo && !logo.hidden &&
-        logo.complete && logo.naturalWidth > 0;
+        background.naturalWidth > 0 &&
+        !document.getElementById('display-clock').hidden;
     })()`),
-    '待機背景與 Logo 載入',
+    '待機背景與時間載入',
   );
 
   const inspection = await execute(`(() => {
@@ -848,7 +844,6 @@ async function verifyStandbyPresentation(
     )].find((image) => !image.hidden);
     const background = backgroundElement.getBoundingClientRect();
     const logoElement = document.getElementById('display-logo');
-    const logo = logoElement.getBoundingClientRect();
     const clockElement = document.getElementById('display-clock');
     const clock = clockElement.getBoundingClientRect();
     const canvas = document.getElementById('standby-sand-transition');
@@ -867,14 +862,11 @@ async function verifyStandbyPresentation(
         Math.abs(background.height - stage.height) <= 0.5,
       chromeHidden: document.getElementById('display-chrome').hidden,
       logoHidden: logoElement.hidden,
-      logoSource: logoElement.getAttribute('src'),
-      logoSizeScale: getComputedStyle(document.documentElement)
-        .getPropertyValue('--logo-size-scale').trim(),
-      logoFilter: getComputedStyle(logoElement).filter,
-      logoTreatment: document.getElementById('logo-frame').dataset.logoTreatment,
-      logoCenterError: Math.abs(center(logo) - center(stage)),
+      logoFrameHidden: document.getElementById('logo-frame').hidden,
       clockCenterError: Math.abs(center(clock) - center(stage)),
-      logoAboveClock: logo.bottom <= clock.top + 0.5,
+      clockVerticalCenterError: Math.abs(
+        (clock.top + clock.height / 2) - (stage.top + stage.height / 2)
+      ),
       clockText: clockElement.textContent,
       clockFontSize: Number.parseFloat(getComputedStyle(clockElement).fontSize),
       expectedClockFontSize: Math.min(stage.width, stage.height) * 0.14,
@@ -896,15 +888,11 @@ async function verifyStandbyPresentation(
   assert.equal(inspection.backgroundObjectFit, 'cover');
   assert.equal(inspection.backgroundCoversStage, true);
   assert.equal(inspection.chromeHidden, false);
-  assert.equal(inspection.logoHidden, false);
-  assert.equal(inspection.logoSource, expectedLogoUrl);
-  assert.equal(inspection.logoSizeScale, '1');
-  assertLogoHighlight(inspection.logoFilter, '待機');
-  assert.equal(inspection.logoTreatment, 'bright-white');
-  await verifyLogoRenderedBrightWhite('待機');
-  assert.ok(inspection.logoCenterError < 1);
+  // 待機畫面只顯示置中的時間，Logo 只出現在訊息畫面。
+  assert.equal(inspection.logoHidden, true);
+  assert.equal(inspection.logoFrameHidden, true);
   assert.ok(inspection.clockCenterError < 1);
-  assert.equal(inspection.logoAboveClock, true);
+  assert.ok(inspection.clockVerticalCenterError < 1);
   assert.match(inspection.clockText, /^\d{2}:\d{2}$/);
   assert.ok(
     Math.abs(inspection.clockFontSize - inspection.expectedClockFontSize) <= 1,
@@ -922,8 +910,9 @@ async function verifyStandbyPresentation(
   );
 }
 
-/** 同一邏輯解析度下，50／100／200% 必須等比例縮放 Logo。 */
-async function verifyLogoSizeScaling(mode) {
+/** 訊息畫面在同一解析度下，50／100／200% 必須等比例縮放 Logo。 */
+async function verifyLogoSizeScaling() {
+  const mode = 'page';
   const measurements = [];
 
   for (const sizePercent of [50, 100, 200]) {
@@ -938,9 +927,7 @@ async function verifyLogoSizeScaling(mode) {
         const logo = document.getElementById('display-logo');
         return stage.dataset.mode === '${mode}' &&
           stage.dataset.settingsRevision === '${settingsRevision}' &&
-          ${mode === 'page'
-            ? `stage.dataset.fittedSettingsRevision === '${settingsRevision}' &&`
-            : ''}
+          stage.dataset.fittedSettingsRevision === '${settingsRevision}' &&
           logo && !logo.hidden && logo.complete && logo.naturalWidth > 0;
       })()`),
       `${mode} Logo ${sizePercent}% 套用`,
@@ -969,7 +956,7 @@ async function verifyLogoSizeScaling(mode) {
     assert.ok(Math.abs(measurement.frameHeight - measurement.imageHeight) <= 0.5);
     assert.ok(measurement.frameWidth > 0);
     assert.ok(measurement.imageWidth > 0);
-    assert.equal(measurement.standbyBackgroundHidden, mode === 'page');
+    assert.equal(measurement.standbyBackgroundHidden, true);
     assertLogoHighlight(measurement.filter, `${mode} ${sizePercent}%`);
     assert.equal(measurement.treatment, 'bright-white');
     measurements.push(measurement);
@@ -1021,9 +1008,7 @@ async function verifyLogoSizeScaling(mode) {
           const logo = document.getElementById('display-logo');
           return stage.dataset.mode === '${mode}' &&
             stage.dataset.settingsRevision === '${revision}' &&
-            ${mode === 'page'
-              ? `stage.dataset.fittedSettingsRevision === '${revision}' &&`
-              : ''}
+            stage.dataset.fittedSettingsRevision === '${revision}' &&
             logo && !logo.hidden && logo.complete && logo.naturalWidth > 0;
         })()`),
         `${mode} ${width}×${height} Logo ${sizePercent}% 安全排版`,
@@ -1082,10 +1067,8 @@ async function verifyLogoSizeScaling(mode) {
       maximum.imageWidth <= maximum.stageWidth * 0.92 + 0.75,
       `${label} image 寬度`,
     );
-    const maximumBlockRatio = mode === 'blank' ? 0.42 : 0.30;
     assert.ok(
-      maximum.frameHeight <=
-        maximum.stageHeight * maximumBlockRatio + 0.75,
+      maximum.frameHeight <= maximum.stageHeight * 0.30 + 0.75,
       `${label} frame 高度`,
     );
     assert.ok(
@@ -1307,6 +1290,12 @@ const LAYOUT_QA_RESOLUTIONS = Object.freeze([
 ]);
 
 const LAYOUT_QA_LOGOS = Object.freeze([
+  // 原廠預設的富春居 Logo，必須以亮白輪廓呈現。
+  {
+    name: '富春居 Logo',
+    file: path.join(projectRoot, 'assets', 'logos', '6a1befac78d5883759cd1112.png'),
+    expectedTreatment: 'bright-white',
+  },
   { name: '方形透明 Logo', width: 120, height: 120, opaque: false },
   { name: '寬版透明 Logo', width: 960, height: 120, opaque: false },
   { name: '直式不透明 Logo', width: 120, height: 360, opaque: true },
@@ -1480,7 +1469,9 @@ async function verifyLayoutCollisionMatrix() {
   const logoDirectory = path.join(runtimeDataRoot, 'logos');
   const logos = [];
   for (const logo of LAYOUT_QA_LOGOS) {
-    const bytes = createLogoBytes(logo);
+    const bytes = logo.file
+      ? await fileSystem.readFile(logo.file)
+      : createLogoBytes(logo);
     const fileName =
       `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.png`;
     await fileSystem.writeFile(path.join(logoDirectory, fileName), bytes);
@@ -1526,11 +1517,8 @@ async function verifyLayoutCollisionMatrix() {
         await waitFor(
           () => execute(`(() => {
             const stage = document.getElementById('display-stage');
-            const logo = document.getElementById('display-logo');
             return stage.dataset.mode === 'blank' &&
               stage.dataset.settingsRevision === '${settingsRevision}' &&
-              logo.getAttribute('src')?.endsWith('${path.basename(logo.path)}') &&
-              logo.complete && logo.naturalWidth > 0 &&
               !document.getElementById('display-clock').hidden;
           })()`),
           `${context}／待機`,
@@ -1540,7 +1528,7 @@ async function verifyLayoutCollisionMatrix() {
         const standby = await execute(INSPECT_LAYOUT_COLLISIONS);
         inspectedLayouts += 1;
         await captureVisualQa(`${shotPrefix}-standby.png`);
-        assert.deepEqual(standby.items, ['Logo', '時間'], `${context}／待機`);
+        assert.deepEqual(standby.items, ['時間'], `${context}／待機不得顯示 Logo`);
         failures.push(...standby.problems.map(
           (problem) => `${context}／待機：${problem}`,
         ));
@@ -1562,6 +1550,15 @@ async function verifyLayoutCollisionMatrix() {
             layout.items.includes('Logo') && layout.items.includes('時間'),
             `${context}／${page.name} 缺少 Logo 或時間：${layout.items}`,
           );
+          if (logo.expectedTreatment) {
+            assert.equal(
+              await execute(
+                `document.getElementById('logo-frame').dataset.logoTreatment`,
+              ),
+              logo.expectedTreatment,
+              `${context}／${page.name} Logo 呈現方式`,
+            );
+          }
           failures.push(...layout.problems.map(
             (problem) => `${context}／${page.name}：${problem}`,
           ));
@@ -2556,7 +2553,7 @@ async function verifyClockWithoutLogo() {
   );
   assert.ok(
     enlargedClockSize >= standbyClock.fontSize * 1.4,
-    '待機時間大小設定必須獨立生效',
+    '待機畫面時間字體大小設定必須獨立生效',
   );
 
   // 設定頁允許 50%～300%；每個代表性級距都必須真的放大，且不能溢出畫布。
@@ -2608,7 +2605,7 @@ async function verifyClockWithoutLogo() {
       `document.getElementById('display-stage').dataset.settingsRevision === ` +
       `'${resetClockRevision}'`,
     ),
-    '還原待機時間大小',
+    '還原待機畫面時間字體大小',
   );
 }
 
@@ -3679,10 +3676,7 @@ async function runWorkflow(
     return;
   }
 
-  await verifyStandbyPresentation(
-    expectedLogoUrl,
-    expectedStandbyBackgroundUrl,
-  );
+  await verifyStandbyPresentation(expectedStandbyBackgroundUrl);
 
   await waitFor(
     () => Promise.resolve(delayedSecondBackgroundRead.hasStarted()),
@@ -5066,7 +5060,6 @@ async function runWorkflow(
   });
 
   await verifySoftwareOutputAdjustment();
-  await verifyLogoSizeScaling('blank');
 
   presentationService.startProgram({
     messages: [{ message: '001聯絡櫃台', alignment: 'left' }],
@@ -5075,7 +5068,19 @@ async function runWorkflow(
   });
   const logoPageRevision = presentationService.getSnapshot().revision;
   await waitForRevision(logoPageRevision);
-  await verifyLogoSizeScaling('page');
+  await verifyLogoSizeScaling();
+  await waitFor(
+    () => execute(`(() => {
+      const logo = document.getElementById('display-logo');
+      return !logo.hidden && logo.complete && logo.naturalWidth > 0;
+    })()`),
+    '訊息畫面 Logo 載入',
+  );
+  await execute(
+    `new Promise((resolve) => requestAnimationFrame(() =>
+      requestAnimationFrame(() => resolve(true))))`,
+  );
+  await verifyLogoRenderedBrightWhite('訊息畫面');
   await verifyFixedMessageLayout();
   await verifyClockWithoutLogo();
   await verifyLuxuryMessageAppearance();

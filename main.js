@@ -14,6 +14,7 @@ const {
   session,
 } = require('electron');
 
+const { installBundledLogos } = require('./config/bundled-logo-installer');
 const { ConfigManager } = require('./config/config-manager');
 const { LogoImporter } = require('./config/logo-importer');
 const {
@@ -246,6 +247,11 @@ async function bootstrap() {
         },
         getAllowedStandbyBackgroundPaths: () =>
           settingsManager.getSnapshot().config.standby.backgroundImagePaths,
+      });
+      // 原廠預設 Logo 以受管理路徑引用，需先存在才能由本機協定提供。
+      await installBundledLogos({
+        sourceDirectory: path.join(PROJECT_ROOT, 'assets', 'logos'),
+        assetDirectory: path.join(dataRoot, 'logos'),
       });
       await settingsManager.initialize();
       await displayTopologyService.initialize();
