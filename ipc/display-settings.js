@@ -21,16 +21,15 @@ function freezeDisplaySettings(settings) {
   Object.freeze(settings.dateTime);
   Object.freeze(settings.emergency);
   Object.freeze(settings.marquee);
-  Object.freeze(settings.display);
   return Object.freeze(settings);
 }
 
 /**
  * 將 ConfigManager snapshot 投影為 Display 唯讀且最小權限的設定。
  *
- * 不發布 defaults、notice、螢幕選擇或受管理檔案路徑；只投影邏輯排版
- * 解析度。Logo 與待機背景只以同源、不含作業系統資訊的 URL 提供給
- * Renderer。
+ * 不發布 defaults、notice、螢幕選擇、輸出解析度或受管理檔案路徑；Display
+ * 一律依實際視窗尺寸排版。Logo 與待機背景只以同源、不含作業系統資訊的
+ * URL 提供給 Renderer。
  */
 function createDisplaySettingsSnapshot(managerSnapshot) {
   if (
@@ -110,7 +109,6 @@ function createDisplaySettingsSnapshot(managerSnapshot) {
       releaseBackgroundColor: config.emergency.releaseBackgroundColor,
     },
     marquee: { enabled: config.marquee.enabled },
-    display: { renderResolution: config.display.renderResolution },
     revision: managerSnapshot.revision,
   });
 }

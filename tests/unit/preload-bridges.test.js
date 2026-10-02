@@ -149,8 +149,10 @@ test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報�
 
   assert.ok(api);
   assert.deepEqual(Object.keys(api).sort(), [
+    'getOutputAdjustment',
     'getPresentation',
     'getSettings',
+    'onOutputAdjustmentChanged',
     'onPresentationChanged',
     'onRefitRequested',
     'onSettingsChanged',
@@ -166,6 +168,7 @@ test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報�
 
   await api.getPresentation();
   await api.getSettings();
+  await api.getOutputAdjustment();
   await api.reportPageProgress('pending', 7, 2, 4, 9, 11);
   await api.reportPageProgress('ready', 7, 2, 4, 9, 11, 3);
   await api.reportPageProgress('started', 7, 2, 4, 9, 11);
@@ -178,8 +181,13 @@ test('Display preload 只有唯讀 snapshot、訂閱與固定頁面進度回報�
     harness.invocations[1].channel,
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
   );
+  assert.equal(
+    harness.invocations[2].channel,
+    IPC_CHANNELS.DISPLAY_GET_OUTPUT_ADJUSTMENT,
+  );
+  assert.deepEqual(harness.invocations[2].args, []);
   assert.deepEqual(
-    harness.invocations.slice(2).map(({ channel, args }) => ({
+    harness.invocations.slice(3).map(({ channel, args }) => ({
       channel,
       payload: JSON.parse(JSON.stringify(args[0])),
     })),
@@ -265,6 +273,12 @@ test('preload 事件訂閱不洩漏 Electron event 且可精確解除', async ()
       apiName: 'displayCoreDisplay',
       channel: IPC_CHANNELS.DISPLAY_REFIT_REQUESTED,
       subscribeMethod: 'onRefitRequested',
+    },
+    {
+      file: 'preload/display-preload.js',
+      apiName: 'displayCoreDisplay',
+      channel: IPC_CHANNELS.DISPLAY_OUTPUT_ADJUSTMENT_CHANGED,
+      subscribeMethod: 'onOutputAdjustmentChanged',
     },
   ]) {
     const harness = await loadPreload(scenario.file);

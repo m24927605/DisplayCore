@@ -13,7 +13,7 @@ function createSnapshot(
   sandEffectEnabled = true,
 ) {
   return {
-    configVersion: 11,
+    configVersion: 12,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -45,7 +45,6 @@ function createSnapshot(
       releaseBackgroundColor: '#14532D',
     },
     marquee: { enabled: false },
-    display: { renderResolution: '2560x1440' },
     revision,
   };
 }
@@ -71,7 +70,7 @@ test('Display 接受完整設定投影並建立深層凍結副本', async () => 
   assert.equal(Object.isFrozen(result.snapshot.dateTime), true);
   assert.equal(Object.isFrozen(result.snapshot.emergency), true);
   assert.equal(Object.isFrozen(result.snapshot.marquee), true);
-  assert.equal(Object.isFrozen(result.snapshot.display), true);
+  assert.equal(Object.hasOwn(result.snapshot, 'display'), false);
   assert.equal(Object.hasOwn(result.snapshot, 'playback'), false);
 
   source.appearance.backgroundColor = '#000000';
@@ -198,7 +197,7 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
   const invalidCandidates = [
     { ...valid, configVersion: 8 },
     { ...valid, configVersion: 10 },
-    { ...valid, configVersion: 12 },
+    { ...valid, configVersion: 13 },
     { ...valid, revision: -1 },
     { ...valid, revision: 1.5 },
     { ...valid, logo: { ...valid.logo, url: null } },
@@ -336,11 +335,8 @@ test('Display 拒絕不安全圖片 URL、顏色、字型、字級與日期設�
       emergency: { ...valid.emergency, releaseBackgroundColor: '#00000080' },
     },
     { ...valid, marquee: { enabled: 1 } },
-    { ...valid, display: { renderResolution: '1024x768' } },
-    {
-      ...valid,
-      display: { renderResolution: '1920x1080', selectionMode: 'auto' },
-    },
+    { ...valid, display: { renderResolution: 'auto' } },
+    { ...valid, configVersion: 11 },
   ];
 
   for (const candidate of invalidCandidates) {
@@ -356,7 +352,7 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
   const { SAFE_DISPLAY_SETTINGS } = await loadModule();
 
   assert.deepEqual(SAFE_DISPLAY_SETTINGS, {
-    configVersion: 11,
+    configVersion: 12,
     logo: { enabled: false, url: null, sizePercent: 100 },
     standby: {
       backgroundMode: 'fixed',
@@ -382,7 +378,6 @@ test('安全預設值為黑底白字且不顯示 Logo、待機背景與日期', 
       releaseBackgroundColor: '#000000',
     },
     marquee: { enabled: true },
-    display: { renderResolution: 'auto' },
     revision: -1,
   });
   assert.equal(Object.isFrozen(SAFE_DISPLAY_SETTINGS), true);

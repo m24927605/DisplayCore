@@ -83,7 +83,7 @@ function isExpectedControlSnapshot(snapshot) {
   );
 }
 
-function hasExpectedConfigV11(
+function hasExpectedConfigV12(
   config,
   offsetSeconds,
   renderResolution,
@@ -99,7 +99,7 @@ function hasExpectedConfigV11(
   return (
     config !== null &&
     typeof config === 'object' &&
-    config.configVersion === 11 &&
+    config.configVersion === 12 &&
     hasExactKeys(config.logo, ['enabled', 'path', 'sizePercent']) &&
     config.logo.sizePercent === logoSizePercent &&
     hasExactKeys(config.standby, [
@@ -125,7 +125,9 @@ function hasExpectedConfigV11(
     config.playback.pageDurationSeconds === pageDurationSeconds &&
     config.playback.repeatMode === repeatMode &&
     config.playback.roundCount === roundCount &&
-    config.display?.renderResolution === renderResolution
+    config.display?.renderResolution === renderResolution &&
+    config.display?.brightnessPercent === null &&
+    config.display?.contrastPercent === null
   );
 }
 
@@ -147,7 +149,7 @@ function isExpectedSettingsSnapshot(
     hasExactKeys(snapshot, ['config', 'defaults', 'notice', 'revision']) &&
     snapshot.revision === revision &&
     snapshot.notice === null &&
-    hasExpectedConfigV11(
+    hasExpectedConfigV12(
       snapshot.config,
       offsetSeconds,
       renderResolution,
@@ -160,7 +162,7 @@ function isExpectedSettingsSnapshot(
       standbySlideDurationSeconds,
       standbySandEffectEnabled,
     ) &&
-    hasExpectedConfigV11(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
+    hasExpectedConfigV12(snapshot.defaults, 0, 'auto', 3, 'finite', 1, 100)
   );
 }
 

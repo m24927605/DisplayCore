@@ -63,6 +63,9 @@ const IPC_CHANNELS = Object.freeze({
   DISPLAY_GET_SETTINGS: 'dc:v2:display:settings:get',
   DISPLAY_REPORT_PAGE_PROGRESS: 'dc:v2:display:page-progress:report',
   DISPLAY_REFIT_REQUESTED: 'dc:v2:display:layout:refit-requested',
+  DISPLAY_GET_OUTPUT_ADJUSTMENT: 'dc:v2:display:output-adjustment:get',
+  DISPLAY_OUTPUT_ADJUSTMENT_CHANGED:
+    'dc:v2:display:output-adjustment:changed',
   CONTROL_PRESENTATION_CHANGED: 'dc:v2:control:presentation:changed',
   CONTROL_OUTPUT_STATUS_CHANGED: 'dc:v2:control:output-status:changed',
   DISPLAY_PRESENTATION_CHANGED: 'dc:v2:display:presentation:changed',

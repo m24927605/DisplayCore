@@ -6,10 +6,10 @@ const test = require('node:test');
 const currentDefaultConfig = require('../../config.json');
 const { validateConfig } = require('../../config/config-schema');
 
-// Control Renderer 測試固定宣告完整 v11 契約，不依賴遷移測試的 fixture。
+// Control Renderer 測試固定宣告完整 v12 契約，不依賴遷移測試的 fixture。
 const defaultConfig = structuredClone({
   ...currentDefaultConfig,
-  configVersion: 11,
+  configVersion: 12,
   logo: {
     ...currentDefaultConfig.logo,
     sizePercent: 100,
@@ -66,6 +66,10 @@ function createValidDraftInput(overrides = {}) {
     controlDisplayId: 'auto',
     defaultDisplayId: 'auto',
     renderResolution: 'auto',
+    brightnessEnabled: false,
+    brightnessPercent: '100',
+    contrastEnabled: false,
+    contrastPercent: '100',
     ...overrides,
   };
 }
@@ -141,7 +145,7 @@ test('Control 拒絕未知欄位、畸形 notice、revision 與設定內容', as
   }
 });
 
-test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v11 設定', async () => {
+test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v12 設定', async () => {
   const { buildSettingsDraft } = await loadModule();
   const baseline = structuredClone(defaultConfig);
   baseline.display = {
@@ -150,6 +154,8 @@ test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v11 �
     defaultDisplayId: 42,
     fullscreen: false,
     renderResolution: '1600x900',
+    brightnessPercent: null,
+    contrastPercent: null,
   };
 
   const result = buildSettingsDraft({
@@ -184,11 +190,15 @@ test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v11 �
     controlDisplayId: '2',
     defaultDisplayId: '84',
     renderResolution: '3840x2160',
+    brightnessEnabled: true,
+    brightnessPercent: '35',
+    contrastEnabled: false,
+    contrastPercent: '80',
   });
 
   assert.equal(result.ok, true);
   assert.deepEqual(result.config, {
-    configVersion: 11,
+    configVersion: 12,
     logo: {
       enabled: true,
       path: 'logos/0123456789abcdef01234567.png',
@@ -231,6 +241,8 @@ test('設定草稿包含 Logo、外觀、播放與雙螢幕分工的完整 v11 �
       defaultDisplayId: 84,
       fullscreen: false,
       renderResolution: '3840x2160',
+      brightnessPercent: 35,
+      contrastPercent: null,
     },
   });
   assert.equal(validateConfig(result.config).ok, true);
@@ -301,8 +313,16 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { controlDisplayId: 'display-1' },
     { defaultDisplayId: '-1' },
     { controlDisplayId: '1', defaultDisplayId: '1' },
-    { renderResolution: '1024x768' },
+    { renderResolution: '1024×768' },
+    { renderResolution: 'native' },
     { renderResolution: null },
+    { brightnessEnabled: true, brightnessPercent: '101' },
+    { brightnessEnabled: true, brightnessPercent: '-1' },
+    { brightnessEnabled: true, brightnessPercent: '50.5' },
+    { brightnessEnabled: 'true', brightnessPercent: '50' },
+    { brightnessPercent: 50 },
+    { contrastEnabled: true, contrastPercent: '101' },
+    { contrastPercent: '' },
   ];
 
   for (const partial of invalidPartials) {
@@ -469,6 +489,8 @@ test('管理員可明確交換控制台與訊息螢幕，或恢復自動分工',
     defaultDisplayId: 1,
     fullscreen: true,
     renderResolution: '2560x1440',
+    brightnessPercent: null,
+    contrastPercent: null,
   });
 
   const automatic = buildSettingsDraft(createValidDraftInput());
@@ -479,7 +501,42 @@ test('管理員可明確交換控制台與訊息螢幕，或恢復自動分工',
     defaultDisplayId: null,
     fullscreen: true,
     renderResolution: 'auto',
+    brightnessPercent: null,
+    contrastPercent: null,
   });
+});
+
+test('亮度與對比關閉時保存 null，開啟時保存 0% 至 100% 整數', async () => {
+  const { buildSettingsDraft } = await loadModule();
+
+  for (const percent of ['0', '1', '55', '100']) {
+    const result = buildSettingsDraft(createValidDraftInput({
+      brightnessEnabled: true,
+      brightnessPercent: percent,
+      contrastEnabled: true,
+      contrastPercent: percent,
+    }));
+    assert.equal(result.ok, true, percent);
+    assert.equal(result.config.display.brightnessPercent, Number(percent));
+    assert.equal(result.config.display.contrastPercent, Number(percent));
+  }
+
+  const disabled = buildSettingsDraft(createValidDraftInput({
+    brightnessEnabled: false,
+    brightnessPercent: '35',
+    contrastEnabled: false,
+    contrastPercent: '65',
+  }));
+  assert.equal(disabled.ok, true);
+  assert.equal(disabled.config.display.brightnessPercent, null);
+  assert.equal(disabled.config.display.contrastPercent, null);
+
+  const invalid = buildSettingsDraft(createValidDraftInput({
+    contrastEnabled: true,
+    contrastPercent: '101',
+  }));
+  assert.equal(invalid.ok, false);
+  assert.equal(invalid.error.field, 'display.contrastPercent');
 });
 
 test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影響', async () => {
@@ -497,7 +554,11 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   const changedStandbyClockSize = structuredClone(defaultConfig);
   const changedMessageLiquidEffect = structuredClone(defaultConfig);
   const changedStandbySandEffect = structuredClone(defaultConfig);
+  const changedBrightness = structuredClone(defaultConfig);
+  const changedContrast = structuredClone(defaultConfig);
   changed.marquee.enabled = false;
+  changedBrightness.display.brightnessPercent = 40;
+  changedContrast.display.contrastPercent = 60;
   changedTime.dateTime.offsetSeconds = 1;
   changedResolution.display.renderResolution = '1920x1080';
   changedPageDuration.playback.pageDurationSeconds += 1;
@@ -526,5 +587,7 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   assert.equal(settingsEqual(defaultConfig, changedStandbyClockSize), false);
   assert.equal(settingsEqual(defaultConfig, changedMessageLiquidEffect), false);
   assert.equal(settingsEqual(defaultConfig, changedStandbySandEffect), false);
+  assert.equal(settingsEqual(defaultConfig, changedBrightness), false);
+  assert.equal(settingsEqual(defaultConfig, changedContrast), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
 });

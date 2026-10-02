@@ -167,7 +167,7 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     await readFile(path.join(projectRoot, 'config.json'), 'utf8'),
   );
 
-  assert.equal(config.configVersion, 11);
+  assert.equal(config.configVersion, 12);
   assert.deepEqual(Object.keys(config.logo).sort(), [
     'enabled',
     'path',
@@ -223,6 +223,8 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
   assert.ok(config.playback.roundCount >= 1);
   assert.ok(config.playback.roundCount <= 999);
   assert.deepEqual(Object.keys(config.display).sort(), [
+    'brightnessPercent',
+    'contrastPercent',
     'controlDisplayId',
     'defaultDisplayId',
     'fullscreen',
@@ -230,15 +232,10 @@ test('config.json 是具版本資訊的有效離線預設設定', async () => {
     'selectionMode',
   ]);
   assert.equal(typeof config.display.fullscreen, 'boolean');
-  assert.ok([
-    'auto',
-    '1280x720',
-    '1366x768',
-    '1600x900',
-    '1920x1080',
-    '2560x1440',
-    '3840x2160',
-  ].includes(config.display.renderResolution));
+  // 原廠預設不切換解析度、不調整亮度與對比，避免安裝後改變螢幕狀態。
+  assert.equal(config.display.renderResolution, 'auto');
+  assert.equal(config.display.brightnessPercent, null);
+  assert.equal(config.display.contrastPercent, null);
 });
 
 test('專案 JavaScript 入口檔通過 Node.js 語法檢查', () => {

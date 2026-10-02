@@ -16,7 +16,7 @@ function createSnapshot(
   sandEffectEnabled = true,
 ) {
   return {
-    configVersion: 11,
+    configVersion: 12,
     logo: { enabled: false, url: null, sizePercent: logoSizePercent },
     standby: {
       backgroundMode: backgroundImageUrls.length > 1 ? 'slideshow' : 'fixed',
@@ -41,7 +41,6 @@ function createSnapshot(
       releaseBackgroundColor: '#000000',
     },
     marquee: { enabled: true },
-    display: { renderResolution: 'auto' },
     revision,
   };
 }

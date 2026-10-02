@@ -95,8 +95,9 @@ npm run make
 - 管理員可用 `HH:mm:ss` 校正 DisplayCore 顯示時間；程式只保存日內偏移，不修改 Windows 系統時間，也不需要網路或系統管理員權限。
 - 一般畫面會為同列的 Logo 與右上角時間保留比例式頂部安全區；臨檢滿屏會隱藏所有裝飾資訊。
 - 一般與自定義訊息固定置頂靠左；營運訊息「請輕聲細語」、555／888 與待機時間維持置中或其專用位置。對齊方式由 Main 明確傳遞，Display 不解析文字內容猜測用途。
-- 管理員可選自動、1280×720、1366×768、1600×900、1920×1080、2560×1440 或 3840×2160 排版基準；Display 以等比例 contain 置中縮放，不裁切或拉伸。排版基準與下方的螢幕分工彼此獨立，兩者都不變更 Windows 的實體輸出模式。
-- 真實 Electron Renderer 自動驗證 1280×720、1366×768、1600×900、1920×1080、2560×1440 與 3840×2160，包含溢位、重疊、字體縮放、跑馬燈切換及即時設定更新。
+- 設定頁的「訊息螢幕解析度」會實際切換訊息視窗所在螢幕的 Windows 顯示模式；選項由 Main 透過 Windows API 列出該螢幕支援的解析度，「維持目前解析度」則不變更。切換寫入 Windows 設定，關閉 DisplayCore 後仍保留；螢幕不支援或 Windows 拒絕時，設定頁會顯示原因並維持原解析度，同一組設定不會反覆重試。Display 一律依實際視窗尺寸排版。
+- 設定頁可分別調整訊息螢幕的亮度與對比（0%～100%，關閉則不變更）。螢幕支援 DDC/CI 時直接調整螢幕本身；不支援時改以 Display 畫面濾鏡模擬，100% 為原始畫面，設定頁會標示目前採用哪一種方式。
+- 真實 Electron Renderer 自動驗證 1280×720、1366×768、1600×900、1920×1080、2560×1440 與 3840×2160 下，三種 Logo 形狀與最小／預設／最大設定的待機、一般訊息、長訊息、營運訊息與 555／888 共 252 個畫面，訊息文字、Logo 與時間互不重疊、貼齊或被裁切。
 - Main Process 透過 Electron `screen` 維護可用螢幕拓樸，監聽新增、移除、尺寸／DPI 變更，以及系統恢復與解鎖。
 - 預設自動分工由 Control 優先使用 Windows 主螢幕、Display 優先使用外接螢幕；有兩台可用螢幕時會避免兩個視窗重疊。設定頁也可分別指定兩個角色使用的螢幕。
 - 指定螢幕暫時拔除時只回退目前有效位置，不清除保存的硬體 ID；重新接入後會自動返回原指派。
@@ -106,7 +107,7 @@ npm run make
 - Control 頁首只讀呈現 HDMI 與目前實際輸出目標；輸出 snapshot 不包含 bounds、WMI 裝置路徑或 raw Electron 物件。
 - Control 只保留一個齒輪設定入口，播放、Logo、外觀與顯示行為集中在同一對話框。
 - 完整自動化測試覆蓋播放設定持久化、一鍵顯示、Logo 最高 1000%／透明度處理／高亮、單一連續沙丘侵蝕面且不使用 slide／wipe 的待機背景輪播、一般訊息固定三槽、跨頁到期提醒色階、內嵌 Didot 數字、雙螢幕分工與拔插回復、原生全螢幕回歸、離線校時、排版解析度、顯示清單獨立分頁與刪除、555／888 無限時、內容版本競態保護、雙閘門排程、多列跑馬燈與 Renderer 重建。
-- 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏與六種目標解析度，且沒有 Renderer console error 或 warning。
+- 真實 Electron Renderer 已驗證 Control／Display 完整流程、7 則訊息的 3＋3＋1 分頁、555／888 滿屏、軟體亮度／對比濾鏡與六種目標解析度，且沒有 Renderer console error 或 warning。
 - 已修正設定對話框原生焦點恢復競態並加入確定性 Electron 回歸測試。
 - macOS 與 Windows x64 交叉封裝的 ASAR 均確認不含 `.ait`、`ait`、`*.ait`、`.gstack` QA 產物或 `.github` CI 設定；Forge 規則有正例及 `wait/` 負例測試。
 - 正式執行依賴的 `npm audit --omit=dev` 為 0 vulnerabilities；開發／封裝工具鏈仍有上游 advisories，但不會進入離線 runtime。封裝已驗證安全 Electron fuses、ASAR integrity 與 macOS code signature。
@@ -150,12 +151,12 @@ DisplayCore 不設定可能在頁面中途截斷的「整體顯示時間」。
 - 555 臨檢與 888 解除臨檢各自的背景顏色。
 - 是否在一般訊息頁右上角顯示與 Logo 同列的 24 小時制 `HH:mm`；待機畫面永遠顯示時間。
 - DisplayCore 專用的離線時間偏移，可在設定頁以 `HH:mm:ss` 重新校正，不修改作業系統時鐘。
-- Display 的邏輯排版解析度；實際 HDMI 輸出解析度仍由 Windows 顯示設定控制。
+- 訊息螢幕的實際輸出解析度（`auto` 或 `寬x高`），以及亮度、對比（`null` 代表不調整，否則為 0～100）。
 - Control 與 Display 的螢幕分工；可使用安全的自動配置，也可分別指定兩個不同螢幕。
 - 一般訊息超出單行寬度時是否使用水平跑馬燈；停用時改用水平壓縮保留全文。
 - 每頁顯示秒數、指定整輪次數或持續顯示模式。
 
-目前設定格式為 `configVersion: 11`。既有的有效 v1～v10 使用者設定會在載入時於記憶體安全遷移至 v11；v10 會補上預設啟用的待機頁面風吹沙效果開關，保留升級前行為。舊版本沒有完整的雙螢幕角色資料，因此升級時採安全自動分工並保留排版解析度。v8 會補上預設啟用的訊息字體倒酒效果開關；更舊設定仍保留原字型與純色畫面，並把原字體比例帶入獨立待機時間大小。v5／v6 的單張待機背景會轉成有序圖片清單，下一次儲存才原子寫回。程式不提供視窗模式或修改作業系統顯示模式的功能。
+目前設定格式為 `configVersion: 12`。既有的有效 v1～v11 使用者設定會在載入時於記憶體安全遷移至 v12；v11 會補上預設「不調整」的螢幕亮度與對比，原解析度設定改為實際輸出解析度；v10 會補上預設啟用的待機頁面風吹沙效果開關，保留升級前行為。舊版本沒有完整的雙螢幕角色資料，因此升級時採安全自動分工並保留排版解析度。v8 會補上預設啟用的訊息字體倒酒效果開關；更舊設定仍保留原字型與純色畫面，並把原字體比例帶入獨立待機時間大小。v5／v6 的單張待機背景會轉成有序圖片清單，下一次儲存才原子寫回。程式不提供視窗模式；只有管理員指定訊息螢幕解析度時才會變更該螢幕的 Windows 顯示模式。
 
 Logo 與待機背景都由 Main Process 開啟系統原生對話框；Logo 單選，待機背景依模式單選或多選。整批來源圖片通過檔案類型、大小、符號連結、路徑及 magic bytes 驗證後，才原子複製到各自的受管理目錄；設定只保存有序的相對資產識別。Display 只取得由內容雜湊組成的同源 URL，不會接觸 `userData` 或絕對路徑。即使設定檔、URL 或 IPC payload 被竄改，Main 端仍會重新驗證。
 
@@ -172,6 +173,8 @@ Logo 與待機背景都由 Main Process 開啟系統原生對話框；Logo 單�
 - `main/hdmi-detector.js`：Windows 本機 WMI HDMI aggregate 查詢、逾時與安全降級。
 - `main/display-topology-service.js`：螢幕正規化、外接／主螢幕自動目標選擇、熱插拔與休眠恢復。
 - `main/display-placement-controller.js`：以 Electron DIP bounds 定位目標螢幕並套用全螢幕。
+- `main/monitor-control.js`／`main/monitor-control.cs`：以固定 Windows PowerShell 編譯 C#，透過 `ChangeDisplaySettingsEx` 查詢與切換螢幕顯示模式，並以 DDC/CI（VCP 0x10／0x12）讀寫亮度與對比。
+- `main/output-monitor-controller.js`：依設定與訊息螢幕變化依序套用解析度、亮度與對比，失敗不重試，並決定是否改用畫面濾鏡。
 
 IPC：
 
@@ -226,7 +229,6 @@ Display：
 - `display/date-time.mjs`：本機 24 小時制 `HH:mm`、離線偏移與整分鐘對齊排程。
 - `display/message-typography.mjs`：只把完整訊息中的 ASCII 數字段落標記為內嵌 Didot，其餘原文不拆欄位、不改值。
 - `display/message-liquid-progress.mjs`：有限輪次整體液面、跨頁／跨輪區段，以及 Main 接受目前 layout ready 後才同步啟動的注酒動畫。
-- `display/render-resolution.mjs`：自動或固定邏輯解析度的等比例縮放與置中計算。
 - `display/text-fit.mjs`：依實際列高計算有效字級範圍並執行有界二分搜尋。
 - `display/page-progress.mjs`：layout generation、跑馬燈列完成追蹤、舊 DOM listener 取消及暫時性 IPC 失敗重試。
 - `display/app.mjs`：純文字呈現、即時視覺設定、待機背景輪播、Logo 比例、時鐘、字體適配、跑馬燈與 ResizeObserver。
@@ -246,4 +248,4 @@ Electron `screen` 能可靠取得可用顯示器、內建／外接資訊、DIP �
 
 ## 尚待實機驗收
 
-- Windows 10／11 實機、兩台延伸螢幕、HDMI 熱插拔、睡眠恢復、混合 DPI、目標解析度及 NSIS 安裝流程仍需在 Windows 硬體執行。
+- Windows 10／11 實機、兩台延伸螢幕、HDMI 熱插拔、睡眠恢復、混合 DPI、實際解析度切換、DDC/CI 亮度／對比及 NSIS 安裝流程仍需在 Windows 硬體執行。

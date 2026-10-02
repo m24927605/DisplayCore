@@ -57,6 +57,25 @@ test('正式 Display 連續兩次完成 4K 真材質解碼、切換與三列文�
   }
 });
 
+test('正式 Display 在各解析度與設定極值下訊息、Logo 與時間互不碰觸', () => {
+  const electronBinary = require('electron');
+  const result = spawnSync(electronBinary, [fixtureRoot], {
+    encoding: 'utf8',
+    timeout: 300_000,
+    env: {
+      ...process.env,
+      DISPLAYCORE_LAYOUT_COLLISION_QA_ONLY: '1',
+    },
+  });
+
+  assert.equal(result.error, undefined, result.error?.message);
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  assert.match(
+    `${result.stdout}\n${result.stderr}`,
+    /Layout collision matrix inspected 252 layouts/,
+  );
+});
+
 test('正式 Display 可由設定關閉倒酒效果並安全退回固定白字', () => {
   const electronBinary = require('electron');
   const result = spawnSync(electronBinary, [fixtureRoot], {

@@ -25,6 +25,7 @@ const REQUEST_CHANNELS = Object.freeze([
   IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
   IPC_CHANNELS.DISPLAY_GET_SETTINGS,
   IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+  IPC_CHANNELS.DISPLAY_GET_OUTPUT_ADJUSTMENT,
 ]);
 
 function success(data) {
@@ -118,6 +119,7 @@ class IpcCoordinator {
     standbyBackgroundImporter = null,
     displayTopologyService = null,
     displayPlacementController = null,
+    outputMonitorController = null,
     getWindow,
     allowedUrls,
     logger = console,
@@ -129,6 +131,7 @@ class IpcCoordinator {
     this.standbyBackgroundImporter = standbyBackgroundImporter;
     this.displayTopologyService = displayTopologyService;
     this.displayPlacementController = displayPlacementController;
+    this.outputMonitorController = outputMonitorController;
     this.getWindow = getWindow;
     this.allowedUrls = allowedUrls;
     this.logger = logger;
@@ -137,6 +140,7 @@ class IpcCoordinator {
     this.settingsUnsubscribe = null;
     this.outputUnsubscribes = [];
     this.lastOutputStatusSignature = null;
+    this.lastOutputAdjustmentSignature = null;
   }
 
   register() {
@@ -172,18 +176,37 @@ class IpcCoordinator {
         } catch (error) {
           this.logger.error('[DisplayCore] Display 設定投影失敗。', error);
         }
+        // 亮度／對比設定可能改變軟體調整值；硬體狀態稍後由控制器另行發布。
+        this.broadcastOutputAdjustment();
       });
     }
 
-    if (
+    const publishesOutputStatus =
       typeof this.displayTopologyService?.subscribe === 'function' &&
-      typeof this.displayPlacementController?.subscribe === 'function'
-    ) {
-      const publishOutputStatus = () => this.broadcastOutputStatus();
-      this.outputUnsubscribes = [
+      typeof this.displayPlacementController?.subscribe === 'function' &&
+      typeof this.outputMonitorController?.subscribe === 'function';
+    const publishOutputStatus = () => this.broadcastOutputStatus();
+
+    if (publishesOutputStatus) {
+      this.outputUnsubscribes.push(
         this.displayTopologyService.subscribe(publishOutputStatus),
         this.displayPlacementController.subscribe(publishOutputStatus),
-      ];
+      );
+    }
+
+    if (typeof this.outputMonitorController?.subscribe === 'function') {
+      // Display 啟動時自行 GET 目前調整；之後只推送真正的變化。
+      this.lastOutputAdjustmentSignature = JSON.stringify(
+        this.createOutputAdjustmentSnapshot(),
+      );
+      this.outputUnsubscribes.push(
+        this.outputMonitorController.subscribe(() => {
+          if (publishesOutputStatus) {
+            publishOutputStatus();
+          }
+          this.broadcastOutputAdjustment();
+        }),
+      );
     }
 
     this.ipcMain.handle(
@@ -267,6 +290,12 @@ class IpcCoordinator {
       ),
     );
     this.ipcMain.handle(
+      IPC_CHANNELS.DISPLAY_GET_OUTPUT_ADJUSTMENT,
+      (event) => this.handleRequest(IPC_ROLES.DISPLAY, event, () =>
+        success(this.createOutputAdjustmentSnapshot()),
+      ),
+    );
+    this.ipcMain.handle(
       IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
       (event, payload) => this.handleRequest(
         IPC_ROLES.DISPLAY,
@@ -295,6 +324,7 @@ class IpcCoordinator {
     this.settingsUnsubscribe = null;
     this.outputUnsubscribes = [];
     this.lastOutputStatusSignature = null;
+    this.lastOutputAdjustmentSignature = null;
     this.registered = false;
   }
 
@@ -495,7 +525,8 @@ class IpcCoordinator {
   createOutputStatusSnapshot() {
     if (
       typeof this.displayTopologyService?.getSnapshot !== 'function' ||
-      typeof this.displayPlacementController?.getStatus !== 'function'
+      typeof this.displayPlacementController?.getStatus !== 'function' ||
+      typeof this.outputMonitorController?.getStatus !== 'function'
     ) {
       throw new Error('Control 輸出狀態服務尚未初始化。');
     }
@@ -503,7 +534,51 @@ class IpcCoordinator {
     return createControlOutputSnapshot(
       this.displayTopologyService.getSnapshot(),
       this.displayPlacementController.getStatus(),
+      this.outputMonitorController.getStatus(),
     );
+  }
+
+  /** 螢幕不支援硬體調整時，Display 以畫面濾鏡套用的亮度／對比。 */
+  createOutputAdjustmentSnapshot() {
+    if (
+      typeof this.outputMonitorController?.getSoftwareAdjustment !== 'function'
+    ) {
+      throw new Error('輸出螢幕控制尚未初始化。');
+    }
+
+    const adjustment = this.outputMonitorController.getSoftwareAdjustment();
+    return Object.freeze({
+      brightnessPercent: adjustment.brightnessPercent,
+      contrastPercent: adjustment.contrastPercent,
+    });
+  }
+
+  broadcastOutputAdjustment() {
+    if (
+      typeof this.outputMonitorController?.getSoftwareAdjustment !== 'function'
+    ) {
+      return false;
+    }
+
+    try {
+      const snapshot = this.createOutputAdjustmentSnapshot();
+      const signature = JSON.stringify(snapshot);
+
+      if (signature === this.lastOutputAdjustmentSignature) {
+        return false;
+      }
+
+      this.lastOutputAdjustmentSignature = signature;
+      this.sendToRole(
+        IPC_ROLES.DISPLAY,
+        IPC_CHANNELS.DISPLAY_OUTPUT_ADJUSTMENT_CHANGED,
+        snapshot,
+      );
+      return true;
+    } catch (error) {
+      this.logger.error('[DisplayCore] Display 畫面調整投影失敗。', error);
+      return false;
+    }
   }
 
   /**

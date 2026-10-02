@@ -27,7 +27,6 @@ import {
 import { createSandTransition } from './sand-transition.mjs';
 import { createSandTimeline } from './sand-timeline.mjs';
 import { createSandWebglRenderer } from './sand-webgl-renderer.mjs';
-import { resolveRenderResolution } from './render-resolution.mjs';
 import {
   calculateResponsiveFontBounds,
   findLargestFittingFontSize,
@@ -37,12 +36,6 @@ const EMERGENCY_GRID_CELL_COUNT = 9;
 const EMERGENCY_GLYPHS = Object.freeze({
   inspection: '5',
   release: '8',
-});
-const MESSAGE_BACKGROUND_VIEWPORT_COLORS = Object.freeze({
-  obsidian: '#292E34',
-  'dark-marble': '#313338',
-  walnut: '#321B11',
-  'emerald-onyx': '#0F3026',
 });
 const FIT_PRECISION_PX = 0.25;
 const MESSAGE_LINE_HEIGHT = 1.08;
@@ -87,6 +80,7 @@ let presentationController = null;
 let settingsController = null;
 let pageProgressReporter = null;
 let unsubscribeRefitRequested = null;
+let unsubscribeOutputAdjustment = null;
 let currentPresentation = null;
 let currentSettings = SAFE_DISPLAY_SETTINGS;
 let currentDisplayEpoch = 0;
@@ -801,30 +795,29 @@ function syncClock() {
   clock.update({ enabled, offsetSeconds });
 }
 
-/** 解析邏輯畫布並置中縮放；不變更 Windows 或 HDMI 的實體顯示模式。 */
-function applyRenderResolution() {
-  const viewportWidth = document.documentElement.clientWidth;
-  const viewportHeight = document.documentElement.clientHeight;
-  let resolved;
-
-  try {
-    resolved = resolveRenderResolution({
-      profile: currentSettings.display.renderResolution,
-      viewportWidth,
-      viewportHeight,
-    });
-  } catch {
+/**
+ * 螢幕不支援 DDC/CI 時，Main 以百分比要求畫面濾鏡模擬亮度／對比；
+ * 100% 代表原始畫面，因此兩者皆為 100 時移除濾鏡以免額外合成成本。
+ */
+function applyOutputAdjustment(adjustment) {
+  const isPercent = (value) =>
+    Number.isSafeInteger(value) && value >= 0 && value <= 100;
+  if (
+    adjustment === null ||
+    typeof adjustment !== 'object' ||
+    Object.keys(adjustment).length !== 2 ||
+    !isPercent(adjustment.brightnessPercent) ||
+    !isPercent(adjustment.contrastPercent)
+  ) {
     return false;
   }
 
-  elements.renderSurface.style.inlineSize = `${resolved.logicalWidth}px`;
-  elements.renderSurface.style.blockSize = `${resolved.logicalHeight}px`;
-  elements.renderSurface.style.insetInlineStart = `${resolved.offsetX}px`;
-  elements.renderSurface.style.insetBlockStart = `${resolved.offsetY}px`;
-  elements.renderSurface.style.setProperty('--render-scale', String(resolved.scale));
-  elements.stage.dataset.renderResolution = resolved.profile;
-  elements.stage.dataset.logicalWidth = String(resolved.logicalWidth);
-  elements.stage.dataset.logicalHeight = String(resolved.logicalHeight);
+  const { brightnessPercent, contrastPercent } = adjustment;
+  const neutral = brightnessPercent === 100 && contrastPercent === 100;
+  elements.renderSurface.style.filter = neutral
+    ? ''
+    : `brightness(${brightnessPercent / 100}) contrast(${contrastPercent / 100})`;
+  elements.stage.dataset.outputAdjustment = neutral ? 'none' : 'software';
   return true;
 }
 
@@ -2035,26 +2028,17 @@ function calculateStandbyScrim(fontColor) {
 }
 
 function applyEmergencyBackground(tone) {
-  const isEmergency = tone === 'inspection' || tone === 'release';
-  let background = currentSettings.appearance.backgroundColor;
-
   if (tone === 'inspection') {
-    background = currentSettings.emergency.inspectionBackgroundColor;
+    document.documentElement.style.setProperty(
+      '--emergency-background',
+      currentSettings.emergency.inspectionBackgroundColor,
+    );
   } else if (tone === 'release') {
-    background = currentSettings.emergency.releaseBackgroundColor;
-  } else if (currentPresentation?.mode === 'page') {
-    background = MESSAGE_BACKGROUND_VIEWPORT_COLORS[
-      currentSettings.appearance.messageBackgroundPreset
-    ] ?? background;
+    document.documentElement.style.setProperty(
+      '--emergency-background',
+      currentSettings.emergency.releaseBackgroundColor,
+    );
   }
-
-  const rootStyle = document.documentElement.style;
-
-  if (isEmergency) {
-    rootStyle.setProperty('--emergency-background', background);
-  }
-  // contain 排版可能留下邊帶；viewport 必須與緊急畫布同色才是真正滿屏。
-  rootStyle.setProperty('--viewport-background', background);
 }
 
 /**
@@ -2156,7 +2140,6 @@ function applyDisplaySettings(snapshot) {
   );
   prepareMessageBackground(snapshot.appearance.messageBackgroundPreset);
   elements.stage.dataset.settingsRevision = String(snapshot.revision);
-  applyRenderResolution();
   applyEmergencyBackground(currentPresentation?.emergencyTone);
   applyLogo();
   syncStandbyBackgroundPlayer();
@@ -2299,7 +2282,9 @@ function hasRequiredBridge(api) {
     typeof api?.getSettings === 'function' &&
     typeof api?.onSettingsChanged === 'function' &&
     typeof api?.onRefitRequested === 'function' &&
-    typeof api?.reportPageProgress === 'function'
+    typeof api?.reportPageProgress === 'function' &&
+    typeof api?.getOutputAdjustment === 'function' &&
+    typeof api?.onOutputAdjustmentChanged === 'function'
   );
 }
 
@@ -2340,7 +2325,6 @@ for (const image of elements.standbyBackgroundImages) {
 applyDisplaySettings(SAFE_DISPLAY_SETTINGS);
 
 const resizeObserver = new ResizeObserver(() => {
-  applyRenderResolution();
   scheduleStandbySandPreparation();
   scheduleFit();
 });
@@ -2370,6 +2354,18 @@ async function boot() {
     document.documentElement.dataset.displayReady = 'false';
     document.documentElement.dataset.settingsReady = 'false';
     return;
+  }
+
+  unsubscribeOutputAdjustment = bridge.onOutputAdjustmentChanged(
+    applyOutputAdjustment,
+  );
+  try {
+    const adjustment = await bridge.getOutputAdjustment();
+    if (adjustment?.ok === true) {
+      applyOutputAdjustment(adjustment.data);
+    }
+  } catch {
+    // 取不到時維持原始畫面；Main 狀態改變時仍會推送最新調整。
   }
 
   const settingsApi = Object.freeze({
@@ -2411,6 +2407,8 @@ window.addEventListener(
     pageProgressReporter?.dispose();
     unsubscribeRefitRequested?.();
     unsubscribeRefitRequested = null;
+    unsubscribeOutputAdjustment?.();
+    unsubscribeOutputAdjustment = null;
     clock.dispose();
     standbyBackgroundPlayer.dispose();
     messageBackgroundGeneration += 1;

@@ -9,6 +9,17 @@ const HDMI_STATUSES = new Set([
 ]);
 const SELECTION_MODES = new Set(['auto', 'manual']);
 const PLACEMENT_STATUSES = new Set(['pending', 'applied', 'error']);
+const MONITOR_STATUSES = new Set([
+  'detecting',
+  'ready',
+  'no-display',
+  'unsupported',
+  'error',
+]);
+const ADJUSTMENT_CONTROLS = new Set(['unknown', 'hardware', 'software']);
+const RESOLUTION_ERRORS = new Set(['unsupported', 'failed']);
+const RESOLUTION_PATTERN = /^[1-9][0-9]{1,4}x[1-9][0-9]{1,4}$/;
+const MAX_RESOLUTION_COUNT = 512;
 const MAX_DISPLAY_COUNT = 32;
 const MAX_DISPLAY_LABEL_CODE_POINTS = 80;
 
@@ -92,11 +103,46 @@ function projectPlacement(placement) {
   });
 }
 
+function isResolution(value) {
+  return typeof value === 'string' && RESOLUTION_PATTERN.test(value);
+}
+
+function projectMonitor(monitor) {
+  if (
+    !isPlainObject(monitor) ||
+    !MONITOR_STATUSES.has(monitor.status) ||
+    !(monitor.displayId === null || isDisplayId(monitor.displayId)) ||
+    !(monitor.currentResolution === null ||
+      isResolution(monitor.currentResolution)) ||
+    !Array.isArray(monitor.resolutions) ||
+    monitor.resolutions.length > MAX_RESOLUTION_COUNT ||
+    !monitor.resolutions.every(isResolution) ||
+    !(monitor.resolutionError === null ||
+      RESOLUTION_ERRORS.has(monitor.resolutionError)) ||
+    !ADJUSTMENT_CONTROLS.has(monitor.brightnessControl) ||
+    !ADJUSTMENT_CONTROLS.has(monitor.contrastControl) ||
+    !isRevision(monitor.revision)
+  ) {
+    return invalidOutputStatus();
+  }
+
+  return Object.freeze({
+    status: monitor.status,
+    displayId: monitor.displayId,
+    currentResolution: monitor.currentResolution,
+    resolutions: Object.freeze([...monitor.resolutions]),
+    resolutionError: monitor.resolutionError,
+    brightnessControl: monitor.brightnessControl,
+    contrastControl: monitor.contrastControl,
+    revision: monitor.revision,
+  });
+}
+
 /**
  * 將 Main 內部拓樸與定位狀態投影為 Control Renderer 可讀取的最小快照。
  * 僅逐欄複製公開資料，避免未來服務新增內部欄位時意外跨越 IPC 邊界。
  */
-function createControlOutputSnapshot(topology, placement) {
+function createControlOutputSnapshot(topology, placement, monitor) {
   if (
     !isPlainObject(topology) ||
     topology.schemaVersion !== 1 ||
@@ -192,6 +238,7 @@ function createControlOutputSnapshot(topology, placement) {
     configRevision: topology.configRevision,
     topologyRevision: topology.revision,
     placement: projectPlacement(placement),
+    monitor: projectMonitor(monitor),
   });
 }
 

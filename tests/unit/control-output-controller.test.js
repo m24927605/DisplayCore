@@ -58,6 +58,16 @@ function createSnapshot(topologyRevision, placementRevision, overrides = {}) {
       fullscreen: true,
       revision: placementRevision,
     },
+    monitor: {
+      status: 'ready',
+      displayId: 2,
+      currentResolution: '3840x2160',
+      resolutions: ['3840x2160', '1920x1080'],
+      resolutionError: null,
+      brightnessControl: 'hardware',
+      contrastControl: 'software',
+      revision: 2,
+    },
     ...overrides,
   };
 }

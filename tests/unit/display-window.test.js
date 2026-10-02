@@ -122,7 +122,8 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   );
   assert.doesNotMatch(css, /--message-outline-color/);
   assert.match(css, /\.display-render-surface\s*{[^}]*container-type:\s*size/s);
-  assert.match(css, /\.display-render-surface\s*{[^}]*transform:/s);
+  // Display 依實際視窗排版；輸出解析度由 Main 切換 Windows 顯示模式。
+  assert.doesNotMatch(css, /\.display-render-surface\s*{[^}]*transform:/s);
   assert.match(css, /(?:cqw|cqh|cqmin)/);
   assert.match(css, /\.normal-layer\s*{[^}]*position:\s*relative/s);
   assert.match(
@@ -244,8 +245,8 @@ test('Display CSS 使用 viewport 比例、安全區、單行與滿屏 grid，�
   assert.match(css, /--message-line-spacing-scale/);
   assert.match(css, /--standby-clock-size-scale/);
   assert.match(css, /--emergency-background/);
-  assert.match(css, /--viewport-background/);
-  assert.match(css, /body\s*{[^}]*background:\s*var\(--viewport-background\)/s);
+  // 畫布永遠填滿視窗，不再有需要配色的邊帶。
+  assert.doesNotMatch(css, /--viewport-background/);
   assert.match(css, /\.is-marquee\s+\.marquee-track\s*{[^}]*will-change:\s*transform/s);
   assert.match(css, /font-smoothing:\s*antialiased/);
   assert.match(css, /@media\s*\(prefers-reduced-motion:\s*reduce\)/);
@@ -262,7 +263,6 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /createDisplaySettingsController/);
   assert.match(source, /createDisplayClock/);
   assert.match(source, /createMessageLiquidAnimator/);
-  assert.match(source, /resolveRenderResolution/);
   assert.match(source, /createPageProgressReporter/);
   assert.match(source, /createStandbyBackgroundPlayer/);
   assert.match(source, /createSandTransition/);
@@ -271,7 +271,10 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /classifyLogoAlpha/);
   assert.match(source, /\.textContent\s*=/);
   assert.match(source, /new ResizeObserver/);
-  assert.match(source, /renderResolution/);
+  assert.doesNotMatch(source, /renderResolution/);
+  assert.match(source, /bridge\.getOutputAdjustment\(\)/);
+  assert.match(source, /bridge\.onOutputAdjustmentChanged\(/);
+  assert.match(source, /brightness\(\$\{brightnessPercent \/ 100\}\)/);
   assert.match(source, /requestAnimationFrame/);
   assert.match(source, /document\.fonts\.ready/);
   assert.match(source, /bridge\.getSettings\(\)/);
@@ -299,7 +302,7 @@ test('Display app 僅使用最小權限 bridge 與 textContent，且不解析緊
   assert.match(source, /'--logo-page-size-scale'/);
   assert.match(source, /'--logo-standby-size-scale'/);
   assert.match(source, /'--emergency-background'/);
-  assert.match(source, /'--viewport-background'/);
+  assert.doesNotMatch(source, /'--viewport-background'/);
   assert.match(source, /standby\.backgroundImageUrls/);
   assert.match(source, /standby\.backgroundMode/);
   assert.match(source, /standby\.slideDurationSeconds/);

@@ -74,14 +74,13 @@ function isExpectedSettingsSnapshot(snapshot) {
       'appearance',
       'configVersion',
       'dateTime',
-      'display',
       'emergency',
       'logo',
       'marquee',
       'revision',
       'standby',
     ]) &&
-    snapshot.configVersion === 11 &&
+    snapshot.configVersion === 12 &&
     !Object.hasOwn(snapshot, 'playback') &&
     snapshot.revision === 1 &&
     hasExactKeys(snapshot.logo, ['enabled', 'sizePercent', 'url']) &&
@@ -121,9 +120,7 @@ function isExpectedSettingsSnapshot(snapshot) {
       'inspectionBackgroundColor',
       'releaseBackgroundColor',
     ]) &&
-    hasExactKeys(snapshot.marquee, ['enabled']) &&
-    hasExactKeys(snapshot.display, ['renderResolution']) &&
-    snapshot.display.renderResolution === '2560x1440'
+    hasExactKeys(snapshot.marquee, ['enabled'])
   );
 }
 

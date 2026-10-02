@@ -1,6 +1,6 @@
 'use strict';
 
-const CONFIG_VERSION = 11;
+const CONFIG_VERSION = 12;
 
 const PLAYBACK_MODES = Object.freeze({
   FINITE: 'finite',
@@ -47,21 +47,20 @@ const CONFIG_LIMITS = Object.freeze({
   PERCENTAGE_STEP: 5,
   MINIMUM_CLOCK_OFFSET_SECONDS: -43_199,
   MAXIMUM_CLOCK_OFFSET_SECONDS: 43_200,
+  MINIMUM_OUTPUT_RESOLUTION_WIDTH: 320,
+  MAXIMUM_OUTPUT_RESOLUTION_WIDTH: 16_384,
+  MINIMUM_OUTPUT_RESOLUTION_HEIGHT: 200,
+  MAXIMUM_OUTPUT_RESOLUTION_HEIGHT: 16_384,
+  MINIMUM_OUTPUT_ADJUSTMENT_PERCENT: 0,
+  MAXIMUM_OUTPUT_ADJUSTMENT_PERCENT: 100,
   MINIMUM_PAGE_DURATION_SECONDS: 1,
   MAXIMUM_PAGE_DURATION_SECONDS: 3_600,
   MINIMUM_ROUND_COUNT: 1,
   MAXIMUM_ROUND_COUNT: 999,
 });
 
-const RENDER_RESOLUTIONS = Object.freeze([
-  'auto',
-  '1280x720',
-  '1366x768',
-  '1600x900',
-  '1920x1080',
-  '2560x1440',
-  '3840x2160',
-]);
+// 輸出解析度為 'auto'（維持螢幕目前模式）或實際顯示模式的「寬x高」。
+const OUTPUT_RESOLUTION_PATTERN = /^([1-9][0-9]{2,4})x([1-9][0-9]{2,4})$/;
 
 const CONFIG_KEYS = Object.freeze([
   'appearance',
@@ -104,6 +103,8 @@ const PLAYBACK_KEYS = Object.freeze([
   'roundCount',
 ]);
 const DISPLAY_KEYS = Object.freeze([
+  'brightnessPercent',
+  'contrastPercent',
   'controlDisplayId',
   'defaultDisplayId',
   'fullscreen',
@@ -483,14 +484,76 @@ function validatePlayback(playback) {
   };
 }
 
+/**
+ * 解析輸出解析度設定；'auto' 回傳 null，代表維持螢幕目前的顯示模式。
+ *
+ * @param {unknown} value
+ * @returns {{width: number, height: number} | null | undefined}
+ *   undefined 代表格式不正確
+ */
+function parseOutputResolution(value) {
+  if (value === 'auto') {
+    return null;
+  }
+
+  const match = typeof value === 'string'
+    ? OUTPUT_RESOLUTION_PATTERN.exec(value)
+    : null;
+  if (!match) {
+    return undefined;
+  }
+
+  const width = Number(match[1]);
+  const height = Number(match[2]);
+  if (
+    width < CONFIG_LIMITS.MINIMUM_OUTPUT_RESOLUTION_WIDTH ||
+    width > CONFIG_LIMITS.MAXIMUM_OUTPUT_RESOLUTION_WIDTH ||
+    height < CONFIG_LIMITS.MINIMUM_OUTPUT_RESOLUTION_HEIGHT ||
+    height > CONFIG_LIMITS.MAXIMUM_OUTPUT_RESOLUTION_HEIGHT
+  ) {
+    return undefined;
+  }
+
+  return Object.freeze({ width, height });
+}
+
+/** null 代表不調整；數值為螢幕可調範圍的百分比。 */
+function isOutputAdjustmentPercent(value) {
+  return value === null || (
+    Number.isSafeInteger(value) &&
+    value >= CONFIG_LIMITS.MINIMUM_OUTPUT_ADJUSTMENT_PERCENT &&
+    value <= CONFIG_LIMITS.MAXIMUM_OUTPUT_ADJUSTMENT_PERCENT
+  );
+}
+
 function validateDisplay(display) {
   if (
     !hasExactKeys(display, DISPLAY_KEYS) ||
     typeof display.fullscreen !== 'boolean' ||
-    !Object.values(DISPLAY_SELECTION_MODES).includes(display.selectionMode) ||
-    !RENDER_RESOLUTIONS.includes(display.renderResolution)
+    !Object.values(DISPLAY_SELECTION_MODES).includes(display.selectionMode)
   ) {
     return validationFailure('輸出螢幕設定格式不正確。', 'display');
+  }
+
+  if (parseOutputResolution(display.renderResolution) === undefined) {
+    return validationFailure(
+      '螢幕解析度必須是「自動」或有效的寬×高。',
+      'display.renderResolution',
+    );
+  }
+
+  if (!isOutputAdjustmentPercent(display.brightnessPercent)) {
+    return validationFailure(
+      '螢幕亮度必須是 0% 至 100% 的整數，或設為不調整。',
+      'display.brightnessPercent',
+    );
+  }
+
+  if (!isOutputAdjustmentPercent(display.contrastPercent)) {
+    return validationFailure(
+      '螢幕對比必須是 0% 至 100% 的整數，或設為不調整。',
+      'display.contrastPercent',
+    );
   }
 
   if (
@@ -539,6 +602,8 @@ function validateDisplay(display) {
       defaultDisplayId: display.defaultDisplayId,
       fullscreen: display.fullscreen,
       renderResolution: display.renderResolution,
+      brightnessPercent: display.brightnessPercent,
+      contrastPercent: display.contrastPercent,
     },
   };
 }
@@ -563,7 +628,7 @@ function freezeConfig(config) {
   return Object.freeze(config);
 }
 
-/** 驗證、正規化並深層複製完整的 canonical config v11。 */
+/** 驗證、正規化並深層複製完整的 canonical config v12。 */
 function validateConfig(candidate) {
   if (!hasExactKeys(candidate, CONFIG_KEYS)) {
     return validationFailure('設定檔包含缺少或不允許的欄位。');
@@ -622,7 +687,7 @@ module.exports = {
   DISPLAY_SELECTION_MODES,
   MESSAGE_BACKGROUND_PRESETS,
   PLAYBACK_MODES,
-  RENDER_RESOLUTIONS,
+  parseOutputResolution,
   STANDBY_BACKGROUND_MODES,
   validateConfig,
 };

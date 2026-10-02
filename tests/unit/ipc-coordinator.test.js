@@ -233,6 +233,31 @@ function createOutputStateService(initialSnapshot) {
   };
 }
 
+function createMonitorStatus(overrides = {}) {
+  return Object.freeze({
+    status: 'ready',
+    displayId: 1,
+    currentResolution: '1920x1080',
+    resolutions: Object.freeze(['1920x1080', '1280x720']),
+    resolutionError: null,
+    brightnessControl: 'hardware',
+    contrastControl: 'software',
+    revision: 0,
+    ...overrides,
+  });
+}
+
+/** 輸出螢幕控制替身：狀態與軟體調整皆可由測試手動發布。 */
+function createOutputMonitorService() {
+  const service = createOutputStateService(createMonitorStatus());
+  service.adjustment = Object.freeze({
+    brightnessPercent: 100,
+    contrastPercent: 100,
+  });
+  service.getSoftwareAdjustment = () => service.adjustment;
+  return service;
+}
+
 function createHarness({
   presentationService = null,
   settingsManager = null,
@@ -240,6 +265,7 @@ function createHarness({
   standbyBackgroundImporter = null,
   displayTopologyService = null,
   displayPlacementController = null,
+  outputMonitorController = null,
 } = {}) {
   const ipcMain = new FakeIpcMain();
   const windows = {
@@ -287,6 +313,8 @@ function createHarness({
     createOutputStateService(createTopologySnapshot());
   const resolvedPlacementController = displayPlacementController ||
     createOutputStateService(createPlacementSnapshot());
+  const resolvedOutputMonitorController = outputMonitorController ||
+    createOutputMonitorService();
   const coordinator = new IpcCoordinator({
     ipcMain,
     presentationService: service,
@@ -295,6 +323,7 @@ function createHarness({
     standbyBackgroundImporter: resolvedStandbyBackgroundImporter,
     displayTopologyService: resolvedTopologyService,
     displayPlacementController: resolvedPlacementController,
+    outputMonitorController: resolvedOutputMonitorController,
     getWindow: (role) => windows[role] || null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,
@@ -319,6 +348,7 @@ function createHarness({
     standbyBackgroundImporter: resolvedStandbyBackgroundImporter,
     displayPlacementController: resolvedPlacementController,
     displayTopologyService: resolvedTopologyService,
+    outputMonitorController: resolvedOutputMonitorController,
     presentationService: service,
     settingsManager: resolvedSettingsManager,
     timers,
@@ -364,6 +394,16 @@ test('Control 可取得拓樸與定位的最小輸出快照，Display 角色不�
         status: 'applied',
         displayId: 1,
         fullscreen: true,
+        revision: 0,
+      },
+      monitor: {
+        status: 'ready',
+        displayId: 1,
+        currentResolution: '1920x1080',
+        resolutions: ['1920x1080', '1280x720'],
+        resolutionError: null,
+        brightnessControl: 'hardware',
+        contrastControl: 'software',
         revision: 0,
       },
     },
@@ -455,7 +495,7 @@ test('Control 可讀寫設定與匯入 Logo／待機背景，Display 無法呼�
 
   assert.equal(loaded.ok, true);
   assert.equal(loaded.data.revision, 0);
-  assert.equal(loaded.data.config.configVersion, 11);
+  assert.equal(loaded.data.config.configVersion, 12);
   assert.equal(loaded.data.config.display.controlDisplayId, null);
   assert.deepEqual(loaded.data.config.playback, defaultConfig.playback);
   assert.equal(saved.ok, true);
@@ -545,7 +585,7 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
   assert.deepEqual(result, {
     ok: true,
     data: {
-      configVersion: 11,
+      configVersion: 12,
       logo: { enabled: false, sizePercent: 100, url: null },
       standby: {
         backgroundMode: 'fixed',
@@ -557,9 +597,6 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
       dateTime: defaultConfig.dateTime,
       emergency: defaultConfig.emergency,
       marquee: defaultConfig.marquee,
-      display: {
-        renderResolution: defaultConfig.display.renderResolution,
-      },
       revision: 0,
     },
   });
@@ -570,7 +607,7 @@ test('Display 只能讀取最小設定投影，Control 不能冒充 Display', as
     result.data.appearance.messageLiquidEffectEnabled,
     true,
   );
-  assert.deepEqual(Object.keys(result.data.display), ['renderResolution']);
+  assert.equal(Object.hasOwn(result.data, 'display'), false);
 
   const forbiddenResult = await ipcMain.invoke(
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
@@ -607,7 +644,7 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     IPC_CHANNELS.DISPLAY_SETTINGS_CHANGED,
   );
   assert.deepEqual(windows.display.webContents.sent[0].payload, {
-    configVersion: 11,
+    configVersion: 12,
     logo: { enabled: false, sizePercent: 150, url: null },
     standby: {
       backgroundMode: 'fixed',
@@ -619,7 +656,6 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
     dateTime: config.dateTime,
     emergency: config.emergency,
     marquee: config.marquee,
-    display: { renderResolution: '2560x1440' },
     revision: 1,
   });
   assert.equal(
@@ -629,7 +665,59 @@ test('設定原子儲存成功後只向 Display 發布最小設定事件', async
   );
   assert.doesNotMatch(
     JSON.stringify(windows.display.webContents.sent[0].payload),
-    /defaults|notice|playback|controlDisplayId|defaultDisplayId|selectionMode|fullscreen|userData/i,
+    /defaults|notice|playback|controlDisplayId|defaultDisplayId|selectionMode|fullscreen|renderResolution|brightness|contrast|userData/i,
+  );
+});
+
+test('Display 只能讀取軟體亮度／對比調整，狀態改變時只推送一次', async () => {
+  const { ipcMain, outputMonitorController, windows } = createHarness();
+
+  const initial = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_GET_OUTPUT_ADJUSTMENT,
+    createEvent(windows.display),
+  );
+  assert.deepEqual(initial, {
+    ok: true,
+    data: { brightnessPercent: 100, contrastPercent: 100 },
+  });
+
+  const forbidden = await ipcMain.invoke(
+    IPC_CHANNELS.DISPLAY_GET_OUTPUT_ADJUSTMENT,
+    createEvent(windows.control),
+  );
+  assert.equal(forbidden.ok, false);
+  assert.equal(forbidden.error.code, 'FORBIDDEN');
+
+  // 調整值未改變時，狀態更新只送 Control 輸出狀態，不重送 Display 調整。
+  outputMonitorController.publish(createMonitorStatus({ revision: 1 }));
+  assert.equal(windows.display.webContents.sent.length, 0);
+
+  outputMonitorController.adjustment = Object.freeze({
+    brightnessPercent: 40,
+    contrastPercent: 100,
+  });
+  outputMonitorController.publish(createMonitorStatus({
+    brightnessControl: 'software',
+    revision: 2,
+  }));
+  outputMonitorController.publish(createMonitorStatus({
+    brightnessControl: 'software',
+    revision: 2,
+  }));
+
+  assert.deepEqual(
+    windows.display.webContents.sent.map(({ channel, payload }) => ({
+      channel,
+      payload,
+    })),
+    [{
+      channel: IPC_CHANNELS.DISPLAY_OUTPUT_ADJUSTMENT_CHANGED,
+      payload: { brightnessPercent: 40, contrastPercent: 100 },
+    }],
+  );
+  assert.equal(
+    windows.control.webContents.sent.at(-1).payload.monitor.brightnessControl,
+    'software',
   );
 });
 
@@ -1285,6 +1373,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     displayPlacementController,
     displayTopologyService,
     ipcMain,
+    outputMonitorController,
     presentationService,
     settingsManager,
     windows,
@@ -1302,6 +1391,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
     IPC_CHANNELS.DISPLAY_GET_PRESENTATION,
     IPC_CHANNELS.DISPLAY_GET_SETTINGS,
     IPC_CHANNELS.DISPLAY_REPORT_PAGE_PROGRESS,
+    IPC_CHANNELS.DISPLAY_GET_OUTPUT_ADJUSTMENT,
   ];
 
   assert.deepEqual([...ipcMain.handlers.keys()].sort(), requestChannels.sort());
@@ -1314,6 +1404,7 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
   settingsManager.publish();
   displayTopologyService.publish(createTopologySnapshot({ revision: 1 }));
   displayPlacementController.publish(createPlacementSnapshot({ revision: 1 }));
+  outputMonitorController.publish(createMonitorStatus({ revision: 1 }));
   assert.equal(ipcMain.handlers.size, 0);
   assert.deepEqual(ipcMain.removedChannels.sort(), requestChannels.sort());
   assert.equal(windows.control.webContents.sent.length, 0);
@@ -1321,4 +1412,5 @@ test('IPC handlers 與 service subscription 只註冊一次並可完整移除', 
   assert.equal(settingsManager.listeners.size, 0);
   assert.equal(displayTopologyService.listeners.size, 0);
   assert.equal(displayPlacementController.listeners.size, 0);
+  assert.equal(outputMonitorController.listeners.size, 0);
 });

@@ -136,6 +136,15 @@ export function createSettingsView({
     renderResolutionError: document.getElementById(
       'render-resolution-error',
     ),
+    outputMonitorStatus: document.getElementById('output-monitor-status'),
+    brightnessEnabled: document.getElementById('brightness-enabled-input'),
+    brightnessPercent: document.getElementById('brightness-percent-input'),
+    brightnessPercentError: document.getElementById(
+      'brightness-percent-error',
+    ),
+    contrastEnabled: document.getElementById('contrast-enabled-input'),
+    contrastPercent: document.getElementById('contrast-percent-input'),
+    contrastPercentError: document.getElementById('contrast-percent-error'),
     marqueeEnabled: document.getElementById('marquee-enabled-input'),
     loadDefaultsButton: document.getElementById('load-defaults-button'),
     closeButton: document.getElementById('settings-close-button'),
@@ -179,6 +188,7 @@ export function createSettingsView({
     clockTimeTouched: false,
     clockOffsetSeconds: 0,
     outputDisplays: [],
+    outputMonitor: null,
   };
   const eventController = new AbortController();
   const fieldTargets = Object.freeze({
@@ -264,6 +274,14 @@ export function createSettingsView({
     'display.renderResolution': [
       elements.renderResolution,
       elements.renderResolutionError,
+    ],
+    'display.brightnessPercent': [
+      elements.brightnessPercent,
+      elements.brightnessPercentError,
+    ],
+    'display.contrastPercent': [
+      elements.contrastPercent,
+      elements.contrastPercentError,
     ],
     playback: [elements.pageDuration, elements.pageDurationError],
     'playback.pageDurationSeconds': [
@@ -374,6 +392,10 @@ export function createSettingsView({
       controlDisplayId: elements.controlDisplay.value,
       defaultDisplayId: elements.defaultDisplay.value,
       renderResolution: elements.renderResolution.value,
+      brightnessEnabled: elements.brightnessEnabled.checked,
+      brightnessPercent: elements.brightnessPercent.value,
+      contrastEnabled: elements.contrastEnabled.checked,
+      contrastPercent: elements.contrastPercent.value,
     });
   }
 
@@ -483,6 +505,90 @@ export function createSettingsView({
     );
   }
 
+  function formatResolution(value) {
+    return value.replace('x', '×');
+  }
+
+  /** 解析度選項只列出訊息螢幕實際支援的模式；已儲存但不支援者另外標示。 */
+  function renderResolutionOptions(
+    selectedValue = elements.renderResolution.value || 'auto',
+  ) {
+    const current = state.outputMonitor?.currentResolution ?? null;
+    const resolutions = state.outputMonitor?.resolutions ?? [];
+    const options = [
+      createDisplayOption(
+        'auto',
+        current === null
+          ? '維持目前解析度'
+          : `維持目前解析度（${formatResolution(current)}）`,
+      ),
+      ...resolutions.map((resolution) => createDisplayOption(
+        resolution,
+        resolution === current
+          ? `${formatResolution(resolution)}（目前）`
+          : formatResolution(resolution),
+      )),
+    ];
+
+    if (selectedValue !== 'auto' && !resolutions.includes(selectedValue)) {
+      options.push(createDisplayOption(
+        selectedValue,
+        `${formatResolution(selectedValue)}（此螢幕不支援）`,
+      ));
+    }
+
+    elements.renderResolution.replaceChildren(...options);
+    elements.renderResolution.value = selectedValue;
+  }
+
+  function describeAdjustmentControl(label, control) {
+    if (control === 'hardware') {
+      return `${label}直接調整螢幕本身`;
+    }
+
+    if (control === 'software') {
+      return `${label}以畫面模擬（螢幕不支援 DDC/CI，100% 為原始畫面）`;
+    }
+
+    return `${label}偵測中`;
+  }
+
+  function renderOutputMonitorStatus() {
+    const monitor = state.outputMonitor;
+    let message;
+
+    if (monitor === null || monitor.status === 'detecting') {
+      message = '正在偵測訊息螢幕…';
+    } else if (monitor.status === 'no-display') {
+      message = '找不到訊息螢幕。';
+    } else if (monitor.status === 'unsupported') {
+      message =
+        '此電腦無法切換螢幕解析度；亮度與對比以畫面模擬，100% 為原始畫面。';
+    } else if (monitor.status === 'error') {
+      message =
+        '無法讀取訊息螢幕資訊；亮度與對比以畫面模擬，100% 為原始畫面。';
+    } else {
+      const parts = [
+        `訊息螢幕目前 ${formatResolution(monitor.currentResolution)}`,
+        describeAdjustmentControl('亮度', monitor.brightnessControl),
+        describeAdjustmentControl('對比', monitor.contrastControl),
+      ];
+      if (monitor.resolutionError === 'unsupported') {
+        parts.push('所選解析度不受此螢幕支援，維持目前解析度');
+      } else if (monitor.resolutionError === 'failed') {
+        parts.push('Windows 無法切換到所選解析度，維持目前解析度');
+      }
+      message = `${parts.join('；')}。`;
+    }
+
+    elements.outputMonitorStatus.textContent = message;
+  }
+
+  function renderAdjustmentControls() {
+    elements.brightnessPercent.disabled = !elements.brightnessEnabled.checked;
+    elements.contrastPercent.disabled = !elements.contrastEnabled.checked;
+  }
+
   function renderStandbyBackgroundControls() {
     const imageCount = state.standbyBackgroundImagePaths.length;
     const slideshow = elements.standbyBackgroundMode.value === 'slideshow';
@@ -570,7 +676,17 @@ export function createSettingsView({
       (currentSeconds + config.dateTime.offsetSeconds + 86_400) % 86_400,
     );
     elements.dateTimeEnabled.checked = config.dateTime.enabled;
-    elements.renderResolution.value = config.display.renderResolution;
+    renderResolutionOptions(config.display.renderResolution);
+    elements.brightnessEnabled.checked =
+      config.display.brightnessPercent !== null;
+    elements.brightnessPercent.value = String(
+      config.display.brightnessPercent ?? 100,
+    );
+    elements.contrastEnabled.checked = config.display.contrastPercent !== null;
+    elements.contrastPercent.value = String(
+      config.display.contrastPercent ?? 100,
+    );
+    renderAdjustmentControls();
     elements.marqueeEnabled.checked = config.marquee.enabled;
     elements.pageDuration.value = String(
       config.playback.pageDurationSeconds,
@@ -773,6 +889,8 @@ export function createSettingsView({
       elements.controlDisplay,
       elements.defaultDisplay,
       elements.renderResolution,
+      elements.brightnessPercent,
+      elements.contrastPercent,
       elements.marqueeEnabled,
       elements.pageDuration,
       elements.roundCount,
@@ -790,6 +908,16 @@ export function createSettingsView({
       renderMessageBackgroundControls();
       handleDraftInput();
     }, { signal });
+
+    for (const control of [
+      elements.brightnessEnabled,
+      elements.contrastEnabled,
+    ]) {
+      control.addEventListener('change', () => {
+        renderAdjustmentControls();
+        handleDraftInput();
+      }, { signal });
+    }
 
     elements.clockTime.addEventListener('input', handleClockInput, { signal });
     elements.clockTime.addEventListener('change', handleClockInput, { signal });
@@ -920,6 +1048,9 @@ export function createSettingsView({
         isPrimary: display.isPrimary,
       }));
       renderDisplayAssignmentOptions();
+      state.outputMonitor = snapshot.monitor ?? null;
+      renderResolutionOptions();
+      renderOutputMonitorStatus();
       return true;
     },
 

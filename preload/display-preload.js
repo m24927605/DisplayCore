@@ -10,6 +10,8 @@ const CHANNELS = Object.freeze({
   SETTINGS_CHANGED: 'dc:v2:display:settings:changed',
   REPORT_PAGE_PROGRESS: 'dc:v2:display:page-progress:report',
   REFIT_REQUESTED: 'dc:v2:display:layout:refit-requested',
+  GET_OUTPUT_ADJUSTMENT: 'dc:v2:display:output-adjustment:get',
+  OUTPUT_ADJUSTMENT_CHANGED: 'dc:v2:display:output-adjustment:changed',
 });
 
 function subscribe(channel, listener) {
@@ -38,6 +40,10 @@ function onSettingsChanged(listener) {
 
 function onRefitRequested(listener) {
   return subscribe(CHANNELS.REFIT_REQUESTED, listener);
+}
+
+function onOutputAdjustmentChanged(listener) {
+  return subscribe(CHANNELS.OUTPUT_ADJUSTMENT_CHANGED, listener);
 }
 
 function reportPageProgress(
@@ -71,6 +77,9 @@ contextBridge.exposeInMainWorld(
   Object.freeze({
     getPresentation: () => ipcRenderer.invoke(CHANNELS.GET_PRESENTATION),
     getSettings: () => ipcRenderer.invoke(CHANNELS.GET_SETTINGS),
+    getOutputAdjustment: () =>
+      ipcRenderer.invoke(CHANNELS.GET_OUTPUT_ADJUSTMENT),
+    onOutputAdjustmentChanged,
     onPresentationChanged,
     onRefitRequested,
     onSettingsChanged,

@@ -8,6 +8,7 @@ const SNAPSHOT_KEYS = Object.freeze([
   'effectiveDisplayId',
   'fullscreen',
   'hdmiConnectionStatus',
+  'monitor',
   'placement',
   'schemaVersion',
   'selectionMode',
@@ -30,6 +31,27 @@ const PLACEMENT_KEYS = Object.freeze([
   'revision',
   'status',
 ]);
+const MONITOR_KEYS = Object.freeze([
+  'brightnessControl',
+  'contrastControl',
+  'currentResolution',
+  'displayId',
+  'resolutionError',
+  'resolutions',
+  'revision',
+  'status',
+]);
+const MONITOR_STATUSES = new Set([
+  'detecting',
+  'ready',
+  'no-display',
+  'unsupported',
+  'error',
+]);
+const ADJUSTMENT_CONTROLS = new Set(['unknown', 'hardware', 'software']);
+const RESOLUTION_ERRORS = new Set(['unsupported', 'failed']);
+const RESOLUTION_PATTERN = /^[1-9][0-9]{1,4}x[1-9][0-9]{1,4}$/;
+const MAX_RESOLUTION_COUNT = 512;
 const TOPOLOGY_STATUSES = new Set(['ready', 'unknown']);
 const HDMI_STATUSES = new Set([
   'detecting',
@@ -195,6 +217,41 @@ function normalizePlacement(placement) {
   });
 }
 
+function isResolution(value) {
+  return typeof value === 'string' && RESOLUTION_PATTERN.test(value);
+}
+
+function normalizeMonitor(monitor) {
+  if (
+    !hasExactDataKeys(monitor, MONITOR_KEYS) ||
+    !MONITOR_STATUSES.has(monitor.status) ||
+    !(monitor.displayId === null || isDisplayId(monitor.displayId)) ||
+    !(monitor.currentResolution === null ||
+      isResolution(monitor.currentResolution)) ||
+    !Array.isArray(monitor.resolutions) ||
+    monitor.resolutions.length > MAX_RESOLUTION_COUNT ||
+    !monitor.resolutions.every(isResolution) ||
+    !(monitor.resolutionError === null ||
+      RESOLUTION_ERRORS.has(monitor.resolutionError)) ||
+    !ADJUSTMENT_CONTROLS.has(monitor.brightnessControl) ||
+    !ADJUSTMENT_CONTROLS.has(monitor.contrastControl) ||
+    !isRevision(monitor.revision)
+  ) {
+    return null;
+  }
+
+  return Object.freeze({
+    status: monitor.status,
+    displayId: monitor.displayId,
+    currentResolution: monitor.currentResolution,
+    resolutions: Object.freeze([...monitor.resolutions]),
+    resolutionError: monitor.resolutionError,
+    brightnessControl: monitor.brightnessControl,
+    contrastControl: monitor.contrastControl,
+    revision: monitor.revision,
+  });
+}
+
 function normalizeSnapshot(candidate) {
   if (
     !hasExactDataKeys(candidate, SNAPSHOT_KEYS) ||
@@ -235,8 +292,9 @@ function normalizeSnapshot(candidate) {
   }
 
   const placement = normalizePlacement(candidate.placement);
+  const monitor = normalizeMonitor(candidate.monitor);
 
-  if (!placement) {
+  if (!placement || !monitor) {
     return null;
   }
 
@@ -299,6 +357,7 @@ function normalizeSnapshot(candidate) {
     configRevision: candidate.configRevision,
     topologyRevision: candidate.topologyRevision,
     placement,
+    monitor,
   });
 }
 
@@ -420,11 +479,15 @@ export function acceptOutputSnapshot(currentSnapshot, candidate) {
   const placementDelta =
     candidateResult.snapshot.placement.revision -
     currentResult.snapshot.placement.revision;
+  const monitorDelta =
+    candidateResult.snapshot.monitor.revision -
+    currentResult.snapshot.monitor.revision;
 
   if (
     topologyDelta < 0 ||
     placementDelta < 0 ||
-    (topologyDelta === 0 && placementDelta === 0)
+    monitorDelta < 0 ||
+    (topologyDelta === 0 && placementDelta === 0 && monitorDelta === 0)
   ) {
     return REJECTED_RESULT;
   }

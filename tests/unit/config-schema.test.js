@@ -16,12 +16,12 @@ const {
 const projectRoot = path.resolve(__dirname, '..', '..');
 const VALID_RENDER_RESOLUTIONS = Object.freeze([
   'auto',
+  '320x200',
+  '1024x768',
   '1280x720',
-  '1366x768',
-  '1600x900',
   '1920x1080',
-  '2560x1440',
   '3840x2160',
+  '16384x16384',
 ]);
 
 async function readDefaultConfig() {
@@ -30,11 +30,11 @@ async function readDefaultConfig() {
   );
 }
 
-test('根目錄 config.json 通過 v11 schema，回傳深層凍結副本', async () => {
+test('根目錄 config.json 通過 v12 schema，回傳深層凍結副本', async () => {
   const source = await readDefaultConfig();
   const result = validateConfig(source);
 
-  assert.equal(CONFIG_VERSION, 11);
+  assert.equal(CONFIG_VERSION, 12);
   assert.equal(result.ok, true);
   assert.equal(result.value.configVersion, CONFIG_VERSION);
   assert.equal(source.standby.sandEffectEnabled, true);
@@ -105,7 +105,8 @@ test('設定 schema 拒絕未知欄位、錯誤版本與非純物件', async () 
     { ...source, configVersion: 8 },
     { ...source, configVersion: 9 },
     { ...source, configVersion: 10 },
-    { ...source, configVersion: 12 },
+    { ...source, configVersion: 11 },
+    { ...source, configVersion: 13 },
     { ...source, logo: { ...source.logo, unexpected: true } },
   ]) {
     const result = validateConfig(candidate);
@@ -406,10 +407,10 @@ test('外觀設定限制色碼、字型、最小字級、字體比例與行距�
   }
 });
 
-test('v11 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
+test('v12 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大小', async () => {
   const source = await readDefaultConfig();
 
-  assert.equal(source.configVersion, 11);
+  assert.equal(source.configVersion, 12);
   assert.equal(source.appearance.messageBackgroundPreset, 'obsidian');
   assert.equal(source.appearance.standbyClockSizePercent, 100);
 
@@ -465,7 +466,7 @@ test('v11 外觀設定接受五種訊息材質與 50% 至 300% 待機時間大�
   }
 });
 
-test('v11 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
+test('v12 訊息字體倒酒效果開關只接受 boolean 並完整保留值', async () => {
   const source = await readDefaultConfig();
 
   assert.equal(source.appearance.messageLiquidEffectEnabled, true);
@@ -505,7 +506,7 @@ test('v11 訊息字體倒酒效果開關只接受 boolean 並完整保留值', a
   }
 });
 
-test('v11 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
+test('v12 外觀設定必須具備精確欄位，缺少或多餘欄位皆拒絕', async () => {
   const source = await readDefaultConfig();
   const {
     messageBackgroundPreset: _messageBackgroundPreset,
@@ -584,7 +585,7 @@ test('時間偏移只接受 -43199 至 43200 秒的完整數與精確欄位', as
   }
 });
 
-test('顯示解析度只接受 auto 與六種固定預設，display 不接受缺少或多餘欄位', async () => {
+test('輸出解析度接受 auto 或範圍內的寬x高，display 不接受缺少或多餘欄位', async () => {
   const source = await readDefaultConfig();
 
   for (const renderResolution of VALID_RENDER_RESOLUTIONS) {
@@ -601,8 +602,12 @@ test('顯示解析度只接受 auto 與六種固定預設，display 不接受缺
     source.display;
   for (const display of [
     missingResolution,
-    { ...source.display, renderResolution: '1024x768' },
     { ...source.display, renderResolution: '1920×1080' },
+    { ...source.display, renderResolution: '319x200' },
+    { ...source.display, renderResolution: '320x199' },
+    { ...source.display, renderResolution: '16385x1080' },
+    { ...source.display, renderResolution: '01920x1080' },
+    { ...source.display, renderResolution: 'AUTO' },
     { ...source.display, renderResolution: 1920 },
     { ...source.display, unexpected: true },
   ]) {
@@ -610,6 +615,41 @@ test('顯示解析度只接受 auto 與六種固定預設，display 不接受缺
     assert.equal(result.ok, false, JSON.stringify(display));
     assert.match(result.error.field ?? 'display', /^display/);
   }
+});
+
+test('輸出螢幕亮度與對比接受 null（不調整）或 0% 至 100% 整數', async () => {
+  const source = await readDefaultConfig();
+
+  assert.equal(source.display.brightnessPercent, null);
+  assert.equal(source.display.contrastPercent, null);
+  for (const value of [null, 0, 1, 50, 100]) {
+    for (const field of ['brightnessPercent', 'contrastPercent']) {
+      const result = validateConfig({
+        ...source,
+        display: { ...source.display, [field]: value },
+      });
+      assert.equal(result.ok, true, `${field}=${value}`);
+      assert.equal(result.value.display[field], value);
+    }
+  }
+
+  for (const value of [-1, 101, 50.5, '50', undefined, false]) {
+    for (const field of ['brightnessPercent', 'contrastPercent']) {
+      const result = validateConfig({
+        ...source,
+        display: { ...source.display, [field]: value },
+      });
+      assert.equal(result.ok, false, `${field}=${String(value)}`);
+      assert.equal(result.error.field, `display.${field}`);
+    }
+  }
+
+  const { brightnessPercent: _brightness, ...missingBrightness } =
+    source.display;
+  assert.equal(
+    validateConfig({ ...source, display: missingBrightness }).ok,
+    false,
+  );
 });
 
 test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則', async () => {
@@ -625,6 +665,8 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         defaultDisplayId: 7,
         fullscreen: true,
         renderResolution: 'auto',
+        brightnessPercent: null,
+        contrastPercent: null,
       },
     },
     {
@@ -634,6 +676,8 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         defaultDisplayId: null,
         fullscreen: true,
         renderResolution: 'auto',
+        brightnessPercent: null,
+        contrastPercent: null,
       },
     },
     {
@@ -643,6 +687,8 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         defaultDisplayId: -1,
         fullscreen: true,
         renderResolution: 'auto',
+        brightnessPercent: null,
+        contrastPercent: null,
       },
     },
     {
@@ -652,6 +698,8 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
         defaultDisplayId: 42,
         fullscreen: true,
         renderResolution: 'auto',
+        brightnessPercent: null,
+        contrastPercent: null,
       },
     },
   ];
@@ -669,6 +717,8 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
       defaultDisplayId: 42,
       fullscreen: false,
       renderResolution: '1920x1080',
+      brightnessPercent: 40,
+      contrastPercent: 75,
     },
   });
   assert.equal(manual.ok, true);
@@ -678,5 +728,7 @@ test('時間、跑馬燈與顯示設定使用明確型別及交叉欄位規則',
     defaultDisplayId: 42,
     fullscreen: false,
     renderResolution: '1920x1080',
+    brightnessPercent: 40,
+    contrastPercent: 75,
   });
 });

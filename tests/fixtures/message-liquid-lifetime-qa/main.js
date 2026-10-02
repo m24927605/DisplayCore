@@ -492,6 +492,14 @@ async function run() {
     ipcMain,
     presentationService,
     settingsManager,
+    // 輸出螢幕控制不屬於本驗收範圍；固定回報不需要畫面亮度／對比調整。
+    outputMonitorController: {
+      getSoftwareAdjustment: () => ({
+        brightnessPercent: 100,
+        contrastPercent: 100,
+      }),
+      subscribe: () => () => {},
+    },
     getWindow: (role) => role === IPC_ROLES.DISPLAY ? displayWindow : null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,

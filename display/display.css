@@ -26,7 +26,6 @@
   color: #ffffff;
   background: #000000;
   --display-background: #000000;
-  --viewport-background: #000000;
   --display-ink: #ffffff;
   --display-font-family:
     "Microsoft JhengHei UI",
@@ -83,7 +82,7 @@ html {
 
 body {
   color: var(--display-ink);
-  background: var(--viewport-background);
+  background: #000000;
   font-family:
     var(--display-font-family),
     "Microsoft JhengHei UI",
@@ -106,8 +105,6 @@ body {
   block-size: 100%;
   overflow: hidden;
   container-type: size;
-  transform: scale(var(--render-scale, 1));
-  transform-origin: left top;
 }
 
 [hidden] {
@@ -654,11 +651,16 @@ body {
     -webkit-text-stroke-color: #ffffff;
   }
 }
-/* 僅替訊息中的 0～9 切換 Didot；中文與花名仍沿用管理員設定字型。 */
+/*
+ * 僅替訊息中的 0～9 切換 Didot；中文與花名仍沿用管理員設定字型。
+ * Didot 的 ascent／descent 與中文字型不同，line-height: 0 讓數字段不撐高
+ * line box，整列高度固定為 1.08em，符合字級安全下修的計算前提。
+ */
 .message-number {
   font-family: var(--display-numeral-font-family);
   font-weight: 400;
   font-variant-numeric: lining-nums tabular-nums;
+  line-height: 0;
 }
 
 .message-row.is-compressed .message-text {

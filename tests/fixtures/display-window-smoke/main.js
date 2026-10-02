@@ -48,9 +48,12 @@ const { createDisplayWindowOptions } = require(
 const DISPLAY_URL = 'displaycore://app/display/index.html';
 const CONTROL_URL = 'displaycore://app/control/index.html';
 // 輸出多張 4K／Retina compositor 截圖會額外經過 GPU readback 與 PNG 編碼。
-const TIMEOUT_MS = process.env.DISPLAYCORE_VISUAL_QA_DIRECTORY?.trim()
-  ? 60_000
-  : 45_000;
+// 排版碰撞矩陣逐一量測數百個解析度／設定組合，人工 QA 時另逐張截圖。
+const TIMEOUT_MS = process.env.DISPLAYCORE_LAYOUT_COLLISION_QA_ONLY === '1'
+  ? 600_000
+  : process.env.DISPLAYCORE_VISUAL_QA_DIRECTORY?.trim()
+    ? 60_000
+    : 45_000;
 const LOGO_BYTES = Buffer.from(
   'iVBORw0KGgoAAAANSUhEUgAAAAcAAAAHCAYAAADEUlfTAAAAGUlEQVR4nGNgQID/SBgDYJX8jwdTIEmegwDYmyDgo5Y0vwAAAABJRU5ErkJggg==',
   'base64',
@@ -95,10 +98,34 @@ function createStandbyBackgroundBytes(variant) {
 const STANDBY_BACKGROUND_BYTES = createStandbyBackgroundBytes(1);
 const SECOND_STANDBY_BACKGROUND_BYTES = createStandbyBackgroundBytes(2);
 
+/** 產生測試 Logo；transparent 會套用亮白輪廓，opaque 則使用亮白底襯。 */
+function createLogoBytes({ width, height, opaque }) {
+  const bitmap = Buffer.alloc(width * height * 4);
+  const insetX = Math.round(width * 0.1);
+  const insetY = Math.round(height * 0.1);
+
+  for (let y = 0; y < height; y += 1) {
+    for (let x = 0; x < width; x += 1) {
+      const offset = (y * width + x) * 4;
+      const inside = x >= insetX && x < width - insetX &&
+        y >= insetY && y < height - insetY;
+      // Electron bitmap 採 BGRA。
+      bitmap[offset] = inside ? 40 : 230;
+      bitmap[offset + 1] = inside ? 90 : 230;
+      bitmap[offset + 2] = inside ? 160 : 230;
+      bitmap[offset + 3] = opaque || inside ? 255 : 0;
+    }
+  }
+
+  return nativeImage.createFromBitmap(bitmap, { width, height }).toPNG();
+}
+
+
 let displayWindow = null;
 let coordinator = null;
 let presentationService = null;
 let settingsManager = null;
+let outputMonitorController = null;
 let completed = false;
 let timeout = null;
 let runtimeDataRoot = null;
@@ -693,6 +720,25 @@ async function verifyLogoRenderedBrightWhite(context) {
   }
 }
 
+/** 模擬不支援 DDC/CI 的訊息螢幕；測試可直接推送軟體亮度／對比。 */
+function createOutputMonitorStub() {
+  const listeners = new Set();
+  let adjustment = Object.freeze({ brightnessPercent: 100, contrastPercent: 100 });
+  return {
+    getSoftwareAdjustment: () => adjustment,
+    subscribe(listener) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+    setAdjustment(nextAdjustment) {
+      adjustment = Object.freeze({ ...nextAdjustment });
+      for (const listener of listeners) {
+        listener();
+      }
+    },
+  };
+}
+
 function createSettingsManager(initialConfig) {
   const initialValidation = validateConfig(initialConfig);
 
@@ -884,7 +930,6 @@ async function verifyLogoSizeScaling(mode) {
     const nextConfig = structuredClone(settingsManager.getSnapshot().config);
     nextConfig.logo.enabled = true;
     nextConfig.logo.sizePercent = sizePercent;
-    nextConfig.display.renderResolution = 'auto';
     const settingsRevision = settingsManager.publish(nextConfig).revision;
 
     await waitFor(
@@ -969,7 +1014,6 @@ async function verifyLogoSizeScaling(mode) {
     for (const sizePercent of [500, 1_000]) {
       const config = structuredClone(settingsManager.getSnapshot().config);
       config.logo.sizePercent = sizePercent;
-      config.display.renderResolution = 'auto';
       const revision = settingsManager.publish(config).revision;
       await waitFor(
         () => execute(`(() => {
@@ -1098,9 +1142,6 @@ async function verifyResponsiveResolutions() {
       const rows = [...document.querySelectorAll('.message-row')];
       return {
         viewport,
-        renderResolution: stageElement.dataset.renderResolution,
-        logicalWidth: Number(stageElement.dataset.logicalWidth),
-        logicalHeight: Number(stageElement.dataset.logicalHeight),
         surfaceInside:
           surface.left >= -0.5 && surface.top >= -0.5 &&
           surface.right <= viewport.width + 0.5 &&
@@ -1168,9 +1209,6 @@ async function verifyResponsiveResolutions() {
     })()`);
 
     assert.deepEqual(inspection.viewport, { width, height });
-    assert.equal(inspection.renderResolution, 'auto');
-    assert.equal(inspection.logicalWidth, width);
-    assert.equal(inspection.logicalHeight, height);
     assert.equal(inspection.surfaceInside, true, `${width}×${height} surface bounds`);
     assert.ok(Math.abs(inspection.surfaceWidth - width) <= 0.5);
     assert.ok(Math.abs(inspection.surfaceHeight - height) <= 0.5);
@@ -1229,91 +1267,335 @@ async function verifyResponsiveResolutions() {
   }
 }
 
-async function verifyConfiguredRenderResolutions() {
-  const viewport = { width: 1600, height: 900 };
-  const profiles = [
-    ['1280x720', 1280, 720],
-    ['1366x768', 1366, 768],
-    ['1600x900', 1600, 900],
-    ['1920x1080', 1920, 1080],
-    ['2560x1440', 2560, 1440],
-    ['3840x2160', 3840, 2160],
-  ];
+/** 螢幕不支援 DDC/CI 時，Main 推送的亮度／對比以畫面濾鏡套用；100% 移除濾鏡。 */
+async function verifySoftwareOutputAdjustment() {
+  const readFilter = (expectedMode) => execute(`(() => {
+    const stage = document.getElementById('display-stage');
+    const surface = document.getElementById('display-render-surface');
+    return stage.dataset.outputAdjustment === '${expectedMode}'
+      ? getComputedStyle(surface).filter
+      : false;
+  })()`);
 
-  displayWindow.setContentSize(viewport.width, viewport.height, false);
-  await waitFor(
-    () => execute(
-      `window.innerWidth === ${viewport.width} && window.innerHeight === ${viewport.height}`,
-    ),
-    '邏輯解析度驗證 viewport',
+  outputMonitorController.setAdjustment({
+    brightnessPercent: 40,
+    contrastPercent: 70,
+  });
+  const adjusted = await waitFor(
+    () => readFilter('software'),
+    '套用軟體亮度與對比',
   );
+  assert.equal(adjusted, 'brightness(0.4) contrast(0.7)');
 
-  for (const [profile, logicalWidth, logicalHeight] of profiles) {
-    const nextConfig = structuredClone(settingsManager.getSnapshot().config);
-    nextConfig.display.renderResolution = profile;
-    const revision = settingsManager.publish(nextConfig).revision;
+  outputMonitorController.setAdjustment({
+    brightnessPercent: 100,
+    contrastPercent: 100,
+  });
+  assert.equal(
+    await waitFor(() => readFilter('none'), '移除軟體亮度與對比'),
+    'none',
+  );
+}
 
-    await waitFor(
-      () => execute(`(() => {
-        const stage = document.getElementById('display-stage');
-        return stage.dataset.settingsRevision === '${revision}' &&
-          stage.dataset.renderResolution === '${profile}' &&
-          stage.dataset.logicalWidth === '${logicalWidth}' &&
-          stage.dataset.logicalHeight === '${logicalHeight}';
-      })()`),
-      `${profile} 邏輯解析度套用`,
-    );
+const LAYOUT_QA_RESOLUTIONS = Object.freeze([
+  [1280, 720],
+  [1366, 768],
+  [1600, 900],
+  [1920, 1080],
+  [2560, 1440],
+  [3840, 2160],
+]);
 
-    const inspection = await execute(`(() => {
-      const surfaceElement = document.getElementById('display-render-surface');
-      const surface = surfaceElement.getBoundingClientRect();
-      const stage = document.getElementById('display-stage').getBoundingClientRect();
-      return {
-        inlineSize: surfaceElement.style.inlineSize,
-        blockSize: surfaceElement.style.blockSize,
-        containerType: getComputedStyle(surfaceElement).containerType,
-        surface: {
-          left: surface.left,
-          top: surface.top,
-          right: surface.right,
-          bottom: surface.bottom,
-          width: surface.width,
-          height: surface.height,
-        },
-        stage: {
-          left: stage.left,
-          top: stage.top,
-          right: stage.right,
-          bottom: stage.bottom,
-          width: stage.width,
-          height: stage.height,
-        },
-        hasOverflow:
-          document.documentElement.scrollWidth > document.documentElement.clientWidth ||
-          document.documentElement.scrollHeight > document.documentElement.clientHeight,
-      };
-    })()`);
-    const expectedScale = Math.min(
-      viewport.width / logicalWidth,
-      viewport.height / logicalHeight,
-    );
-    const expectedWidth = logicalWidth * expectedScale;
-    const expectedHeight = logicalHeight * expectedScale;
-    const expectedLeft = (viewport.width - expectedWidth) / 2;
-    const expectedTop = (viewport.height - expectedHeight) / 2;
+const LAYOUT_QA_LOGOS = Object.freeze([
+  { name: '方形透明 Logo', width: 120, height: 120, opaque: false },
+  { name: '寬版透明 Logo', width: 960, height: 120, opaque: false },
+  { name: '直式不透明 Logo', width: 120, height: 360, opaque: true },
+]);
 
-    assert.equal(inspection.inlineSize, `${logicalWidth}px`);
-    assert.equal(inspection.blockSize, `${logicalHeight}px`);
-    assert.equal(inspection.containerType, 'size');
-    assert.equal(inspection.hasOverflow, false, `${profile} viewport overflow`);
-    assert.ok(Math.abs(inspection.surface.width - expectedWidth) <= 0.75);
-    assert.ok(Math.abs(inspection.surface.height - expectedHeight) <= 0.75);
-    assert.ok(Math.abs(inspection.surface.left - expectedLeft) <= 0.75);
-    assert.ok(Math.abs(inspection.surface.top - expectedTop) <= 0.75);
-    assert.ok(inspection.surface.right <= viewport.width + 0.75);
-    assert.ok(inspection.surface.bottom <= viewport.height + 0.75);
-    assert.deepEqual(inspection.stage, inspection.surface);
+const LAYOUT_QA_PROFILES = Object.freeze([
+  {
+    name: '全部最小',
+    logoSizePercent: 50,
+    fontSizePercent: 50,
+    lineSpacingPercent: 0,
+    standbyClockSizePercent: 50,
+  },
+  {
+    name: '預設',
+    logoSizePercent: 100,
+    fontSizePercent: 100,
+    lineSpacingPercent: 100,
+    standbyClockSizePercent: 100,
+  },
+  {
+    name: '全部最大',
+    logoSizePercent: 1_000,
+    fontSizePercent: 200,
+    lineSpacingPercent: 300,
+    standbyClockSizePercent: 300,
+  },
+]);
+
+const LAYOUT_QA_PAGES = Object.freeze([
+  {
+    name: '三則一般訊息',
+    messages: [
+      { message: '001請至前廳', alignment: 'left' },
+      { message: 'Nancy 888 聯絡櫃台', alignment: 'left' },
+      { message: '003貴賓請至二樓包廂', alignment: 'left' },
+    ],
+  },
+  {
+    name: '三則長一般訊息',
+    messages: [
+      { message: '012請至前廳櫃台辦理手續並出示會員卡', alignment: 'left' },
+      { message: 'VIP Room 2048 請聯絡值班經理與櫃台人員', alignment: 'left' },
+      { message: '超長一般訊息'.repeat(40), alignment: 'left' },
+    ],
+  },
+  {
+    name: '營運訊息',
+    messages: [{ message: '請輕聲細語，保持環境安靜', alignment: 'center' }],
+  },
+]);
+
+/**
+ * 量測目前畫面所有可見元素的排版框，並回傳彼此重疊、貼齊或被裁切的問題。
+ *
+ * 訊息使用文字 line box（1.08em，涵蓋 CJK em box），時間使用文字元素框，
+ * Logo 使用 logo-frame（含亮白底襯）。跑馬燈只取列內可見部分。
+ */
+const INSPECT_LAYOUT_COLLISIONS = `(() => {
+  const MINIMUM_GAP = 2;
+  const stageElement = document.getElementById('display-stage');
+  const stage = stageElement.getBoundingClientRect();
+  const isShown = (element) => element !== null && !element.hidden &&
+    element.getClientRects().length > 0;
+  const toBox = (box) => ({
+    left: box.left, top: box.top, right: box.right, bottom: box.bottom,
+  });
+  const clip = (box, bounds) => ({
+    left: Math.max(box.left, bounds.left),
+    top: Math.max(box.top, bounds.top),
+    right: Math.min(box.right, bounds.right),
+    bottom: Math.min(box.bottom, bounds.bottom),
+  });
+  const gapBetween = (a, b) => Math.max(
+    b.left - a.right, a.left - b.right, b.top - a.bottom, a.top - b.bottom,
+  );
+  const round = (box) => Object.fromEntries(
+    Object.entries(box).map(([key, value]) => [key, Math.round(value * 10) / 10])
+  );
+  const problems = [];
+  const items = [];
+
+  if (stageElement.dataset.mode === 'emergency') {
+    for (const [index, cell] of document.querySelectorAll('.fill-cell').entries()) {
+      const range = document.createRange();
+      range.selectNodeContents(cell);
+      const text = range.getBoundingClientRect();
+      const box = cell.getBoundingClientRect();
+      const inset = Math.min(
+        text.left - box.left, box.right - text.right,
+        text.top - box.top, box.bottom - text.bottom,
+      );
+      if (inset < 0) {
+        problems.push('555/888 第 ' + (index + 1) + ' 格文字超出格子：' +
+          JSON.stringify({ text: round(toBox(text)), cell: round(toBox(box)) }));
+      }
+    }
+    return { mode: 'emergency', problems, items: [] };
   }
+
+  const frame = document.getElementById('logo-frame');
+  const logo = document.getElementById('display-logo');
+  if (isShown(frame) && isShown(logo)) {
+    items.push({ label: 'Logo', box: toBox(frame.getBoundingClientRect()) });
+  }
+  const clock = document.getElementById('display-clock');
+  if (isShown(clock)) {
+    items.push({ label: '時間', box: toBox(clock.getBoundingClientRect()) });
+  }
+
+  for (const [index, row] of document.querySelectorAll('.message-row').entries()) {
+    const rowBox = row.getBoundingClientRect();
+    const marquee = row.classList.contains('is-marquee');
+    const texts = [...row.querySelectorAll(marquee ? '.marquee-copy' : '.message-text')];
+    const label = '第 ' + (index + 1) + ' 則訊息';
+    for (const text of texts) {
+      const box = text.getBoundingClientRect();
+      if (box.top < rowBox.top - 0.5 || box.bottom > rowBox.bottom + 0.5) {
+        problems.push(label + '文字上下被裁切：' +
+          JSON.stringify({ text: round(toBox(box)), row: round(toBox(rowBox)) }));
+      }
+      if (!marquee && (box.left < rowBox.left - 0.5 || box.right > rowBox.right + 0.5)) {
+        problems.push(label + '文字左右被裁切：' +
+          JSON.stringify({ text: round(toBox(box)), row: round(toBox(rowBox)) }));
+      }
+      const visible = clip(box, rowBox);
+      if (visible.right > visible.left && visible.bottom > visible.top) {
+        items.push({ label, box: visible });
+      }
+    }
+  }
+
+  for (const item of items) {
+    const box = item.box;
+    if (box.left < stage.left - 0.5 || box.top < stage.top - 0.5 ||
+        box.right > stage.right + 0.5 || box.bottom > stage.bottom + 0.5) {
+      problems.push(item.label + '超出畫面：' + JSON.stringify(round(box)));
+    }
+  }
+
+  for (let first = 0; first < items.length; first += 1) {
+    for (let second = first + 1; second < items.length; second += 1) {
+      const a = items[first];
+      const b = items[second];
+      if (a.label === b.label) continue;
+      const gap = gapBetween(a.box, b.box);
+      if (gap < MINIMUM_GAP) {
+        problems.push(a.label + '與' + b.label + (gap < 0 ? '重疊' : '貼齊') +
+          '（間距 ' + gap.toFixed(1) + 'px）：' +
+          JSON.stringify({ [a.label]: round(a.box), [b.label]: round(b.box) }));
+      }
+    }
+  }
+
+  return {
+    mode: stageElement.dataset.mode,
+    problems,
+    items: items.map((item) => item.label),
+  };
+})()`;
+
+async function nextAnimationFrame() {
+  await execute(
+    `new Promise((resolve) => requestAnimationFrame(() =>
+      requestAnimationFrame(() => resolve(true))))`,
+  );
+}
+
+/** 各解析度、Logo 形狀與設定極值下，訊息、Logo 與時間都不得互相碰觸。 */
+async function verifyLayoutCollisionMatrix() {
+  const logoDirectory = path.join(runtimeDataRoot, 'logos');
+  const logos = [];
+  for (const logo of LAYOUT_QA_LOGOS) {
+    const bytes = createLogoBytes(logo);
+    const fileName =
+      `${createHash('sha256').update(bytes).digest('hex').slice(0, 24)}.png`;
+    await fileSystem.writeFile(path.join(logoDirectory, fileName), bytes);
+    logos.push({ ...logo, path: `logos/${fileName}` });
+  }
+
+  const failures = [];
+  let inspectedLayouts = 0;
+
+  for (const [width, height] of LAYOUT_QA_RESOLUTIONS) {
+    displayWindow.setContentSize(width, height, false);
+    await waitFor(
+      () => execute(
+        `window.innerWidth === ${width} && window.innerHeight === ${height}`,
+      ),
+      `${width}×${height} viewport`,
+    );
+
+    for (const logo of logos) {
+      for (const profile of LAYOUT_QA_PROFILES) {
+        const config = structuredClone(settingsManager.getSnapshot().config);
+        config.logo = {
+          enabled: true,
+          path: logo.path,
+          sizePercent: profile.logoSizePercent,
+        };
+        config.dateTime.enabled = true;
+        config.marquee.enabled = true;
+        config.appearance = {
+          ...defaultConfig.appearance,
+          messageLiquidEffectEnabled: false,
+          fontSizePercent: profile.fontSizePercent,
+          lineSpacingPercent: profile.lineSpacingPercent,
+          standbyClockSizePercent: profile.standbyClockSizePercent,
+        };
+        const settingsRevision = settingsManager.publish(config).revision;
+        const context = `${width}×${height}／${logo.name}／${profile.name}`;
+        const shotPrefix = `layout-${width}x${height}-logo${logos.indexOf(logo)}-` +
+          `profile${LAYOUT_QA_PROFILES.indexOf(profile)}`;
+
+        presentationService.clearPresentation();
+        await waitForRevision(presentationService.getSnapshot().revision, false);
+        await waitFor(
+          () => execute(`(() => {
+            const stage = document.getElementById('display-stage');
+            const logo = document.getElementById('display-logo');
+            return stage.dataset.mode === 'blank' &&
+              stage.dataset.settingsRevision === '${settingsRevision}' &&
+              logo.getAttribute('src')?.endsWith('${path.basename(logo.path)}') &&
+              logo.complete && logo.naturalWidth > 0 &&
+              !document.getElementById('display-clock').hidden;
+          })()`),
+          `${context}／待機`,
+        );
+        await execute('document.fonts.ready.then(() => true)');
+        await nextAnimationFrame();
+        const standby = await execute(INSPECT_LAYOUT_COLLISIONS);
+        inspectedLayouts += 1;
+        await captureVisualQa(`${shotPrefix}-standby.png`);
+        assert.deepEqual(standby.items, ['Logo', '時間'], `${context}／待機`);
+        failures.push(...standby.problems.map(
+          (problem) => `${context}／待機：${problem}`,
+        ));
+
+        for (const page of LAYOUT_QA_PAGES) {
+          presentationService.startProgram({
+            messages: page.messages,
+            pageDurationSeconds: 3_600,
+            repeat: { mode: 'finite', rounds: 1 },
+          });
+          await waitForRevision(presentationService.getSnapshot().revision);
+          await nextAnimationFrame();
+          const layout = await execute(INSPECT_LAYOUT_COLLISIONS);
+          inspectedLayouts += 1;
+          await captureVisualQa(
+            `${shotPrefix}-page${LAYOUT_QA_PAGES.indexOf(page)}.png`,
+          );
+          assert.ok(
+            layout.items.includes('Logo') && layout.items.includes('時間'),
+            `${context}／${page.name} 缺少 Logo 或時間：${layout.items}`,
+          );
+          failures.push(...layout.problems.map(
+            (problem) => `${context}／${page.name}：${problem}`,
+          ));
+        }
+
+        // 555／888 不受 Logo 影響，每個解析度與字級設定只需檢查一次。
+        if (logo === logos[0]) {
+          for (const code of ['555', '888']) {
+            presentationService.showEmergency(code);
+            await waitForRevision(
+              presentationService.getSnapshot().revision,
+              false,
+            );
+            await nextAnimationFrame();
+            const emergency = await execute(INSPECT_LAYOUT_COLLISIONS);
+            inspectedLayouts += 1;
+            await captureVisualQa(`${shotPrefix}-${code}.png`);
+            assert.equal(emergency.mode, 'emergency', `${context}／${code}`);
+            failures.push(...emergency.problems.map(
+              (problem) => `${context}／${code}：${problem}`,
+            ));
+          }
+        }
+      }
+    }
+  }
+
+  assert.deepEqual(
+    failures,
+    [],
+    `${failures.length} 個排版碰撞（共檢查 ${inspectedLayouts} 個畫面）：\n` +
+      failures.join('\n'),
+  );
+  console.log(`[DisplayCore] Layout collision matrix inspected ${inspectedLayouts} layouts.`);
 }
 
 async function showAndMeasurePage(messages, description) {
@@ -1389,7 +1671,6 @@ async function verifyFixedMessageLayout() {
   const config = structuredClone(settingsManager.getSnapshot().config);
   config.logo.enabled = false;
   config.dateTime.enabled = false;
-  config.display.renderResolution = 'auto';
   config.appearance.fontSizePercent = 100;
   config.appearance.lineSpacingPercent = 100;
   config.marquee.enabled = true;
@@ -2151,7 +2432,6 @@ async function verifyClockWithoutLogo() {
   const config = structuredClone(settingsManager.getSnapshot().config);
   config.logo.enabled = false;
   config.dateTime.enabled = true;
-  config.display.renderResolution = 'auto';
   const settingsRevision = settingsManager.publish(config).revision;
   await waitFor(
     () => execute(
@@ -2528,39 +2808,6 @@ async function verifyLuxuryMessageAppearance() {
       );
     }
   }
-
-  // contain 邏輯解析度會產生上下邊帶；材質模式不得露出舊的純色（例如藍色）。
-  const letterboxConfig = structuredClone(settingsManager.getSnapshot().config);
-  letterboxConfig.appearance.messageBackgroundPreset = 'emerald-onyx';
-  letterboxConfig.appearance.backgroundColor = '#102030';
-  letterboxConfig.display.renderResolution = '1920x1080';
-  const letterboxSettingsRevision = settingsManager.publish(
-    letterboxConfig,
-  ).revision;
-  displayWindow.setContentSize(1600, 1000, false);
-  const materialLetterbox = await waitFor(
-    () => execute(`(() => {
-      const stage = document.getElementById('display-stage');
-      const surface = document.getElementById('display-render-surface')
-        .getBoundingClientRect();
-      if (
-        stage.dataset.settingsRevision !== '${letterboxSettingsRevision}' ||
-        stage.dataset.mode !== 'page' ||
-        stage.dataset.messageBackground !== 'emerald-onyx' ||
-        window.innerWidth !== 1600 || window.innerHeight !== 1000 ||
-        surface.top <= 1
-      ) {
-        return false;
-      }
-      return {
-        viewportBackground: getComputedStyle(document.body).backgroundColor,
-        surfaceTop: surface.top,
-      };
-    })()`),
-    '材質訊息的非 16:9 邊帶背景',
-  );
-  assert.equal(materialLetterbox.viewportBackground, 'rgb(15, 48, 38)');
-  assert.ok(materialLetterbox.surfaceTop > 1);
 
   presentationService.clearPresentation();
   const blankRevision = presentationService.getSnapshot().revision;
@@ -3065,7 +3312,6 @@ async function inspectEmergencyMaterial(tone, expectedFileName) {
       mode: stage.dataset.mode,
       tone: stage.dataset.emergencyTone,
       viewport: [window.innerWidth, window.innerHeight],
-      renderResolution: stage.dataset.renderResolution,
       cellCount: cells.length,
       clockHidden: document.getElementById('display-clock').hidden,
       liquidCount: document.querySelectorAll('.message-liquid-canvas').length,
@@ -3089,7 +3335,6 @@ async function inspectEmergencyMaterial(tone, expectedFileName) {
   assert.equal(dom.mode, 'emergency');
   assert.equal(dom.tone, tone);
   assert.deepEqual(dom.viewport, [1920, 1080]);
-  assert.equal(dom.renderResolution, '3840x2160');
   assert.equal(dom.cellCount, 9);
   assert.equal(dom.clockHidden, true);
   assert.equal(dom.liquidCount, 0);
@@ -3126,7 +3371,7 @@ async function verifyEmergencyLetterboxColor(tone) {
   displayWindow.setContentSize(1600, 1000, false);
   await waitFor(
     () => execute(`window.innerWidth === 1600 && window.innerHeight === 1000`),
-    `${tone} 建立非 16:9 letterbox`,
+    `${tone} 建立非 16:9 視窗`,
   );
   await execute(`new Promise((resolve) => {
     requestAnimationFrame(() => requestAnimationFrame(resolve));
@@ -3191,7 +3436,6 @@ async function verifyEmergencyMaterialPresentation(timers) {
     inspectionBackgroundColor: '#000000',
     releaseBackgroundColor: '#000000',
   };
-  blackEmergencyConfig.display.renderResolution = '3840x2160';
   const settingsRevision = settingsManager.publish(blackEmergencyConfig).revision;
   await waitFor(
     () => execute(
@@ -3389,8 +3633,10 @@ async function runWorkflow(
     processType: 'undefined',
     moduleType: 'undefined',
     bridgeMethods: [
+      'getOutputAdjustment',
       'getPresentation',
       'getSettings',
+      'onOutputAdjustmentChanged',
       'onPresentationChanged',
       'onRefitRequested',
       'onSettingsChanged',
@@ -3420,6 +3666,11 @@ async function runWorkflow(
 
   if (process.env.DISPLAYCORE_MESSAGE_BACKGROUND_QA_ONLY === '1') {
     await verifyLuxuryMessageAppearance();
+    return;
+  }
+
+  if (process.env.DISPLAYCORE_LAYOUT_COLLISION_QA_ONLY === '1') {
+    await verifyLayoutCollisionMatrix();
     return;
   }
 
@@ -4492,25 +4743,16 @@ async function runWorkflow(
   await waitForRevision(4, false);
   assert.equal(presentationService.getSnapshot().mode, 'blank');
 
-  // 非 16:9 viewport 會在 contain 畫布外留下邊帶；緊急背景仍須覆蓋滿屏。
-  const letterboxConfig = structuredClone(
-    settingsManager.getSnapshot().config,
-  );
-  letterboxConfig.display.renderResolution = '1920x1080';
-  const letterboxSettingsRevision = settingsManager.publish(
-    letterboxConfig,
-  ).revision;
+  // 非 16:9 viewport 下畫布仍直接填滿視窗，緊急背景必須覆蓋滿屏。
   displayWindow.setContentSize(1600, 1000, false);
   await waitFor(
     () => execute(`(() => {
-      const stage = document.getElementById('display-stage');
       const surface = document.getElementById('display-render-surface')
         .getBoundingClientRect();
-      return stage.dataset.settingsRevision ===
-          '${letterboxSettingsRevision}' &&
-        stage.dataset.renderResolution === '1920x1080' &&
-        window.innerWidth === 1600 && window.innerHeight === 1000 &&
-        surface.top > 1;
+      return window.innerWidth === 1600 && window.innerHeight === 1000 &&
+        Math.abs(surface.top) <= 0.5 && Math.abs(surface.left) <= 0.5 &&
+        Math.abs(surface.width - 1600) <= 0.5 &&
+        Math.abs(surface.height - 1000) <= 0.5;
     })()`),
     '建立非 16:9 緊急滿屏驗證環境',
   );
@@ -4532,7 +4774,6 @@ async function runWorkflow(
     announcement: document.getElementById('display-announcement').textContent,
     ariaLive: document.getElementById('display-announcement').getAttribute('aria-live'),
     backgroundColor: getComputedStyle(document.getElementById('display-stage')).backgroundColor,
-    viewportBackgroundColor: getComputedStyle(document.body).backgroundColor,
     fontColor: getComputedStyle(document.getElementById('display-stage')).color,
     pageColorAnimationCount:
       document.getElementById('page-layer').getAnimations().length,
@@ -4576,10 +4817,6 @@ async function runWorkflow(
     'color-mix(in srgb, #7F1D1D 18%, #A70F22)',
   );
   assert.equal(inspection.backgroundColor, expectedInspectionBackground);
-  assert.equal(
-    inspection.viewportBackgroundColor,
-    expectedInspectionBackground,
-  );
   assert.equal(inspection.fontColor, 'rgb(255, 255, 255)');
   assert.equal(inspection.pageColorAnimationCount, 0);
   assert.equal(inspection.pageInlineColor, '');
@@ -4759,7 +4996,9 @@ async function runWorkflow(
   assert.equal(standby.transition, null);
   assert.equal(standby.canvasHidden, true);
   assert.equal(
-    await execute(`getComputedStyle(document.body).backgroundColor`),
+    await execute(
+      `getComputedStyle(document.getElementById('display-stage')).backgroundColor`,
+    ),
     'rgb(32, 64, 96)',
   );
   assert.match(standby.clockText, /^\d{2}:\d{2}$/);
@@ -4826,7 +5065,7 @@ async function runWorkflow(
     particles: [1, 1],
   });
 
-  await verifyConfiguredRenderResolutions();
+  await verifySoftwareOutputAdjustment();
   await verifyLogoSizeScaling('blank');
 
   presentationService.startProgram({
@@ -4940,7 +5179,6 @@ async function run() {
     releaseBackgroundColor: '#14532D',
   };
   initialConfig.marquee = { enabled: false };
-  initialConfig.display.renderResolution = 'auto';
   settingsManager = createSettingsManager(initialConfig);
 
   const appSession = session.fromPartition(
@@ -4980,10 +5218,12 @@ async function run() {
     setTimer: timers.setTimer,
     clearTimer: timers.clearTimer,
   });
+  outputMonitorController = createOutputMonitorStub();
   coordinator = new IpcCoordinator({
     ipcMain,
     presentationService,
     settingsManager,
+    outputMonitorController,
     getWindow: (role) => role === IPC_ROLES.DISPLAY ? displayWindow : null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,

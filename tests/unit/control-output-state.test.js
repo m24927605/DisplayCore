@@ -47,6 +47,16 @@ function createSnapshot(overrides = {}) {
       fullscreen: true,
       revision: 3,
     },
+    monitor: {
+      status: 'ready',
+      displayId: 2,
+      currentResolution: '3840x2160',
+      resolutions: ['3840x2160', '1920x1080'],
+      resolutionError: null,
+      brightnessControl: 'hardware',
+      contrastControl: 'software',
+      revision: 2,
+    },
     ...overrides,
   };
 }
@@ -90,6 +100,8 @@ test('驗證成功時建立不受來源後續修改影響的深層唯讀快照�
     result.snapshot.displays,
     result.snapshot.displays[0],
     result.snapshot.placement,
+    result.snapshot.monitor,
+    result.snapshot.monitor.resolutions,
     result.ux,
     result.ux.hdmi,
     result.ux.routing,
@@ -114,6 +126,16 @@ test('exact schema、資源上限與欄位關聯任一不符時安全拒絕', as
   const invalidCandidates = [
     null,
     { ...base, extra: true },
+    (() => {
+      const { monitor: _removed, ...missing } = base;
+      return missing;
+    })(),
+    { ...base, monitor: { ...base.monitor, deviceName: '\\\\.\\DISPLAY2' } },
+    { ...base, monitor: { ...base.monitor, status: 'busy' } },
+    { ...base, monitor: { ...base.monitor, currentResolution: '3840×2160' } },
+    { ...base, monitor: { ...base.monitor, resolutions: ['1920x1080', 720] } },
+    { ...base, monitor: { ...base.monitor, brightnessControl: 'ddc' } },
+    { ...base, monitor: { ...base.monitor, resolutionError: 'timeout' } },
     (() => {
       const { fullscreen: _removed, ...missing } = base;
       return missing;
@@ -208,6 +230,28 @@ test('topology 與 placement revision 採 component-wise 偏序避免局部回�
     }),
   );
   assert.equal(placementAdvanced.accepted, true);
+
+  // 只有輸出螢幕控制狀態更新（例如解析度切換完成）也必須被接受。
+  const monitorAdvanced = acceptOutputSnapshot(
+    initial.snapshot,
+    createSnapshot({
+      topologyRevision: 5,
+      placement: { ...initial.snapshot.placement },
+      monitor: { ...initial.snapshot.monitor, revision: 3 },
+    }),
+  );
+  assert.equal(monitorAdvanced.accepted, true);
+  assert.deepEqual(
+    acceptOutputSnapshot(
+      initial.snapshot,
+      createSnapshot({
+        topologyRevision: 6,
+        placement: { ...initial.snapshot.placement },
+        monitor: { ...initial.snapshot.monitor, revision: 1 },
+      }),
+    ),
+    { accepted: false },
+  );
 
   for (const candidate of [
     createSnapshot({

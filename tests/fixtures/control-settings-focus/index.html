@@ -176,16 +176,17 @@
               spellcheck="false"
             >
             <p id="clock-time-error" hidden></p>
+            <small id="output-monitor-status"></small>
             <select id="render-resolution-select">
-              <option value="auto">自動（建議）</option>
-              <option value="1280x720">1280×720（720p）</option>
-              <option value="1366x768">1366×768</option>
-              <option value="1600x900">1600×900</option>
-              <option value="1920x1080">1920×1080</option>
-              <option value="2560x1440">2560×1440</option>
-              <option value="3840x2160">3840×2160（4K）</option>
+              <option value="auto">維持目前解析度</option>
             </select>
             <p id="render-resolution-error" hidden></p>
+            <input id="brightness-enabled-input" type="checkbox">
+            <input id="brightness-percent-input" type="number" min="0" max="100" step="1" value="100">
+            <p id="brightness-percent-error" hidden></p>
+            <input id="contrast-enabled-input" type="checkbox">
+            <input id="contrast-percent-input" type="number" min="0" max="100" step="1" value="100">
+            <p id="contrast-percent-error" hidden></p>
             <input id="marquee-enabled-input" type="checkbox">
           </fieldset>
 
@@ -201,7 +202,7 @@
       import { createSettingsView } from '../../../control/settings-view.mjs';
 
       const config = Object.freeze({
-        configVersion: 11,
+        configVersion: 12,
         logo: Object.freeze({
           enabled: false,
           path: null,
@@ -241,6 +242,8 @@
           defaultDisplayId: null,
           fullscreen: true,
           renderResolution: 'auto',
+          brightnessPercent: null,
+          contrastPercent: null,
         }),
       });
       const snapshot = Object.freeze({

@@ -238,6 +238,20 @@ function createPlacementStatus(overrides = {}) {
   };
 }
 
+function createMonitorStatus(overrides = {}) {
+  return {
+    status: 'ready',
+    displayId: 2,
+    currentResolution: '1920x1080',
+    resolutions: ['2560x1440', '1920x1080', '1280x720'],
+    resolutionError: null,
+    brightnessControl: 'hardware',
+    contrastControl: 'software',
+    revision: 0,
+    ...overrides,
+  };
+}
+
 class FakeOutputService {
   constructor(snapshot, getterName) {
     this.snapshot = snapshot;
@@ -251,6 +265,10 @@ class FakeOutputService {
 
   getStatus() {
     return structuredClone(this.snapshot);
+  }
+
+  getSoftwareAdjustment() {
+    return { brightnessPercent: 100, contrastPercent: 100 };
   }
 
   subscribe(listener) {
@@ -440,7 +458,14 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('render-resolution-select').value,
     renderResolutionOptions: [...document.getElementById(
       'render-resolution-select'
-    ).options].map(({ value }) => value),
+    ).options].map(({ value, textContent }) => [value, textContent]),
+    outputMonitorStatus:
+      document.getElementById('output-monitor-status').textContent,
+    brightnessEnabled:
+      document.getElementById('brightness-enabled-input').checked,
+    brightnessPercentDisabled:
+      document.getElementById('brightness-percent-input').disabled,
+    contrastEnabled: document.getElementById('contrast-enabled-input').checked,
   }))()`);
   assert.deepEqual(settingsShape, {
     pageDuration: '3',
@@ -475,14 +500,17 @@ async function openPlaybackSettings(settingsManager) {
     clockTimeInputType: 'text',
     renderResolution: 'auto',
     renderResolutionOptions: [
-      'auto',
-      '1280x720',
-      '1366x768',
-      '1600x900',
-      '1920x1080',
-      '2560x1440',
-      '3840x2160',
+      ['auto', '維持目前解析度（1920×1080）'],
+      ['2560x1440', '2560×1440'],
+      ['1920x1080', '1920×1080（目前）'],
+      ['1280x720', '1280×720'],
     ],
+    outputMonitorStatus:
+      '訊息螢幕目前 1920×1080；亮度直接調整螢幕本身；' +
+      '對比以畫面模擬（螢幕不支援 DDC/CI，100% 為原始畫面）。',
+    brightnessEnabled: false,
+    brightnessPercentDisabled: true,
+    contrastEnabled: false,
   });
 
   await execute(`(() => {
@@ -816,6 +844,12 @@ async function openPlaybackSettings(settingsManager) {
     const resolution = document.getElementById('render-resolution-select');
     resolution.value = '2560x1440';
     resolution.dispatchEvent(new Event('change', { bubbles: true }));
+    const brightnessEnabled = document.getElementById('brightness-enabled-input');
+    brightnessEnabled.checked = true;
+    brightnessEnabled.dispatchEvent(new Event('change', { bubbles: true }));
+    const brightness = document.getElementById('brightness-percent-input');
+    brightness.value = '35';
+    brightness.dispatchEvent(new Event('input', { bubbles: true }));
     return targetSeconds;
   })()`);
   await waitFor(
@@ -831,6 +865,8 @@ async function openPlaybackSettings(settingsManager) {
 
   const calibratedConfig = settingsManager.getSnapshot().config;
   assert.equal(calibratedConfig.display.renderResolution, '2560x1440');
+  assert.equal(calibratedConfig.display.brightnessPercent, 35);
+  assert.equal(calibratedConfig.display.contrastPercent, null);
   assert.ok(
     Number.isSafeInteger(calibratedConfig.dateTime.offsetSeconds) &&
       calibratedConfig.dateTime.offsetSeconds >= -43_199 &&
@@ -1418,6 +1454,10 @@ async function run() {
     createPlacementStatus(),
     'getStatus',
   );
+  const outputMonitorController = new FakeOutputService(
+    createMonitorStatus(),
+    'getStatus',
+  );
   const settingsManager = createSettingsManager();
   const logoImporter = {
     async chooseAndImport() {
@@ -1446,6 +1486,7 @@ async function run() {
     standbyBackgroundImporter,
     displayTopologyService: topologyService,
     displayPlacementController: placementService,
+    outputMonitorController,
     getWindow: (role) => role === IPC_ROLES.CONTROL ? controlWindow : null,
     allowedUrls: {
       [IPC_ROLES.CONTROL]: CONTROL_URL,

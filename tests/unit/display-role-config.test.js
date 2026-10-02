@@ -11,22 +11,24 @@ const {
 } = require('../../config/config-schema');
 const { migrateStoredConfig } = require('../../config/config-migrations');
 
-function createV11Defaults() {
+function createV12Defaults() {
   return structuredClone({
     ...bundledConfig,
-    configVersion: 11,
+    configVersion: 12,
     display: {
       selectionMode: DISPLAY_SELECTION_MODES.AUTO,
       controlDisplayId: null,
       defaultDisplayId: null,
       fullscreen: true,
       renderResolution: 'auto',
+      brightnessPercent: null,
+      contrastPercent: null,
     },
   });
 }
 
 test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不得相同', () => {
-  const defaults = createV11Defaults();
+  const defaults = createV12Defaults();
   const manual = structuredClone({
     ...defaults,
     display: {
@@ -39,7 +41,7 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
 
   const accepted = validateConfig(manual);
 
-  assert.equal(CONFIG_VERSION, 11);
+  assert.equal(CONFIG_VERSION, 12);
   assert.equal(accepted.ok, true);
   assert.deepEqual(accepted.value.display, {
     selectionMode: 'manual',
@@ -47,6 +49,8 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
     defaultDisplayId: 2,
     fullscreen: true,
     renderResolution: 'auto',
+    brightnessPercent: null,
+    contrastPercent: null,
   });
 
   const duplicate = validateConfig({
@@ -62,7 +66,7 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
 });
 
 test('自動分工不保存硬體 ID，手動分工必須同時提供兩個 ID', () => {
-  const defaults = createV11Defaults();
+  const defaults = createV12Defaults();
 
   assert.equal(validateConfig(defaults).ok, true);
 
@@ -89,8 +93,8 @@ test('自動分工不保存硬體 ID，手動分工必須同時提供兩個 ID',
   }
 });
 
-test('既有 canonical v9 設定遷移到 v11 時保留外觀、解析度並補上風吹沙開關', () => {
-  const defaults = createV11Defaults();
+test('既有 canonical v9 設定遷移到 v12 時保留外觀、解析度並補上風吹沙開關', () => {
+  const defaults = createV12Defaults();
   const legacyV9 = structuredClone({
     ...bundledConfig,
     configVersion: 9,
@@ -111,7 +115,7 @@ test('既有 canonical v9 設定遷移到 v11 時保留外觀、解析度並補�
 
   assert.equal(migrated.ok, true);
   assert.equal(migrated.migrated, true);
-  assert.equal(migrated.value.configVersion, 11);
+  assert.equal(migrated.value.configVersion, 12);
   assert.equal(migrated.value.appearance.fontSizePercent, 135);
   assert.equal(migrated.value.standby.sandEffectEnabled, true);
   assert.deepEqual(migrated.value.display, {
@@ -120,5 +124,7 @@ test('既有 canonical v9 設定遷移到 v11 時保留外觀、解析度並補�
     defaultDisplayId: null,
     fullscreen: true,
     renderResolution: '2560x1440',
+    brightnessPercent: null,
+    contrastPercent: null,
   });
 });

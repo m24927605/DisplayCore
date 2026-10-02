@@ -30,6 +30,10 @@ const {
   DisplayTopologyService,
 } = require('./main/display-topology-service');
 const { HdmiDetector } = require('./main/hdmi-detector');
+const { MonitorControl } = require('./main/monitor-control');
+const {
+  OutputMonitorController,
+} = require('./main/output-monitor-controller');
 const { IPC_CHANNELS, IPC_ROLES } = require('./ipc/channels');
 const { IpcCoordinator } = require('./ipc/ipc-coordinator');
 const { PresentationService } = require('./ipc/presentation-service');
@@ -175,6 +179,13 @@ async function bootstrap() {
     getDisplayWindow: () => windowManager.getDisplayWindow(),
     logger: console,
   });
+  const outputMonitorController = new OutputMonitorController({
+    topologyService: displayTopologyService,
+    settingsManager,
+    monitorControl: new MonitorControl(),
+    screen,
+    logger: console,
+  });
   const logoImporter = new LogoImporter({
     dialog,
     getParentWindow: () => windowManager.getControlWindow(),
@@ -193,6 +204,7 @@ async function bootstrap() {
     standbyBackgroundImporter,
     displayTopologyService,
     displayPlacementController,
+    outputMonitorController,
     getWindow: (role) => {
       if (role === IPC_ROLES.CONTROL) {
         return windowManager.getControlWindow();
@@ -239,10 +251,12 @@ async function bootstrap() {
       await displayTopologyService.initialize();
       controlPlacementController.initialize();
       displayPlacementController.initialize();
+      outputMonitorController.initialize();
       ipcCoordinator.register();
     },
     shutdownRuntime: () => {
       ipcCoordinator.dispose();
+      outputMonitorController.dispose();
       displayPlacementController.dispose();
       controlPlacementController.dispose();
       displayTopologyService.dispose();

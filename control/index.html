@@ -535,24 +535,40 @@
                 </small>
                 <p id="clock-time-error" class="field-error" hidden></p>
               </div>
-              <div class="settings-field">
-                <label for="render-resolution-select">螢幕解析度（排版基準）</label>
+              <div class="settings-subheading settings-field-wide">
+                <strong>輸出螢幕</strong>
+                <small id="output-monitor-status" role="status">正在偵測訊息螢幕…</small>
+              </div>
+              <div class="settings-field settings-field-wide">
+                <label for="render-resolution-select">訊息螢幕解析度</label>
                 <select
                   id="render-resolution-select"
                   aria-describedby="render-resolution-help render-resolution-error"
                 >
-                  <option value="auto">自動（建議）</option>
-                  <option value="1280x720">1280×720（720p）</option>
-                  <option value="1366x768">1366×768</option>
-                  <option value="1600x900">1600×900</option>
-                  <option value="1920x1080">1920×1080</option>
-                  <option value="2560x1440">2560×1440</option>
-                  <option value="3840x2160">3840×2160（4K）</option>
+                  <option value="auto">維持目前解析度</option>
                 </select>
                 <small id="render-resolution-help" class="settings-field-help">
-                  調整 DisplayCore 的排版基準；HDMI 實際輸出解析度仍由 Windows 顯示設定控制。
+                  儲存後會實際切換訊息螢幕的 Windows 解析度；選項為該螢幕支援的模式，關閉 DisplayCore 後仍保留。
                 </small>
                 <p id="render-resolution-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field">
+                <label class="settings-switch" for="brightness-enabled-input">
+                  <span><strong>調整螢幕亮度</strong></span>
+                  <input id="brightness-enabled-input" type="checkbox">
+                </label>
+                <input id="brightness-percent-input" type="number" min="0" max="100" step="1" value="100" inputmode="numeric" aria-label="螢幕亮度（%）" aria-describedby="brightness-help brightness-percent-error">
+                <small id="brightness-help" class="settings-field-help">0%～100%；關閉則不變更螢幕目前亮度。</small>
+                <p id="brightness-percent-error" class="field-error" hidden></p>
+              </div>
+              <div class="settings-field">
+                <label class="settings-switch" for="contrast-enabled-input">
+                  <span><strong>調整螢幕對比</strong></span>
+                  <input id="contrast-enabled-input" type="checkbox">
+                </label>
+                <input id="contrast-percent-input" type="number" min="0" max="100" step="1" value="100" inputmode="numeric" aria-label="螢幕對比（%）" aria-describedby="contrast-help contrast-percent-error">
+                <small id="contrast-help" class="settings-field-help">0%～100%；關閉則不變更螢幕目前對比。</small>
+                <p id="contrast-percent-error" class="field-error" hidden></p>
               </div>
             </div>
             <div class="settings-switch-list">

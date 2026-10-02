@@ -54,6 +54,20 @@ function createPlacement(overrides = {}) {
   };
 }
 
+function createMonitor(overrides = {}) {
+  return {
+    status: 'ready',
+    displayId: 2,
+    currentResolution: '3840x2160',
+    resolutions: ['3840x2160', '1920x1080', '1280x720'],
+    resolutionError: null,
+    brightnessControl: 'hardware',
+    contrastControl: 'software',
+    revision: 5,
+    ...overrides,
+  };
+}
+
 test('Control 輸出快照只投影安全顯示欄位與實際 placement 狀態', () => {
   const topology = createTopology();
   topology.displays[1].bounds = { x: 1920, y: 0, width: 2560, height: 1440 };
@@ -63,6 +77,7 @@ test('Control 輸出快照只投影安全顯示欄位與實際 placement 狀態'
     // 模擬服務內部未來增加欄位時，projector 仍不得自動洩漏。
     { ...topology, internalDevicePath: '\\\\?\\DISPLAY#PRIVATE' },
     createPlacement(),
+    { ...createMonitor(), deviceName: '\\\\.\\DISPLAY2-PRIVATE' },
   );
 
   assert.deepEqual(snapshot, {
@@ -102,8 +117,20 @@ test('Control 輸出快照只投影安全顯示欄位與實際 placement 狀態'
       fullscreen: true,
       revision: 3,
     },
+    monitor: {
+      status: 'ready',
+      displayId: 2,
+      currentResolution: '3840x2160',
+      resolutions: ['3840x2160', '1920x1080', '1280x720'],
+      resolutionError: null,
+      brightnessControl: 'hardware',
+      contrastControl: 'software',
+      revision: 5,
+    },
   });
   assert.equal(Object.isFrozen(snapshot), true);
+  assert.equal(Object.isFrozen(snapshot.monitor), true);
+  assert.equal(Object.isFrozen(snapshot.monitor.resolutions), true);
   assert.equal(Object.isFrozen(snapshot.displays), true);
   assert.equal(Object.isFrozen(snapshot.displays[0]), true);
   assert.equal(Object.isFrozen(snapshot.placement), true);
@@ -126,12 +153,22 @@ test('輸出投影接受 detecting／unknown 與尚無有效目標的 pending �
       displayId: null,
       revision: 0,
     }),
+    createMonitor({
+      status: 'detecting',
+      displayId: null,
+      currentResolution: null,
+      resolutions: [],
+      brightnessControl: 'unknown',
+      contrastControl: 'unknown',
+      revision: 0,
+    }),
   );
 
   assert.equal(snapshot.topologyStatus, 'unknown');
   assert.equal(snapshot.hdmiConnectionStatus, 'detecting');
   assert.equal(snapshot.effectiveDisplayId, null);
   assert.equal(snapshot.placement.status, 'pending');
+  assert.equal(snapshot.monitor.status, 'detecting');
 });
 
 test('輸出投影拒絕畸形 enum、重複螢幕、過量欄位與不安全數值', () => {
@@ -172,11 +209,41 @@ test('輸出投影拒絕畸形 enum、重複螢幕、過量欄位與不安全數
     [createTopology(), createPlacement({ displayId: -1 })],
     [createTopology(), createPlacement({ fullscreen: 'true' })],
     [createTopology(), createPlacement({ revision: 1.5 })],
+    [createTopology(), createPlacement(), null],
+    [createTopology(), createPlacement(), createMonitor({ status: 'busy' })],
+    [createTopology(), createPlacement(), createMonitor({ displayId: -1 })],
+    [
+      createTopology(),
+      createPlacement(),
+      createMonitor({ currentResolution: '3840×2160' }),
+    ],
+    [
+      createTopology(),
+      createPlacement(),
+      createMonitor({ resolutions: ['1920x1080', 1280] }),
+    ],
+    [
+      createTopology(),
+      createPlacement(),
+      createMonitor({ resolutions: Array(513).fill('1920x1080') }),
+    ],
+    [
+      createTopology(),
+      createPlacement(),
+      createMonitor({ resolutionError: 'timeout' }),
+    ],
+    [
+      createTopology(),
+      createPlacement(),
+      createMonitor({ brightnessControl: 'ddc' }),
+    ],
+    [createTopology(), createPlacement(), createMonitor({ revision: -1 })],
   ];
 
-  for (const [index, [topology, placement]] of invalidPairs.entries()) {
+  for (const [index, [topology, placement, monitor = createMonitor()]] of
+    invalidPairs.entries()) {
     assert.throws(
-      () => createControlOutputSnapshot(topology, placement),
+      () => createControlOutputSnapshot(topology, placement, monitor),
       /輸出狀態/,
       `invalidPairs[${index}] 不應通過投影`,
     );

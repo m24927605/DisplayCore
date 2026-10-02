@@ -54,6 +54,20 @@ const LEGACY_V7_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V8_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V9_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
 const LEGACY_V10_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_V11_CONFIG_KEYS = LEGACY_V5_CONFIG_KEYS;
+const LEGACY_V10_TO_V11_DISPLAY_KEYS = Object.freeze([
+  'controlDisplayId',
+  'defaultDisplayId',
+  'fullscreen',
+  'renderResolution',
+  'selectionMode',
+]);
+const LEGACY_V10_TO_V11_STANDBY_KEYS = Object.freeze([
+  'backgroundImagePaths',
+  'backgroundMode',
+  'sandEffectEnabled',
+  'slideDurationSeconds',
+]);
 const LEGACY_LIST_STANDBY_KEYS = Object.freeze([
   'backgroundImagePaths',
   'backgroundMode',
@@ -215,10 +229,22 @@ function migrateLegacyDisplay(legacyDisplay, defaultDisplay) {
 }
 
 /**
- * 將磁碟上的合法 v1 至 v10 設定轉成 canonical v11。
+ * v12 新增輸出螢幕亮度／對比；升級時預設為不調整，其他螢幕分工與
+ * 解析度欄位完整保留。
+ */
+function migrateV11Display(legacyDisplay, defaultDisplay) {
+  return {
+    ...legacyDisplay,
+    brightnessPercent: defaultDisplay.brightnessPercent,
+    contrastPercent: defaultDisplay.contrastPercent,
+  };
+}
+
+/**
+ * 將磁碟上的合法 v1 至 v11 設定轉成 canonical v12。
  *
- * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v11。
- * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v11 schema
+ * 只有這個磁碟邊界接受舊版本；IPC、Control 與 Display 一律只使用 v12。
+ * 新欄位取自封裝預設值，既有使用者欄位則完整保留並再次交由 v12 schema
  * 驗證，避免寬鬆合併掩蓋損壞或未知資料。
  */
 function migrateStoredConfig(candidate, currentDefaults) {
@@ -234,10 +260,29 @@ function migrateStoredConfig(candidate, currentDefaults) {
   }
 
   if (
+    hasExactKeys(candidate, LEGACY_V11_CONFIG_KEYS) &&
+    candidate.configVersion === 11 &&
+    hasExactKeys(candidate.appearance, LEGACY_V9_APPEARANCE_KEYS) &&
+    hasExactKeys(candidate.standby, LEGACY_V10_TO_V11_STANDBY_KEYS) &&
+    hasExactKeys(candidate.display, LEGACY_V10_TO_V11_DISPLAY_KEYS)
+  ) {
+    const migratedV11 = validateConfig({
+      ...candidate,
+      configVersion: defaults.value.configVersion,
+      display: migrateV11Display(candidate.display, defaults.value.display),
+    });
+
+    return migratedV11.ok
+      ? { ok: true, value: migratedV11.value, migrated: true }
+      : migratedV11;
+  }
+
+  if (
     hasExactKeys(candidate, LEGACY_V10_CONFIG_KEYS) &&
     candidate.configVersion === 10 &&
     hasExactKeys(candidate.appearance, LEGACY_V9_APPEARANCE_KEYS) &&
-    hasExactKeys(candidate.standby, LEGACY_LIST_STANDBY_KEYS)
+    hasExactKeys(candidate.standby, LEGACY_LIST_STANDBY_KEYS) &&
+    hasExactKeys(candidate.display, LEGACY_V10_TO_V11_DISPLAY_KEYS)
   ) {
     const migratedV10 = validateConfig({
       ...candidate,
@@ -246,6 +291,7 @@ function migrateStoredConfig(candidate, currentDefaults) {
         candidate.standby,
         defaults.value.standby,
       ),
+      display: migrateV11Display(candidate.display, defaults.value.display),
     });
 
     return migratedV10.ok

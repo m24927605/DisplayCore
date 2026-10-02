@@ -17,10 +17,10 @@ function createManagerSnapshot(config = structuredClone(defaultConfig), revision
   };
 }
 
-function createV11Config() {
+function createV12Config() {
   return {
     ...structuredClone(defaultConfig),
-    configVersion: 11,
+    configVersion: 12,
     logo: { enabled: false, path: null, sizePercent: 100 },
     standby: {
       backgroundMode: 'fixed',
@@ -37,7 +37,7 @@ function createV11Config() {
 }
 
 test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體 Logo 路徑', () => {
-  const config = createV11Config();
+  const config = createV12Config();
   config.logo = {
     enabled: true,
     path: 'logos/0123456789abcdef01234567.png',
@@ -80,6 +80,8 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
     defaultDisplayId: 42,
     fullscreen: false,
     renderResolution: '2560x1440',
+    brightnessPercent: 40,
+    contrastPercent: 80,
   };
 
   const projected = createDisplaySettingsSnapshot(
@@ -87,7 +89,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   );
 
   assert.deepEqual(projected, {
-    configVersion: 11,
+    configVersion: 12,
     logo: {
       enabled: true,
       url: 'displaycore://app/managed/logo/0123456789abcdef01234567.png',
@@ -119,7 +121,6 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
       releaseBackgroundColor: '#14532D',
     },
     marquee: { enabled: false },
-    display: { renderResolution: '2560x1440' },
     revision: 7,
   });
   assert.equal(Object.isFrozen(projected), true);
@@ -133,15 +134,11 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
   assert.equal(Object.isFrozen(projected.dateTime), true);
   assert.equal(Object.isFrozen(projected.emergency), true);
   assert.equal(Object.isFrozen(projected.marquee), true);
-  assert.equal(Object.isFrozen(projected.display), true);
   assert.equal(Object.hasOwn(projected, 'defaults'), false);
   assert.equal(Object.hasOwn(projected, 'notice'), false);
   assert.equal(Object.hasOwn(projected, 'playback'), false);
-  assert.deepEqual(Object.keys(projected.display), ['renderResolution']);
-  assert.equal(Object.hasOwn(projected.display, 'selectionMode'), false);
-  assert.equal(Object.hasOwn(projected.display, 'controlDisplayId'), false);
-  assert.equal(Object.hasOwn(projected.display, 'defaultDisplayId'), false);
-  assert.equal(Object.hasOwn(projected.display, 'fullscreen'), false);
+  // 輸出解析度、亮度／對比與螢幕分工都由 Main 處理，Display 只依實際視窗排版。
+  assert.equal(Object.hasOwn(projected, 'display'), false);
   assert.equal(Object.hasOwn(projected.logo, 'path'), false);
   assert.equal(Object.hasOwn(projected.standby, 'backgroundImagePaths'), false);
   assert.equal(JSON.stringify(projected).includes(config.logo.path), false);
@@ -151,7 +148,7 @@ test('Display 設定只投影唯讀顯示欄位，不包含管理資訊與實體
 });
 
 test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
-  const config = createV11Config();
+  const config = createV12Config();
   config.logo.path = 'logos/abcdefabcdefabcdefabcdef.webp';
 
   const projected = createDisplaySettingsSnapshot(
@@ -174,7 +171,7 @@ test('停用 Logo 與未選待機背景時只發布空 URL 陣列', () => {
 
 test('Display 投影完整保留管理員啟用或停用訊息倒酒效果的布林值', () => {
   for (const enabled of [true, false]) {
-    const config = createV11Config();
+    const config = createV12Config();
     config.appearance.messageLiquidEffectEnabled = enabled;
 
     const projected = createDisplaySettingsSnapshot(
@@ -189,11 +186,11 @@ test('Display 投影完整保留管理員啟用或停用訊息倒酒效果的布
 });
 
 test('Display 投影拒絕缺少或非布林的訊息倒酒效果設定', () => {
-  const missing = createV11Config();
+  const missing = createV12Config();
   delete missing.appearance.messageLiquidEffectEnabled;
 
   for (const candidate of [missing, ...['true', 1, null].map((value) => {
-    const config = createV11Config();
+    const config = createV12Config();
     config.appearance.messageLiquidEffectEnabled = value;
     return config;
   })]) {
@@ -206,7 +203,7 @@ test('Display 投影拒絕缺少或非布林的訊息倒酒效果設定', () => 
 
 test('Display 投影完整保留待機風吹沙效果 true 與 false', () => {
   for (const enabled of [true, false]) {
-    const config = createV11Config();
+    const config = createV12Config();
     config.standby.sandEffectEnabled = enabled;
 
     const projected = createDisplaySettingsSnapshot(
@@ -218,11 +215,11 @@ test('Display 投影完整保留待機風吹沙效果 true 與 false', () => {
 });
 
 test('Display 投影拒絕缺少或非布林的待機風吹沙效果設定', () => {
-  const missing = createV11Config();
+  const missing = createV12Config();
   delete missing.standby.sandEffectEnabled;
 
   for (const candidate of [missing, ...['true', 1, null].map((value) => {
-    const config = createV11Config();
+    const config = createV12Config();
     config.standby.sandEffectEnabled = value;
     return config;
   })]) {
@@ -235,12 +232,12 @@ test('Display 投影拒絕缺少或非布林的待機風吹沙效果設定', () 
 
 test('投影拒絕不合法 revision、設定內容與非受管理圖片識別', () => {
   for (const snapshot of [
-    createManagerSnapshot(createV11Config(), -1),
-    createManagerSnapshot(createV11Config(), Number.MAX_SAFE_INTEGER + 1),
-    createManagerSnapshot({ ...createV11Config(), unknown: true }, 0),
+    createManagerSnapshot(createV12Config(), -1),
+    createManagerSnapshot(createV12Config(), Number.MAX_SAFE_INTEGER + 1),
+    createManagerSnapshot({ ...createV12Config(), unknown: true }, 0),
     createManagerSnapshot(
       {
-        ...createV11Config(),
+        ...createV12Config(),
         logo: {
           enabled: true,
           path: 'logos/operator-logo.png',
@@ -251,9 +248,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV11Config(),
+        ...createV12Config(),
         standby: {
-          ...createV11Config().standby,
+          ...createV12Config().standby,
           backgroundImagePaths: ['C:\\private\\background.png'],
         },
       },
@@ -261,9 +258,9 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV11Config(),
+        ...createV12Config(),
         standby: {
-          ...createV11Config().standby,
+          ...createV12Config().standby,
           backgroundImagePaths: [
             'standby-backgrounds/operator-background.png',
           ],
@@ -273,19 +270,19 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
     ),
     createManagerSnapshot(
       {
-        ...createV11Config(),
+        ...createV12Config(),
         display: {
-          ...createV11Config().display,
-          renderResolution: '1024x768',
+          ...createV12Config().display,
+          renderResolution: '1024×768',
         },
       },
       0,
     ),
     createManagerSnapshot(
       {
-        ...createV11Config(),
+        ...createV12Config(),
         playback: {
-          ...createV11Config().playback,
+          ...createV12Config().playback,
           pageDurationSeconds: 0,
         },
       },
@@ -301,7 +298,7 @@ test('投影拒絕不合法 revision、設定內容與非受管理圖片識別',
 
 test('投影拒絕超界、非 5% 步進與非整數 Logo 大小', () => {
   for (const sizePercent of [49, 1_001, 101, 100.5, '100']) {
-    const config = createV11Config();
+    const config = createV12Config();
     config.logo.sizePercent = sizePercent;
 
     assert.throws(
@@ -320,7 +317,7 @@ test('投影拒絕未知訊息背景與無效待機時間大小', () => {
     { standbyClockSizePercent: 101 },
     { standbyClockSizePercent: '100' },
   ]) {
-    const config = createV11Config();
+    const config = createV12Config();
     config.appearance = { ...config.appearance, ...appearancePatch };
 
     assert.throws(

@@ -70,15 +70,19 @@ const PERCENTAGE_FIELD_LABELS = Object.freeze({
   standbyClockSizePercent: '待機時間大小',
 });
 
-const RENDER_RESOLUTIONS = Object.freeze([
-  'auto',
-  '1280x720',
-  '1366x768',
-  '1600x900',
-  '1920x1080',
-  '2560x1440',
-  '3840x2160',
-]);
+// 'auto' 維持螢幕目前模式；其他值是輸出螢幕實際支援的「寬x高」。
+const OUTPUT_RESOLUTION = /^[1-9][0-9]{2,4}x[1-9][0-9]{2,4}$/;
+
+function isOutputResolution(value) {
+  return value === 'auto' ||
+    (typeof value === 'string' && OUTPUT_RESOLUTION.test(value));
+}
+
+/** null 代表不調整；數值為 0% 至 100%。 */
+function isOutputAdjustmentPercent(value) {
+  return value === null ||
+    (Number.isSafeInteger(value) && value >= 0 && value <= 100);
+}
 
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
@@ -126,7 +130,7 @@ function freezeConfig(config) {
 
 /** Renderer 鏡像驗證只改善 UX；Main 仍是唯一安全邊界。 */
 function normalizeConfig(candidate) {
-  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 11) {
+  if (!hasExactKeys(candidate, CONFIG_KEYS) || candidate.configVersion !== 12) {
     return failure('settings', '設定資料格式不正確。');
   }
 
@@ -415,6 +419,8 @@ function normalizeConfig(candidate) {
 
   if (
     !hasExactKeys(display, [
+      'brightnessPercent',
+      'contrastPercent',
       'controlDisplayId',
       'defaultDisplayId',
       'fullscreen',
@@ -422,7 +428,7 @@ function normalizeConfig(candidate) {
       'selectionMode',
     ]) ||
     typeof display.fullscreen !== 'boolean' ||
-    !RENDER_RESOLUTIONS.includes(display.renderResolution) ||
+    !isOutputResolution(display.renderResolution) ||
     (!isAuto && !isManual) ||
     (isAuto &&
       (display.controlDisplayId !== null ||
@@ -439,10 +445,24 @@ function normalizeConfig(candidate) {
     return failure('display', '輸出螢幕設定格式不正確。');
   }
 
+  if (!isOutputAdjustmentPercent(display.brightnessPercent)) {
+    return failure(
+      'display.brightnessPercent',
+      '螢幕亮度必須是 0% 至 100% 的整數。',
+    );
+  }
+
+  if (!isOutputAdjustmentPercent(display.contrastPercent)) {
+    return failure(
+      'display.contrastPercent',
+      '螢幕對比必須是 0% 至 100% 的整數。',
+    );
+  }
+
   return {
     ok: true,
     value: freezeConfig({
-      configVersion: 11,
+      configVersion: 12,
       logo: {
         enabled: candidate.logo.enabled,
         path: candidate.logo.path,
@@ -487,6 +507,8 @@ function normalizeConfig(candidate) {
         defaultDisplayId: display.defaultDisplayId,
         fullscreen: display.fullscreen,
         renderResolution: display.renderResolution,
+        brightnessPercent: display.brightnessPercent,
+        contrastPercent: display.contrastPercent,
       },
     }),
   };
@@ -562,6 +584,10 @@ export function buildSettingsDraft({
   controlDisplayId,
   defaultDisplayId,
   renderResolution,
+  brightnessEnabled,
+  brightnessPercent,
+  contrastEnabled,
+  contrastPercent,
 }) {
   const baselineResult = normalizeConfig(baseline);
 
@@ -595,9 +621,20 @@ export function buildSettingsDraft({
     [lineSpacingPercent, 'appearance.lineSpacingPercent', '行距'],
     [pageDurationSeconds, 'playback.pageDurationSeconds', '每頁顯示秒數'],
     [roundCount, 'playback.roundCount', '整輪顯示次數'],
+    [brightnessPercent, 'display.brightnessPercent', '螢幕亮度'],
+    [contrastPercent, 'display.contrastPercent', '螢幕對比'],
   ]) {
     if (typeof value !== 'string' || !INTEGER_NUMBER.test(value)) {
       return failure(field, `${label}必須是一般十進位整數。`);
+    }
+  }
+
+  for (const [enabled, field] of [
+    [brightnessEnabled, 'display.brightnessPercent'],
+    [contrastEnabled, 'display.contrastPercent'],
+  ]) {
+    if (typeof enabled !== 'boolean') {
+      return failure(field, '請明確選擇是否調整螢幕。');
     }
   }
 
@@ -654,7 +691,7 @@ export function buildSettingsDraft({
   }
 
   const result = normalizeConfig({
-    configVersion: 11,
+    configVersion: 12,
     logo: {
       enabled: logoEnabled,
       path: logoPath,
@@ -695,6 +732,8 @@ export function buildSettingsDraft({
       ...displayAssignment,
       fullscreen: baselineResult.value.display.fullscreen,
       renderResolution,
+      brightnessPercent: brightnessEnabled ? Number(brightnessPercent) : null,
+      contrastPercent: contrastEnabled ? Number(contrastPercent) : null,
     },
   });
 

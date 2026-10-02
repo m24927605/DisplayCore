@@ -64,7 +64,7 @@ test('高級顯示預設具備離線字型、材質背景、獨立特效開關�
   ]);
   const config = JSON.parse(configSource);
 
-  assert.equal(config.configVersion, 11);
+  assert.equal(config.configVersion, 12);
   assert.equal(config.appearance.messageBackgroundPreset, 'obsidian');
   assert.equal(config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(config.standby.sandEffectEnabled, true);

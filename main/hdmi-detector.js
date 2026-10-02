@@ -175,4 +175,5 @@ module.exports = {
   HDMI_CONNECTION_STATUSES,
   HdmiDetector,
   parseConnectionTechnologies,
+  resolvePowerShellExecutable,
 };

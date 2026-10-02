@@ -206,6 +206,13 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     'clock-time-error',
     'render-resolution-select',
     'render-resolution-error',
+    'output-monitor-status',
+    'brightness-enabled-input',
+    'brightness-percent-input',
+    'brightness-percent-error',
+    'contrast-enabled-input',
+    'contrast-percent-input',
+    'contrast-percent-error',
     'control-display-select',
     'default-display-select',
     'display-assignment-error',
@@ -294,18 +301,11 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
   );
   assert.match(html, /一般訊息過長時使用；關閉則水平壓縮/);
   assert.match(html, /只校正 DisplayCore 顯示，不修改 Windows 系統時間/);
-  for (const resolution of [
-    'auto',
-    '1280x720',
-    '1366x768',
-    '1600x900',
-    '1920x1080',
-    '2560x1440',
-    '3840x2160',
-  ]) {
-    assert.match(html, new RegExp(`value="${resolution}"`));
-  }
-  assert.match(html, /HDMI 實際輸出解析度仍由 Windows 顯示設定控制/);
+  // 解析度選項由 Main 回報訊息螢幕支援的模式動態產生，HTML 只保留自動。
+  assert.match(html, /<option value="auto">維持目前解析度<\/option>/);
+  assert.doesNotMatch(html, /value="1920x1080"/);
+  assert.match(html, /實際切換訊息螢幕的 Windows 解析度/);
+  assert.match(html, /id="output-monitor-status"[^>]*role="status"/);
 });
 
 test('Control 只載入本機 module，Renderer 僅使用最小權限 bridge', async () => {

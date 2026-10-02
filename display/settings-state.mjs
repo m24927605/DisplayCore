@@ -2,7 +2,6 @@ const SNAPSHOT_KEYS = Object.freeze([
   'appearance',
   'configVersion',
   'dateTime',
-  'display',
   'emergency',
   'logo',
   'marquee',
@@ -33,16 +32,6 @@ const STANDBY_KEYS = Object.freeze([
   'slideDurationSeconds',
 ]);
 const MARQUEE_KEYS = Object.freeze(['enabled']);
-const DISPLAY_KEYS = Object.freeze(['renderResolution']);
-const RENDER_RESOLUTIONS = Object.freeze([
-  'auto',
-  '1280x720',
-  '1366x768',
-  '1600x900',
-  '1920x1080',
-  '2560x1440',
-  '3840x2160',
-]);
 const DISPLAY_LOGO_URL =
   /^displaycore:\/\/app\/managed\/logo\/[a-f0-9]{24}\.(?:jpg|png|webp)$/;
 const DISPLAY_STANDBY_BACKGROUND_URL =
@@ -213,7 +202,7 @@ function isValidEmergency(emergency) {
 function isValidSnapshot(candidate) {
   return (
     hasExactKeys(candidate, SNAPSHOT_KEYS) &&
-    candidate.configVersion === 11 &&
+    candidate.configVersion === 12 &&
     Number.isSafeInteger(candidate.revision) &&
     candidate.revision >= 0 &&
     isValidLogo(candidate.logo) &&
@@ -222,9 +211,7 @@ function isValidSnapshot(candidate) {
     isValidDateTime(candidate.dateTime) &&
     isValidEmergency(candidate.emergency) &&
     hasExactKeys(candidate.marquee, MARQUEE_KEYS) &&
-    typeof candidate.marquee.enabled === 'boolean' &&
-    hasExactKeys(candidate.display, DISPLAY_KEYS) &&
-    RENDER_RESOLUTIONS.includes(candidate.display.renderResolution)
+    typeof candidate.marquee.enabled === 'boolean'
   );
 }
 
@@ -236,7 +223,6 @@ function freezeSettings(settings) {
   Object.freeze(settings.dateTime);
   Object.freeze(settings.emergency);
   Object.freeze(settings.marquee);
-  Object.freeze(settings.display);
   return Object.freeze(settings);
 }
 
@@ -278,14 +264,13 @@ function cloneSettings(candidate) {
       releaseBackgroundColor: candidate.emergency.releaseBackgroundColor,
     },
     marquee: { enabled: candidate.marquee.enabled },
-    display: { renderResolution: candidate.display.renderResolution },
     revision: candidate.revision,
   });
 }
 
 /** IPC 無法取得設定時仍可安全顯示訊息，不在電視呈現錯誤文字。 */
 export const SAFE_DISPLAY_SETTINGS = freezeSettings({
-  configVersion: 11,
+  configVersion: 12,
   logo: { enabled: false, url: null, sizePercent: 100 },
   standby: {
     backgroundMode: 'fixed',
@@ -311,7 +296,6 @@ export const SAFE_DISPLAY_SETTINGS = freezeSettings({
     releaseBackgroundColor: '#000000',
   },
   marquee: { enabled: true },
-  display: { renderResolution: 'auto' },
   revision: -1,
 });
 

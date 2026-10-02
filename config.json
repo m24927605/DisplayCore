@@ -1,5 +1,5 @@
 {
-  "configVersion": 11,
+  "configVersion": 12,
   "logo": {
     "enabled": false,
     "path": null,
@@ -43,6 +43,8 @@
     "controlDisplayId": null,
     "defaultDisplayId": null,
     "fullscreen": true,
-    "renderResolution": "auto"
+    "renderResolution": "auto",
+    "brightnessPercent": null,
+    "contrastPercent": null
   }
 }

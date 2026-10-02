@@ -54,18 +54,22 @@ function createDraftInput(config, overrides = {}) {
         ? 'auto'
         : String(config.display.defaultDisplayId),
     renderResolution: config.display.renderResolution,
+    brightnessEnabled: config.display.brightnessPercent !== null,
+    brightnessPercent: String(config.display.brightnessPercent ?? 100),
+    contrastEnabled: config.display.contrastPercent !== null,
+    contrastPercent: String(config.display.contrastPercent ?? 100),
     ...overrides,
   };
 }
 
-test('canonical v11 預設啟用兩項顯示特效，且都只接受 boolean', async () => {
+test('canonical v12 預設啟用兩項顯示特效，且都只接受 boolean', async () => {
   const { CONFIG_VERSION, validateConfig } = require(
     '../../config/config-schema'
   );
   const config = await readDefaultConfig();
 
-  assert.equal(CONFIG_VERSION, 11);
-  assert.equal(config.configVersion, 11);
+  assert.equal(CONFIG_VERSION, 12);
+  assert.equal(config.configVersion, 12);
   assert.equal(config.appearance.messageLiquidEffectEnabled, true);
   assert.equal(config.standby.sandEffectEnabled, true);
   assert.equal(validateConfig(config).ok, true);
@@ -137,7 +141,7 @@ test('canonical v11 預設啟用兩項顯示特效，且都只接受 boolean', a
   assert.equal(validateConfig(missingSandEffect).ok, false);
 });
 
-test('磁碟 canonical v8 嚴格遷移至 v11，保留舊值並預設啟用兩項效果', async () => {
+test('磁碟 canonical v8 嚴格遷移至 v12，保留舊值並預設啟用兩項效果', async () => {
   const { migrateStoredConfig } = require('../../config/config-migrations');
   const defaults = await readDefaultConfig();
   const legacy = structuredClone(defaults);
@@ -147,12 +151,14 @@ test('磁碟 canonical v8 嚴格遷移至 v11，保留舊值並預設啟用兩�
   delete legacy.appearance.messageLiquidEffectEnabled;
   delete legacy.standby.sandEffectEnabled;
   delete legacy.display.controlDisplayId;
+  delete legacy.display.brightnessPercent;
+  delete legacy.display.contrastPercent;
 
   const result = migrateStoredConfig(legacy, defaults);
 
   assert.equal(result.ok, true);
   assert.equal(result.migrated, true);
-  assert.equal(result.value.configVersion, 11);
+  assert.equal(result.value.configVersion, 12);
   assert.equal(result.value.appearance.backgroundColor, '#123456');
   assert.equal(result.value.appearance.messageLiquidEffectEnabled, true);
   assert.equal(result.value.standby.sandEffectEnabled, true);
@@ -248,7 +254,7 @@ test('Control 草稿可獨立儲存兩項開關，且各自影響 settingsEqual'
   }));
 
   assert.equal(messageEffectOff.ok, true);
-  assert.equal(messageEffectOff.config.configVersion, 11);
+  assert.equal(messageEffectOff.config.configVersion, 12);
   assert.equal(
     messageEffectOff.config.appearance.messageLiquidEffectEnabled,
     false,
