@@ -75,11 +75,8 @@ class OutputMonitorController {
       typeof monitorControl?.isSupported !== 'function' ||
       typeof monitorControl?.query !== 'function' ||
       typeof monitorControl?.apply !== 'function' ||
-      // dipToScreenRect 只存在於 Windows；其他平台不需要實體座標。
-      (
-        monitorControl.isSupported() &&
-        typeof screen?.dipToScreenRect !== 'function'
-      )
+      // Electron screen 在 app ready 前不可存取；dipToScreenRect 於同步時才使用。
+      !screen
     ) {
       throw new TypeError('輸出螢幕控制缺少必要相依物件。');
     }

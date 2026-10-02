@@ -342,3 +342,20 @@ test('dispose 後解除訂閱且不再發布', async () => {
   assert.equal(settingsManager.listeners.size, 0);
   assert.equal(topology.listeners.size, 0);
 });
+
+test('建構時不得讀取 Electron screen 屬性（app ready 前存取會拋錯）', () => {
+  const screenBeforeReady = new Proxy({}, {
+    get() {
+      throw new Error(
+        "The 'screen' module can't be used before the app 'ready' event",
+      );
+    },
+  });
+
+  assert.doesNotThrow(() => new OutputMonitorController({
+    topologyService: createTopologyService(),
+    settingsManager: createSettingsManager(),
+    monitorControl: createMonitorControl(),
+    screen: screenBeforeReady,
+  }));
+});
