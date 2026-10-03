@@ -66,6 +66,8 @@ function createSnapshot(topologyRevision, placementRevision, overrides = {}) {
       resolutionError: null,
       brightnessControl: 'hardware',
       contrastControl: 'software',
+      brightnessPercent: 65,
+      contrastPercent: null,
       revision: 2,
     },
     ...overrides,

@@ -55,6 +55,8 @@ function createSnapshot(overrides = {}) {
       resolutionError: null,
       brightnessControl: 'hardware',
       contrastControl: 'software',
+      brightnessPercent: 65,
+      contrastPercent: null,
       revision: 2,
     },
     ...overrides,

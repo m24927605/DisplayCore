@@ -169,6 +169,9 @@ test('自動解析度且未設定亮度對比時只查詢，不變更螢幕', as
       resolutionError: null,
       brightnessControl: 'hardware',
       contrastControl: 'software',
+      // 硬體可讀的項目回報螢幕目前值，畫面模擬的項目不回報。
+      brightnessPercent: 80,
+      contrastPercent: null,
       revision: undefined,
     },
   );
@@ -200,6 +203,7 @@ test('設定支援的解析度與亮度時以實體原點套用，並發布切�
   assert.equal(controller.getStatus().currentResolution, '1280x720');
   assert.equal(controller.getStatus().resolutionError, null);
   assert.equal(monitor.state.brightness.percent, 35);
+  assert.equal(controller.getStatus().brightnessPercent, 35);
   assert.equal(published.at(-1), controller.getStatus());
 });
 

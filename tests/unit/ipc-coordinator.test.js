@@ -242,6 +242,8 @@ function createMonitorStatus(overrides = {}) {
     resolutionError: null,
     brightnessControl: 'hardware',
     contrastControl: 'software',
+    brightnessPercent: 65,
+    contrastPercent: null,
     revision: 0,
     ...overrides,
   });
@@ -404,6 +406,8 @@ test('Control 可取得拓樸與定位的最小輸出快照，Display 角色不�
         resolutionError: null,
         brightnessControl: 'hardware',
         contrastControl: 'software',
+        brightnessPercent: 65,
+        contrastPercent: null,
         revision: 0,
       },
     },

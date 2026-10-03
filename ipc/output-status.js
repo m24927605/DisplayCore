@@ -103,6 +103,11 @@ function projectPlacement(placement) {
   });
 }
 
+function isCurrentPercent(value) {
+  return value === null ||
+    (Number.isSafeInteger(value) && value >= 0 && value <= 100);
+}
+
 function isResolution(value) {
   return typeof value === 'string' && RESOLUTION_PATTERN.test(value);
 }
@@ -121,6 +126,8 @@ function projectMonitor(monitor) {
       RESOLUTION_ERRORS.has(monitor.resolutionError)) ||
     !ADJUSTMENT_CONTROLS.has(monitor.brightnessControl) ||
     !ADJUSTMENT_CONTROLS.has(monitor.contrastControl) ||
+    !isCurrentPercent(monitor.brightnessPercent) ||
+    !isCurrentPercent(monitor.contrastPercent) ||
     !isRevision(monitor.revision)
   ) {
     return invalidOutputStatus();
@@ -134,6 +141,8 @@ function projectMonitor(monitor) {
     resolutionError: monitor.resolutionError,
     brightnessControl: monitor.brightnessControl,
     contrastControl: monitor.contrastControl,
+    brightnessPercent: monitor.brightnessPercent,
+    contrastPercent: monitor.contrastPercent,
     revision: monitor.revision,
   });
 }

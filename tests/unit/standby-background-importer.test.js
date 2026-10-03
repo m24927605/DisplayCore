@@ -158,6 +158,42 @@ test('輪播模式啟用原生多選，並依原順序去除重複內容', async
   );
 });
 
+test('記住本次匯入的背景供設定頁預覽縮圖，取消選檔不增加', async (t) => {
+  const sourceDirectory = await fileSystem.mkdtemp(
+    path.join(os.tmpdir(), 'displaycore-standby-background-session-'),
+  );
+  const sourcePath = path.join(sourceDirectory, 'session.png');
+  await fileSystem.writeFile(sourcePath, PNG_BYTES);
+  t.after(async () => {
+    await fileSystem.rm(sourceDirectory, { recursive: true, force: true });
+  });
+
+  let dialogResult = { canceled: true, filePaths: [] };
+  const harness = await createHarness(t, null, {
+    dialog: {
+      async showOpenDialog() {
+        return dialogResult;
+      },
+    },
+  });
+  const digest = createHash('sha256')
+    .update(PNG_BYTES)
+    .digest('hex')
+    .slice(0, 24);
+
+  assert.deepEqual(harness.importer.getImportedAssetPaths(), []);
+  await harness.importer.chooseAndImport({ multiple: true });
+  assert.deepEqual(harness.importer.getImportedAssetPaths(), []);
+
+  dialogResult = { canceled: false, filePaths: [sourcePath] };
+  await harness.importer.chooseAndImport({ multiple: false });
+  await harness.importer.chooseAndImport({ multiple: true });
+  assert.deepEqual(harness.importer.getImportedAssetPaths(), [
+    `standby-backgrounds/${digest}.png`,
+  ]);
+  assert.equal(Object.isFrozen(harness.importer.getImportedAssetPaths()), true);
+});
+
 test('待機背景每次最多 20 張，且批次內任一無效時不寫入部分檔案', async (t) => {
   const sourceDirectory = await fileSystem.mkdtemp(
     path.join(os.tmpdir(), 'displaycore-standby-background-batch-invalid-'),

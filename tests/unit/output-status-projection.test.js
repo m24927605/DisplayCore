@@ -63,6 +63,8 @@ function createMonitor(overrides = {}) {
     resolutionError: null,
     brightnessControl: 'hardware',
     contrastControl: 'software',
+    brightnessPercent: 65,
+    contrastPercent: null,
     revision: 5,
     ...overrides,
   };
@@ -125,6 +127,8 @@ test('Control 輸出快照只投影安全顯示欄位與實際 placement 狀態'
       resolutionError: null,
       brightnessControl: 'hardware',
       contrastControl: 'software',
+      brightnessPercent: 65,
+      contrastPercent: null,
       revision: 5,
     },
   });
@@ -160,6 +164,8 @@ test('輸出投影接受 detecting／unknown 與尚無有效目標的 pending �
       resolutions: [],
       brightnessControl: 'unknown',
       contrastControl: 'unknown',
+      brightnessPercent: null,
+      contrastPercent: null,
       revision: 0,
     }),
   );

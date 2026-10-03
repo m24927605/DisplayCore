@@ -890,6 +890,86 @@ dialog::backdrop {
   margin-block-start: 0.65rem;
 }
 
+/* 待機背景清單：縮圖與逐張移除，順序即輪播順序。 */
+.standby-background-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9rem, 1fr));
+  gap: 0.6rem;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.standby-background-list:empty {
+  display: none;
+}
+
+.standby-background-item {
+  display: grid;
+  gap: 0.35rem;
+  padding: 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.5rem;
+  background: var(--surface-muted);
+}
+
+.standby-background-thumbnail {
+  display: block;
+  inline-size: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 0.3rem;
+  background: var(--line);
+}
+
+.standby-background-item-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.standby-background-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+
+.standby-background-move {
+  padding: 0.15rem 0.4rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  color: var(--ink);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.standby-background-move:hover:not(:disabled) {
+  background: var(--primary-soft);
+}
+
+.standby-background-move:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.standby-background-remove {
+  padding: 0.15rem 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: 0.35rem;
+  color: var(--danger);
+  background: var(--surface);
+  font: inherit;
+  cursor: pointer;
+}
+
+.standby-background-remove:hover {
+  background: var(--danger-soft);
+}
+
 .color-control {
   display: grid;
   grid-template-columns: 3rem minmax(0, 1fr);

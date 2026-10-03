@@ -247,6 +247,8 @@ function createMonitorStatus(overrides = {}) {
     resolutionError: null,
     brightnessControl: 'hardware',
     contrastControl: 'software',
+    brightnessPercent: 65,
+    contrastPercent: null,
     revision: 0,
     ...overrides,
   };
@@ -465,6 +467,10 @@ async function openPlaybackSettings(settingsManager) {
       document.getElementById('brightness-enabled-input').checked,
     brightnessPercentDisabled:
       document.getElementById('brightness-percent-input').disabled,
+    brightnessPercentValue:
+      document.getElementById('brightness-percent-input').value,
+    contrastPercentValue:
+      document.getElementById('contrast-percent-input').value,
     contrastEnabled: document.getElementById('contrast-enabled-input').checked,
   }))()`);
   assert.deepEqual(settingsShape, {
@@ -506,10 +512,13 @@ async function openPlaybackSettings(settingsManager) {
       ['1280x720', '1280×720'],
     ],
     outputMonitorStatus:
-      '訊息螢幕目前 1920×1080；亮度直接調整螢幕本身；' +
+      '訊息螢幕目前 1920×1080；亮度直接調整螢幕本身（目前 65%）；' +
       '對比以畫面模擬（螢幕不支援 DDC/CI，100% 為原始畫面）。',
     brightnessEnabled: false,
     brightnessPercentDisabled: true,
+    // 未啟用調整時顯示螢幕目前亮度；對比為畫面模擬，以 100% 表示原始畫面。
+    brightnessPercentValue: '65',
+    contrastPercentValue: '100',
     contrastEnabled: false,
   });
 
@@ -925,6 +934,69 @@ async function openPlaybackSettings(settingsManager) {
     )()`),
     '匯入兩張輪播背景',
   );
+
+  // 再次選擇會接在既有清單後，重複的圖片不會加入第二次。
+  await click('choose-standby-background-button');
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('standby-background-summary').value ===
+        '已選擇 3 張圖片' &&
+      document.querySelectorAll('#standby-background-list li').length === 3
+    )()`),
+    '再次選擇輪播背景時累加圖片',
+  );
+  assert.deepEqual(await execute(`[...document.querySelectorAll(
+    '#standby-background-list .standby-background-thumbnail'
+  )].map((image) => image.getAttribute('src'))`), [
+    'displaycore://app/managed/standby-background/abcdefabcdefabcdefabcdef.png',
+    'displaycore://app/managed/standby-background/1234567890abcdef12345678.jpg',
+    'displaycore://app/managed/standby-background/fedcba9876543210fedcba98.webp',
+  ]);
+
+  // 逐張移除：移除第 1 張，其餘保持原順序，焦點移到下一個移除按鈕。
+  await execute(`document.querySelector(
+    '#standby-background-list .standby-background-remove[data-index="0"]'
+  ).click()`);
+  await waitFor(
+    () => execute(`(() =>
+      document.getElementById('standby-background-summary').value ===
+        '已選擇 2 張圖片' &&
+      document.activeElement?.classList.contains('standby-background-remove') &&
+      document.activeElement.dataset.index === '0'
+    )()`),
+    '移除單張輪播背景',
+  );
+
+  // 調整輪播順序：第 1 張往後移；端點的按鈕必須停用，焦點跟著圖片移動。
+  assert.deepEqual(await execute(`[...document.querySelectorAll(
+    '#standby-background-list button[data-action]'
+  )].map((button) => [button.dataset.action, button.dataset.index, button.disabled])`), [
+    ['earlier', '0', true],
+    ['later', '0', false],
+    ['remove', '0', false],
+    ['earlier', '1', false],
+    ['later', '1', true],
+    ['remove', '1', false],
+  ]);
+  await execute(`document.querySelector(
+    '#standby-background-list button[data-action="later"][data-index="0"]'
+  ).click()`);
+  await waitFor(
+    () => execute(`(() => {
+      const sources = [...document.querySelectorAll(
+        '#standby-background-list .standby-background-thumbnail'
+      )].map((image) => image.getAttribute('src'));
+      return sources.join(',') === [
+        'displaycore://app/managed/standby-background/fedcba9876543210fedcba98.webp',
+        'displaycore://app/managed/standby-background/1234567890abcdef12345678.jpg',
+      ].join(',') &&
+        document.activeElement?.dataset.action === 'earlier' &&
+        document.activeElement.dataset.index === '1' &&
+        document.getElementById('settings-dirty-status').textContent ===
+          '有未儲存變更';
+    })()`),
+    '調整輪播背景順序',
+  );
   await click('save-settings-button');
   await waitFor(
     () => settingsManager.getSnapshot().revision === 3 &&
@@ -934,7 +1006,7 @@ async function openPlaybackSettings(settingsManager) {
   assert.deepEqual(settingsManager.getSnapshot().config.standby, {
     backgroundMode: 'slideshow',
     backgroundImagePaths: [
-      'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+      'standby-backgrounds/fedcba9876543210fedcba98.webp',
       'standby-backgrounds/1234567890abcdef12345678.jpg',
     ],
     slideDurationSeconds: 12,
@@ -1464,16 +1536,27 @@ async function run() {
       return { canceled: true, assetPath: null };
     },
   };
+  // 第二次多選刻意包含一張重複圖片，驗證輪播清單是累加且去重。
+  const multipleSelections = [
+    [
+      'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
+      'standby-backgrounds/1234567890abcdef12345678.jpg',
+    ],
+    [
+      'standby-backgrounds/1234567890abcdef12345678.jpg',
+      'standby-backgrounds/fedcba9876543210fedcba98.webp',
+    ],
+  ];
+  let multipleSelectionCount = 0;
   const standbyBackgroundImporter = {
     async chooseAndImport({ multiple }) {
       return {
         canceled: false,
-        assetPaths: multiple ? [
-          'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
-          'standby-backgrounds/1234567890abcdef12345678.jpg',
-        ] : [
-          'standby-backgrounds/abcdefabcdefabcdefabcdef.png',
-        ],
+        assetPaths: multiple
+          ? multipleSelections[
+            Math.min(multipleSelectionCount++, multipleSelections.length - 1)
+          ]
+          : ['standby-backgrounds/abcdefabcdefabcdefabcdef.png'],
       };
     },
   };

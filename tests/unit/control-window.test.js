@@ -248,8 +248,14 @@ test('齒輪設定保留播放、Logo、外觀與顯示行為，播放設定不�
     html,
     /id="standby-slide-duration-input"[^>]+min="1"[^>]+max="3600"/,
   );
-  assert.match(html, /重新選擇[^<]*取代/);
-  assert.doesNotMatch(html, /背景圖片清單|縮圖|調整順序/);
+  // 輪播清單累加、可逐張移除並以 ◀ ▶ 調整順序；固定圖片重新選擇才取代。
+  assert.match(html, /多張輪播時再次選擇會加入圖片/);
+  assert.match(html, /可用 ◀ ▶ 調整順序/);
+  assert.match(html, /固定圖片只使用一張，重新選擇會取代/);
+  assert.match(
+    html,
+    /<ol[^>]+id="standby-background-list"[^>]+aria-label="已選擇的待機背景圖片"/,
+  );
   assert.doesNotMatch(html, /id="standby-background-enabled-input"/);
   assert.doesNotMatch(html, /id="hour12-input"|12 小時制/);
   assert.match(html, /訊息播放時顯示時間/);

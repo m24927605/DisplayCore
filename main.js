@@ -245,8 +245,11 @@ async function bootstrap() {
           const logo = settingsManager.getSnapshot().config.logo;
           return logo.enabled ? logo.path : null;
         },
-        getAllowedStandbyBackgroundPaths: () =>
-          settingsManager.getSnapshot().config.standby.backgroundImagePaths,
+        // 已儲存的背景，加上本次剛匯入、設定頁需預覽縮圖的背景。
+        getAllowedStandbyBackgroundPaths: () => [
+          ...settingsManager.getSnapshot().config.standby.backgroundImagePaths,
+          ...standbyBackgroundImporter.getImportedAssetPaths(),
+        ],
       });
       // 原廠預設 Logo 以受管理路徑引用，需先存在才能由本機協定提供。
       await installBundledLogos({

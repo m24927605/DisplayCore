@@ -102,6 +102,8 @@ class OutputMonitorController {
       resolutionError: null,
       brightnessControl: ADJUSTMENT_CONTROLS.UNKNOWN,
       contrastControl: ADJUSTMENT_CONTROLS.UNKNOWN,
+      brightnessPercent: null,
+      contrastPercent: null,
       revision: 0,
     });
   }
@@ -215,6 +217,8 @@ class OutputMonitorController {
             status: OUTPUT_MONITOR_STATUSES.ERROR,
             brightnessControl: ADJUSTMENT_CONTROLS.SOFTWARE,
             contrastControl: ADJUSTMENT_CONTROLS.SOFTWARE,
+            brightnessPercent: null,
+            contrastPercent: null,
           });
         }
       } while (this.pending && !this.disposed);
@@ -237,6 +241,8 @@ class OutputMonitorController {
         resolutionError: null,
         brightnessControl: ADJUSTMENT_CONTROLS.UNKNOWN,
         contrastControl: ADJUSTMENT_CONTROLS.UNKNOWN,
+        brightnessPercent: null,
+        contrastPercent: null,
       });
       return;
     }
@@ -250,6 +256,8 @@ class OutputMonitorController {
         resolutionError: null,
         brightnessControl: ADJUSTMENT_CONTROLS.SOFTWARE,
         contrastControl: ADJUSTMENT_CONTROLS.SOFTWARE,
+        brightnessPercent: null,
+        contrastPercent: null,
       });
       return;
     }
@@ -263,6 +271,8 @@ class OutputMonitorController {
         resolutionError: null,
         brightnessControl: ADJUSTMENT_CONTROLS.UNKNOWN,
         contrastControl: ADJUSTMENT_CONTROLS.UNKNOWN,
+        brightnessPercent: null,
+        contrastPercent: null,
       });
     }
 
@@ -285,6 +295,8 @@ class OutputMonitorController {
         resolutionError: null,
         brightnessControl: ADJUSTMENT_CONTROLS.SOFTWARE,
         contrastControl: ADJUSTMENT_CONTROLS.SOFTWARE,
+        brightnessPercent: null,
+        contrastPercent: null,
       });
       return;
     }
@@ -379,6 +391,13 @@ class OutputMonitorController {
       resolutionError,
       brightnessControl,
       contrastControl,
+      // 螢幕本身目前的亮度／對比；只有硬體可讀時才回報。
+      brightnessPercent: brightnessControl === ADJUSTMENT_CONTROLS.HARDWARE
+        ? info.brightness.percent
+        : null,
+      contrastPercent: contrastControl === ADJUSTMENT_CONTROLS.HARDWARE
+        ? info.contrast.percent
+        : null,
     });
   }
 

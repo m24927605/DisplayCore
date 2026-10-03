@@ -342,9 +342,14 @@
                   aria-describedby="standby-background-help standby-background-error"
                 >
                 <small id="standby-background-help" class="settings-field-help">
-                  重新選擇會取代目前圖片；固定模式只顯示第一張。
+                  多張輪播時再次選擇會加入圖片（最多 20 張）；依清單順序播放，可用 ◀ ▶ 調整順序；固定圖片只使用一張，重新選擇會取代。
                 </small>
                 <p id="standby-background-error" class="field-error" hidden></p>
+                <ol
+                  id="standby-background-list"
+                  class="standby-background-list"
+                  aria-label="已選擇的待機背景圖片"
+                ></ol>
               </div>
             </div>
             <div class="settings-inline-actions">
@@ -558,7 +563,7 @@
                   <input id="brightness-enabled-input" type="checkbox">
                 </label>
                 <input id="brightness-percent-input" type="number" min="0" max="100" step="1" value="100" inputmode="numeric" aria-label="螢幕亮度（%）" aria-describedby="brightness-help brightness-percent-error">
-                <small id="brightness-help" class="settings-field-help">0%～100%；關閉則不變更螢幕目前亮度。</small>
+                <small id="brightness-help" class="settings-field-help">0%～100%；關閉時顯示螢幕目前亮度且不變更。</small>
                 <p id="brightness-percent-error" class="field-error" hidden></p>
               </div>
               <div class="settings-field">
@@ -567,7 +572,7 @@
                   <input id="contrast-enabled-input" type="checkbox">
                 </label>
                 <input id="contrast-percent-input" type="number" min="0" max="100" step="1" value="100" inputmode="numeric" aria-label="螢幕對比（%）" aria-describedby="contrast-help contrast-percent-error">
-                <small id="contrast-help" class="settings-field-help">0%～100%；關閉則不變更螢幕目前對比。</small>
+                <small id="contrast-help" class="settings-field-help">0%～100%；關閉時顯示螢幕目前對比且不變更。</small>
                 <p id="contrast-percent-error" class="field-error" hidden></p>
               </div>
             </div>

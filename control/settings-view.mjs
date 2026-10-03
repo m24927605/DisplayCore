@@ -9,6 +9,7 @@ import {
 } from './time-calibration.mjs';
 
 const COLOR_PATTERN = /^#[0-9a-f]{6}$/i;
+const MAXIMUM_STANDBY_BACKGROUND_IMAGES = 20;
 
 /**
  * 系統設定對話框的 DOM 與草稿狀態。
@@ -70,6 +71,7 @@ export function createSettingsView({
     removeStandbyBackgroundButton: document.getElementById(
       'remove-standby-background-button',
     ),
+    standbyBackgroundList: document.getElementById('standby-background-list'),
     backgroundColorField: document.getElementById('background-color-field'),
     backgroundColorPicker: document.getElementById('background-color-picker'),
     backgroundColor: document.getElementById('background-color-input'),
@@ -541,9 +543,11 @@ export function createSettingsView({
     elements.renderResolution.value = selectedValue;
   }
 
-  function describeAdjustmentControl(label, control) {
+  function describeAdjustmentControl(label, control, currentPercent) {
     if (control === 'hardware') {
-      return `${label}直接調整螢幕本身`;
+      return currentPercent === null
+        ? `${label}直接調整螢幕本身`
+        : `${label}直接調整螢幕本身（目前 ${currentPercent}%）`;
     }
 
     if (control === 'software') {
@@ -570,8 +574,16 @@ export function createSettingsView({
     } else {
       const parts = [
         `訊息螢幕目前 ${formatResolution(monitor.currentResolution)}`,
-        describeAdjustmentControl('亮度', monitor.brightnessControl),
-        describeAdjustmentControl('對比', monitor.contrastControl),
+        describeAdjustmentControl(
+          '亮度',
+          monitor.brightnessControl,
+          monitor.brightnessPercent,
+        ),
+        describeAdjustmentControl(
+          '對比',
+          monitor.contrastControl,
+          monitor.contrastPercent,
+        ),
       ];
       if (monitor.resolutionError === 'unsupported') {
         parts.push('所選解析度不受此螢幕支援，維持目前解析度');
@@ -584,9 +596,28 @@ export function createSettingsView({
     elements.outputMonitorStatus.textContent = message;
   }
 
+  /**
+   * 未啟用調整時，欄位顯示螢幕目前的實際值（DDC/CI 可讀時），否則顯示
+   * 100%（畫面模擬的原始畫面）；開啟開關後即從這個值開始調整。
+   */
   function renderAdjustmentControls() {
-    elements.brightnessPercent.disabled = !elements.brightnessEnabled.checked;
-    elements.contrastPercent.disabled = !elements.contrastEnabled.checked;
+    for (const [enabled, input, currentPercent] of [
+      [
+        elements.brightnessEnabled,
+        elements.brightnessPercent,
+        state.outputMonitor?.brightnessPercent ?? null,
+      ],
+      [
+        elements.contrastEnabled,
+        elements.contrastPercent,
+        state.outputMonitor?.contrastPercent ?? null,
+      ],
+    ]) {
+      input.disabled = !enabled.checked;
+      if (!enabled.checked) {
+        input.value = String(currentPercent ?? 100);
+      }
+    }
   }
 
   function renderStandbyBackgroundControls() {
@@ -605,6 +636,77 @@ export function createSettingsView({
         : imageCount === 1
           ? '已選擇 1 張圖片'
           : `已選擇 ${imageCount} 張圖片（固定顯示第 1 張）`;
+    renderStandbyBackgroundList(slideshow);
+  }
+
+  function createStandbyBackgroundButton(action, index, text, ariaLabel) {
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = action === 'remove'
+      ? 'standby-background-remove'
+      : 'standby-background-move';
+    button.dataset.action = action;
+    button.dataset.index = String(index);
+    button.textContent = text;
+    button.setAttribute('aria-label', ariaLabel);
+    return button;
+  }
+
+  /**
+   * 每張背景顯示縮圖、往前／往後與移除按鈕；清單順序即輪播順序。
+   * 縮圖經同源受管理路由載入。
+   */
+  function renderStandbyBackgroundList(slideshow) {
+    const count = state.standbyBackgroundImagePaths.length;
+    const items = state.standbyBackgroundImagePaths.map((assetPath, index) => {
+      const item = document.createElement('li');
+      item.className = 'standby-background-item';
+
+      const thumbnail = document.createElement('img');
+      thumbnail.className = 'standby-background-thumbnail';
+      thumbnail.alt = `待機背景第 ${index + 1} 張`;
+      thumbnail.src = `displaycore://app/managed/standby-background/${
+        assetPath.slice('standby-backgrounds/'.length)
+      }`;
+
+      const footer = document.createElement('div');
+      footer.className = 'standby-background-item-footer';
+      const label = document.createElement('span');
+      label.textContent = !slideshow && index === 0
+        ? `第 ${index + 1} 張（顯示中）`
+        : `第 ${index + 1} 張`;
+      const actions = document.createElement('div');
+      actions.className = 'standby-background-actions';
+      const earlier = createStandbyBackgroundButton(
+        'earlier',
+        index,
+        '◀',
+        `待機背景第 ${index + 1} 張往前移`,
+      );
+      earlier.disabled = index === 0;
+      const later = createStandbyBackgroundButton(
+        'later',
+        index,
+        '▶',
+        `待機背景第 ${index + 1} 張往後移`,
+      );
+      later.disabled = index === count - 1;
+      actions.append(
+        earlier,
+        later,
+        createStandbyBackgroundButton(
+          'remove',
+          index,
+          '移除',
+          `移除待機背景第 ${index + 1} 張`,
+        ),
+      );
+
+      footer.append(label, actions);
+      item.append(thumbnail, footer);
+      return item;
+    });
+    elements.standbyBackgroundList.replaceChildren(...items);
   }
 
   function renderMessageBackgroundControls() {
@@ -679,13 +781,15 @@ export function createSettingsView({
     renderResolutionOptions(config.display.renderResolution);
     elements.brightnessEnabled.checked =
       config.display.brightnessPercent !== null;
-    elements.brightnessPercent.value = String(
-      config.display.brightnessPercent ?? 100,
-    );
     elements.contrastEnabled.checked = config.display.contrastPercent !== null;
-    elements.contrastPercent.value = String(
-      config.display.contrastPercent ?? 100,
-    );
+    if (config.display.brightnessPercent !== null) {
+      elements.brightnessPercent.value = String(
+        config.display.brightnessPercent,
+      );
+    }
+    if (config.display.contrastPercent !== null) {
+      elements.contrastPercent.value = String(config.display.contrastPercent);
+    }
     renderAdjustmentControls();
     elements.marqueeEnabled.checked = config.marquee.enabled;
     elements.pageDuration.value = String(
@@ -828,6 +932,54 @@ export function createSettingsView({
       state.standbyBackgroundImagePaths = [];
       renderStandbyBackgroundControls();
       handleDraftInput();
+    }, { signal });
+    elements.standbyBackgroundList.addEventListener('click', (event) => {
+      const button = event.target.closest?.('button[data-action]');
+      const index = Number(button?.dataset.index);
+      const paths = state.standbyBackgroundImagePaths;
+      if (
+        !button ||
+        button.disabled ||
+        state.busy ||
+        !Number.isSafeInteger(index) ||
+        index < 0 ||
+        index >= paths.length
+      ) {
+        return;
+      }
+
+      const { action } = button.dataset;
+      let focusIndex = index;
+      if (action === 'remove') {
+        state.standbyBackgroundImagePaths = paths
+          .filter((_assetPath, candidate) => candidate !== index);
+      } else if (action === 'earlier' || action === 'later') {
+        const target = action === 'earlier' ? index - 1 : index + 1;
+        if (target < 0 || target >= paths.length) {
+          return;
+        }
+        const reordered = [...paths];
+        [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+        state.standbyBackgroundImagePaths = reordered;
+        focusIndex = target;
+      } else {
+        return;
+      }
+
+      renderStandbyBackgroundControls();
+      handleDraftInput();
+      // 焦點跟著被移動的圖片；移到端點後改到仍可用的按鈕。
+      const sameAction = elements.standbyBackgroundList.querySelector(
+        `button[data-action="${action}"][data-index="${
+          Math.min(focusIndex, state.standbyBackgroundImagePaths.length - 1)
+        }"]`,
+      );
+      const fallback = elements.standbyBackgroundList.querySelector(
+        `button[data-index="${focusIndex}"]:not(:disabled)`,
+      );
+      (sameAction && !sameAction.disabled
+        ? sameAction
+        : fallback ?? elements.chooseStandbyBackgroundButton).focus();
     }, { signal });
     elements.loadDefaultsButton.addEventListener('click', () => {
       if (!state.defaults || state.busy) {
@@ -1005,10 +1157,33 @@ export function createSettingsView({
       refreshDirtyState();
     },
 
+    /**
+     * 多張輪播時把新選的圖片接在既有清單後（去重、最多 20 張）；固定圖片
+     * 只有一張，直接取代。
+     */
     renderStandbyBackgroundSelection(assetPaths) {
-      state.standbyBackgroundImagePaths = [...assetPaths];
-      renderStandbyBackgroundControls();
       clearSettingsErrors();
+      if (elements.standbyBackgroundMode.value !== 'slideshow') {
+        state.standbyBackgroundImagePaths = [...assetPaths];
+      } else {
+        const merged = [...state.standbyBackgroundImagePaths];
+        for (const assetPath of assetPaths) {
+          if (!merged.includes(assetPath)) {
+            merged.push(assetPath);
+          }
+        }
+        state.standbyBackgroundImagePaths = merged.slice(
+          0,
+          MAXIMUM_STANDBY_BACKGROUND_IMAGES,
+        );
+        const skipped = merged.length - state.standbyBackgroundImagePaths.length;
+        if (skipped > 0) {
+          elements.standbyBackgroundError.textContent =
+            `待機背景最多 ${MAXIMUM_STANDBY_BACKGROUND_IMAGES} 張，已略過 ${skipped} 張。`;
+          elements.standbyBackgroundError.hidden = false;
+        }
+      }
+      renderStandbyBackgroundControls();
       refreshDirtyState();
     },
 
@@ -1051,6 +1226,7 @@ export function createSettingsView({
       state.outputMonitor = snapshot.monitor ?? null;
       renderResolutionOptions();
       renderOutputMonitorStatus();
+      renderAdjustmentControls();
       return true;
     },
 
