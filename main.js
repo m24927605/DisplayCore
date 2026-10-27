@@ -269,9 +269,13 @@ async function bootstrap() {
       const rescueRegistered = globalShortcut.register(
         CONTROL_RESCUE_SHORTCUT,
         () => {
-          if (displayTopologyService.moveControlToCursorDisplay()) {
-            windowManager.focusControlWindow();
+          if (!displayTopologyService.moveControlToCursorDisplay()) {
+            return;
           }
+
+          void controlPlacementController.forceReapply().finally(() => {
+            windowManager.focusControlWindow();
+          });
         },
       );
       if (!rescueRegistered) {

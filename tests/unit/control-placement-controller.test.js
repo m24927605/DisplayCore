@@ -167,3 +167,48 @@ test('執行中切換 Control 螢幕遇到暫時錯誤時也會有限重試', as
   assert.equal(controller.getStatus().status, CONTROL_PLACEMENT_STATUSES.APPLIED);
   assert.equal(controller.getStatus().displayId, 3);
 });
+
+test('Windows 跨 DPI 第一次 setBounds 落錯螢幕時會再套用一次', () => {
+  const topologyService = new FakeTopologyService();
+  const window = new FakeWindow();
+  const intended = [];
+  window.setBounds = function setBounds(bounds) {
+    intended.push({ ...bounds });
+    // First call lands on the wrong display, as Windows does across scale factors.
+    this.bounds = intended.length === 1
+      ? { ...bounds, x: 0, y: 0 }
+      : { ...bounds };
+  };
+  const controller = new ControlPlacementController({
+    topologyService,
+    getControlWindow: () => window,
+  });
+
+  controller.initialize();
+
+  assert.equal(intended.length, 2);
+  assert.equal(window.bounds.x, 2080);
+  assert.equal(controller.getStatus().status, CONTROL_PLACEMENT_STATUSES.APPLIED);
+});
+
+test('救援時即使快取認為已定位，仍會強制重新擺放 Control', async () => {
+  const topologyService = new FakeTopologyService();
+  const window = new FakeWindow();
+  const controller = new ControlPlacementController({
+    topologyService,
+    getControlWindow: () => window,
+  });
+
+  controller.initialize();
+  assert.equal(window.calls.length, 1);
+
+  // Windows moved the window elsewhere behind the controller's back.
+  window.bounds = { ...window.bounds, x: 0, y: 0 };
+  topologyService.publish(topologyService.target);
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(window.calls.length, 1);
+
+  assert.equal(await controller.forceReapply(), true);
+  assert.equal(window.calls.length, 2);
+  assert.equal(window.bounds.x, 2080);
+});

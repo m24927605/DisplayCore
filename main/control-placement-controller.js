@@ -59,6 +59,18 @@ function calculateControlBounds(currentBounds, workArea) {
   });
 }
 
+function isCenterInside(bounds, area) {
+  const centerX = bounds.x + bounds.width / 2;
+  const centerY = bounds.y + bounds.height / 2;
+
+  return (
+    centerX >= area.x &&
+    centerX < area.x + area.width &&
+    centerY >= area.y &&
+    centerY < area.y + area.height
+  );
+}
+
 function placementSignature(targetDisplay) {
   return JSON.stringify({
     displayId: targetDisplay.id,
@@ -205,6 +217,17 @@ class ControlPlacementController {
         targetDisplay.workArea,
       );
       controlWindow.setBounds(bounds, false);
+
+      // Windows can mis-place a window moved across displays with different
+      // scale factors; a second setBounds lands it once the DPI has switched.
+      if (!isCenterInside(controlWindow.getBounds(), targetDisplay.workArea)) {
+        controlWindow.setBounds(bounds, false);
+      }
+
+      if (!isCenterInside(controlWindow.getBounds(), targetDisplay.workArea)) {
+        throw new Error('Control Window 未落在目標螢幕。');
+      }
+
       this.lastPlacementByWindow.set(controlWindow, signature);
       this.setStatus({
         status: CONTROL_PLACEMENT_STATUSES.APPLIED,
@@ -220,6 +243,18 @@ class ControlPlacementController {
       });
       return false;
     }
+  }
+
+  /** Re-applies placement even when the cached placement looks current. */
+  async forceReapply() {
+    const controlWindow = this.getControlWindow();
+
+    if (this.disposed || !controlWindow) {
+      return false;
+    }
+
+    this.lastPlacementByWindow.delete(controlWindow);
+    return this.applyToWindowWithRetry(controlWindow);
   }
 
   async applyToWindowWithRetry(controlWindow) {
