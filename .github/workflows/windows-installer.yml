@@ -34,6 +34,11 @@ jobs:
       - name: Install locked dependencies
         run: npm ci
 
+      # Electron 43 fetches its binary lazily on first launch. Fetch it once here so
+      # parallel integration tests do not race to extract it (EBUSY on Windows).
+      - name: Install Electron binary
+        run: node node_modules/electron/install.js
+
       # GitHub 的虛擬 Windows 桌面固定為低解析度，且不保證硬體 WebGL。
       # 4K compositor 與 GPU 視覺測試保留給真實顯示硬體驗收；此處執行
       # 全部單元測試及不依賴固定螢幕/GPU 的 Electron 整合測試。
