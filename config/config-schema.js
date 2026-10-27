@@ -569,27 +569,21 @@ function validateDisplay(display) {
     );
   }
 
-  if (
-    display.selectionMode === DISPLAY_SELECTION_MODES.MANUAL &&
-    (
-      !Number.isSafeInteger(display.controlDisplayId) ||
-      display.controlDisplayId < 0 ||
-      !Number.isSafeInteger(display.defaultDisplayId) ||
-      display.defaultDisplayId < 0
-    )
-  ) {
-    return validationFailure(
-      '手動分配螢幕時必須同時提供有效的控制台與訊息螢幕 ID。',
-      'display.controlDisplayId',
-    );
-  }
+  // Manual assignment pins one or both windows; null keeps that window automatic.
+  // Both windows may share the same display.
+  const isOptionalDisplayId = (value) =>
+    value === null || (Number.isSafeInteger(value) && value >= 0);
 
   if (
     display.selectionMode === DISPLAY_SELECTION_MODES.MANUAL &&
-    display.controlDisplayId === display.defaultDisplayId
+    (
+      !isOptionalDisplayId(display.controlDisplayId) ||
+      !isOptionalDisplayId(display.defaultDisplayId) ||
+      (display.controlDisplayId === null && display.defaultDisplayId === null)
+    )
   ) {
     return validationFailure(
-      '控制台與訊息畫面必須指定不同螢幕。',
+      '手動分配螢幕時至少需指定一個有效的控制台或訊息螢幕 ID。',
       'display.controlDisplayId',
     );
   }

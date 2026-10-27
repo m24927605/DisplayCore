@@ -312,7 +312,6 @@ test('Renderer 草稿驗證與 Main schema 的主要邊界一致', async () => {
     { roundCount: 1 },
     { controlDisplayId: 'display-1' },
     { defaultDisplayId: '-1' },
-    { controlDisplayId: '1', defaultDisplayId: '1' },
     { renderResolution: '1024×768' },
     { renderResolution: 'native' },
     { renderResolution: null },
@@ -590,4 +589,30 @@ test('dirty 比較涵蓋所有固定欄位，不受物件參照與 key 順序影
   assert.equal(settingsEqual(defaultConfig, changedBrightness), false);
   assert.equal(settingsEqual(defaultConfig, changedContrast), false);
   assert.equal(settingsEqual(defaultConfig, null), false);
+});
+
+test('控制台與訊息螢幕可各自任意選擇，包含同一螢幕或只指定一方', async () => {
+  const { buildSettingsDraft } = await loadModule();
+
+  for (const [controlDisplayId, defaultDisplayId, expected] of [
+    ['1', '1', { selectionMode: 'manual', controlDisplayId: 1, defaultDisplayId: 1 }],
+    ['auto', '2', { selectionMode: 'manual', controlDisplayId: null, defaultDisplayId: 2 }],
+    ['3', 'auto', { selectionMode: 'manual', controlDisplayId: 3, defaultDisplayId: null }],
+    ['auto', 'auto', { selectionMode: 'auto', controlDisplayId: null, defaultDisplayId: null }],
+  ]) {
+    const result = buildSettingsDraft(createValidDraftInput({
+      controlDisplayId,
+      defaultDisplayId,
+    }));
+
+    assert.equal(result.ok, true, `${controlDisplayId}/${defaultDisplayId}`);
+    assert.deepEqual(
+      {
+        selectionMode: result.config.display.selectionMode,
+        controlDisplayId: result.config.display.controlDisplayId,
+        defaultDisplayId: result.config.display.defaultDisplayId,
+      },
+      expected,
+    );
+  }
 });

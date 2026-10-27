@@ -282,16 +282,19 @@ function selectWindowTargets(
     ).display || controlDisplay;
   }
 
+  // A window left on auto (null) is never a fallback; a pinned window falls back only when its display is gone.
   return Object.freeze({
     control: Object.freeze({
       display: controlDisplay,
       usingFallback:
-        controlDisplay?.id !== preference.configuredControlDisplayId,
+        preference.configuredControlDisplayId !== null &&
+        !configuredControl,
     }),
     display: Object.freeze({
       display: messageDisplay,
       usingFallback:
-        messageDisplay?.id !== preference.configuredDisplayId,
+        preference.configuredDisplayId !== null &&
+        !configuredDisplay,
     }),
   });
 }
@@ -328,9 +331,9 @@ function createOutputPreference(settingsSnapshot) {
 
   if (
     display.selectionMode !== 'manual' ||
-    !isValidDisplayId(display.controlDisplayId) ||
-    !isValidDisplayId(display.defaultDisplayId) ||
-    display.controlDisplayId === display.defaultDisplayId
+    !(display.controlDisplayId === null || isValidDisplayId(display.controlDisplayId)) ||
+    !(display.defaultDisplayId === null || isValidDisplayId(display.defaultDisplayId)) ||
+    (display.controlDisplayId === null && display.defaultDisplayId === null)
   ) {
     throw new TypeError('手動輸出螢幕偏好設定格式不正確。');
   }

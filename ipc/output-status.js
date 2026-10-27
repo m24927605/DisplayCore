@@ -191,11 +191,8 @@ function createControlOutputSnapshot(topology, placement, monitor) {
     ) ||
     (
       topology.selectionMode === 'manual' &&
-      (
-        topology.configuredControlDisplayId === null ||
-        topology.configuredDisplayId === null ||
-        topology.configuredControlDisplayId === topology.configuredDisplayId
-      )
+      topology.configuredControlDisplayId === null &&
+      topology.configuredDisplayId === null
     )
   ) {
     return invalidOutputStatus();
@@ -223,8 +220,14 @@ function createControlOutputSnapshot(topology, placement, monitor) {
     (
       topology.selectionMode === 'manual' &&
       (
-        topology.controlUsingFallback === configuredControlDisplayPresent ||
-        topology.usingFallback === configuredDisplayPresent
+        topology.controlUsingFallback !== (
+          topology.configuredControlDisplayId !== null &&
+          !configuredControlDisplayPresent
+        ) ||
+        topology.usingFallback !== (
+          topology.configuredDisplayId !== null &&
+          !configuredDisplayPresent
+        )
       )
     )
   ) {

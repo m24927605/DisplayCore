@@ -174,6 +174,35 @@ test('指定螢幕拔除時保留設定並回退，重新接上後自動返回',
   assert.equal(settingsManager.listeners.size, 0);
 });
 
+test('控制台與訊息可指定同一螢幕，且不視為回退', async () => {
+  const { service, settingsManager } = createHarness();
+
+  await service.initialize();
+  settingsManager.publish(manualAssignment(2, 2));
+
+  assert.equal(service.getControlTargetDisplay().id, 2);
+  assert.equal(service.getTargetDisplay().id, 2);
+  assert.equal(service.getSnapshot().controlUsingFallback, false);
+  assert.equal(service.getSnapshot().usingFallback, false);
+
+  service.dispose();
+});
+
+test('只指定訊息螢幕時，控制台維持自動且不視為回退', async () => {
+  const { service, settingsManager } = createHarness();
+
+  await service.initialize();
+  settingsManager.publish(manualAssignment(null, 1));
+
+  assert.equal(service.getTargetDisplay().id, 1);
+  assert.equal(service.getControlTargetDisplay().id, 2);
+  assert.equal(service.getSnapshot().configuredControlDisplayId, null);
+  assert.equal(service.getSnapshot().controlUsingFallback, false);
+  assert.equal(service.getSnapshot().usingFallback, false);
+
+  service.dispose();
+});
+
 test('自動分工固定由主螢幕顯示 Control，副螢幕顯示訊息', async () => {
   const { service, settingsManager } = createHarness();
 

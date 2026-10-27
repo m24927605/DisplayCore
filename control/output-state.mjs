@@ -342,11 +342,18 @@ function normalizeSnapshot(candidate) {
       )) ||
     (candidate.selectionMode === 'manual' &&
       (
-        candidate.configuredControlDisplayId === null ||
-        candidate.configuredDisplayId === null ||
-        candidate.configuredControlDisplayId === candidate.configuredDisplayId ||
-        candidate.controlUsingFallback === configuredControlDisplayPresent ||
-        candidate.usingFallback === configuredDisplayPresent
+        (
+          candidate.configuredControlDisplayId === null &&
+          candidate.configuredDisplayId === null
+        ) ||
+        candidate.controlUsingFallback !== (
+          candidate.configuredControlDisplayId !== null &&
+          !configuredControlDisplayPresent
+        ) ||
+        candidate.usingFallback !== (
+          candidate.configuredDisplayId !== null &&
+          !configuredDisplayPresent
+        )
       ))
   ) {
     return null;

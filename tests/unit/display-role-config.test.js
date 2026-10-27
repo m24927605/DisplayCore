@@ -27,7 +27,7 @@ function createV12Defaults() {
   });
 }
 
-test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不得相同', () => {
+test('設定可分別保存控制台與訊息螢幕，兩者可指定同一螢幕', () => {
   const defaults = createV12Defaults();
   const manual = structuredClone({
     ...defaults,
@@ -53,7 +53,7 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
     contrastPercent: null,
   });
 
-  const duplicate = validateConfig({
+  const sameDisplay = validateConfig({
     ...manual,
     display: {
       ...manual.display,
@@ -61,17 +61,17 @@ test('設定可分別保存控制台與訊息螢幕，且兩個明確指派不�
     },
   });
 
-  assert.equal(duplicate.ok, false);
-  assert.equal(duplicate.error.field, 'display.controlDisplayId');
+  assert.equal(sameDisplay.ok, true);
+  assert.equal(sameDisplay.value.display.controlDisplayId, 1);
+  assert.equal(sameDisplay.value.display.defaultDisplayId, 1);
 });
 
-test('自動分工不保存硬體 ID，手動分工必須同時提供兩個 ID', () => {
+test('自動分工不保存硬體 ID，手動分工可只指定其中一個螢幕', () => {
   const defaults = createV12Defaults();
 
   assert.equal(validateConfig(defaults).ok, true);
 
   for (const display of [
-    { ...defaults.display, controlDisplayId: 1 },
     {
       ...defaults.display,
       selectionMode: 'manual',
@@ -83,6 +83,22 @@ test('自動分工不保存硬體 ID，手動分工必須同時提供兩個 ID',
       selectionMode: 'manual',
       controlDisplayId: null,
       defaultDisplayId: 2,
+    },
+  ]) {
+    assert.equal(
+      validateConfig({ ...defaults, display }).ok,
+      true,
+      JSON.stringify(display),
+    );
+  }
+
+  for (const display of [
+    { ...defaults.display, controlDisplayId: 1 },
+    {
+      ...defaults.display,
+      selectionMode: 'manual',
+      controlDisplayId: null,
+      defaultDisplayId: null,
     },
   ]) {
     assert.equal(

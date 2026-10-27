@@ -84,6 +84,23 @@ function isOutputAdjustmentPercent(value) {
     (Number.isSafeInteger(value) && value >= 0 && value <= 100);
 }
 
+/** null keeps that window on automatic placement. */
+function isOptionalDisplayId(value) {
+  return value === null || (Number.isSafeInteger(value) && value >= 0);
+}
+
+function parseDisplaySelection(value) {
+  if (value === 'auto') {
+    return null;
+  }
+
+  return typeof value === 'string' &&
+    INTEGER_NUMBER.test(value) &&
+    Number.isSafeInteger(Number(value))
+    ? Number(value)
+    : undefined;
+}
+
 function isPlainObject(value) {
   if (value === null || typeof value !== 'object' || Array.isArray(value)) {
     return false;
@@ -435,11 +452,9 @@ function normalizeConfig(candidate) {
         display.defaultDisplayId !== null)) ||
     (isManual &&
       (
-        !Number.isSafeInteger(display.controlDisplayId) ||
-        display.controlDisplayId < 0 ||
-        !Number.isSafeInteger(display.defaultDisplayId) ||
-        display.defaultDisplayId < 0 ||
-        display.controlDisplayId === display.defaultDisplayId
+        !isOptionalDisplayId(display.controlDisplayId) ||
+        !isOptionalDisplayId(display.defaultDisplayId) ||
+        (display.controlDisplayId === null && display.defaultDisplayId === null)
       ))
   ) {
     return failure('display', '輸出螢幕設定格式不正確。');
@@ -638,57 +653,32 @@ export function buildSettingsDraft({
     }
   }
 
-  const controlUsesAuto = controlDisplayId === 'auto';
-  const displayUsesAuto = defaultDisplayId === 'auto';
-  let displayAssignment;
+  // Each window is chosen independently: auto, any display, or the same display as the other.
+  const selectedControlDisplayId = parseDisplaySelection(controlDisplayId);
+  const selectedDefaultDisplayId = parseDisplaySelection(defaultDisplayId);
 
-  if (controlUsesAuto && displayUsesAuto) {
-    displayAssignment = {
-      selectionMode: 'auto',
-      controlDisplayId: null,
-      defaultDisplayId: null,
-    };
-  } else if (controlUsesAuto !== displayUsesAuto) {
+  if (selectedControlDisplayId === undefined) {
     return failure(
       'display.controlDisplayId',
-      '請同時指定控制台與訊息螢幕，或同時使用自動分工。',
+      '請選擇有效的控制台螢幕。',
     );
-  } else {
-    if (
-      typeof controlDisplayId !== 'string' ||
-      !INTEGER_NUMBER.test(controlDisplayId) ||
-      !Number.isSafeInteger(Number(controlDisplayId))
-    ) {
-      return failure(
-        'display.controlDisplayId',
-        '請選擇有效的控制台螢幕。',
-      );
-    }
-
-    if (
-      typeof defaultDisplayId !== 'string' ||
-      !INTEGER_NUMBER.test(defaultDisplayId) ||
-      !Number.isSafeInteger(Number(defaultDisplayId))
-    ) {
-      return failure(
-        'display.defaultDisplayId',
-        '請選擇有效的訊息螢幕。',
-      );
-    }
-
-    if (Number(controlDisplayId) === Number(defaultDisplayId)) {
-      return failure(
-        'display.defaultDisplayId',
-        '控制台與訊息畫面必須使用不同螢幕。',
-      );
-    }
-
-    displayAssignment = {
-      selectionMode: 'manual',
-      controlDisplayId: Number(controlDisplayId),
-      defaultDisplayId: Number(defaultDisplayId),
-    };
   }
+
+  if (selectedDefaultDisplayId === undefined) {
+    return failure(
+      'display.defaultDisplayId',
+      '請選擇有效的訊息螢幕。',
+    );
+  }
+
+  const displayAssignment = {
+    selectionMode:
+      selectedControlDisplayId === null && selectedDefaultDisplayId === null
+        ? 'auto'
+        : 'manual',
+    controlDisplayId: selectedControlDisplayId,
+    defaultDisplayId: selectedDefaultDisplayId,
+  };
 
   const result = normalizeConfig({
     configVersion: 12,
