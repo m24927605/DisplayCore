@@ -5,6 +5,7 @@ const {
   app,
   BrowserWindow,
   dialog,
+  globalShortcut,
   ipcMain,
   Menu,
   net,
@@ -52,6 +53,7 @@ const { WindowManager } = require('./main/window-manager');
 const PROJECT_ROOT = __dirname;
 const CONTROL_URL = 'displaycore://app/control/index.html';
 const DISPLAY_URL = 'displaycore://app/display/index.html';
+const CONTROL_RESCUE_SHORTCUT = 'Control+Alt+C';
 const SCAFFOLD_SMOKE_FLAG = '--displaycore-smoke-test';
 const MAIN_PROCESS_SMOKE_FLAG = '--displaycore-main-smoke-test';
 
@@ -262,8 +264,22 @@ async function bootstrap() {
       displayPlacementController.initialize();
       outputMonitorController.initialize();
       ipcCoordinator.register();
+      // Rescue shortcut: bring the Control window to the display the mouse is on,
+      // even when it opened on a far-away TV and cannot be dragged back.
+      const rescueRegistered = globalShortcut.register(
+        CONTROL_RESCUE_SHORTCUT,
+        () => {
+          if (displayTopologyService.moveControlToCursorDisplay()) {
+            windowManager.focusControlWindow();
+          }
+        },
+      );
+      if (!rescueRegistered) {
+        console.warn('[DisplayCore] 控制台救援快捷鍵已被其他程式占用。');
+      }
     },
     shutdownRuntime: () => {
+      globalShortcut.unregister(CONTROL_RESCUE_SHORTCUT);
       ipcCoordinator.dispose();
       outputMonitorController.dispose();
       displayPlacementController.dispose();

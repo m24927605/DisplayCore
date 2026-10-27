@@ -166,6 +166,24 @@ small {
   text-wrap: pretty;
 }
 
+.rescue-hint {
+  margin: 0.2rem 0 0;
+  color: var(--subtle);
+  font-size: 0.74rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.rescue-hint kbd {
+  padding: 0.05rem 0.35rem;
+  border: 0.0625rem solid var(--line);
+  border-radius: 0.3rem;
+  color: var(--ink);
+  background: var(--surface-muted);
+  font: inherit;
+  font-weight: 800;
+}
+
 .header-actions {
   justify-content: flex-end;
   gap: 0.6rem;

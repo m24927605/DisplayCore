@@ -31,6 +31,16 @@ class FakeScreen extends EventEmitter {
     super();
     this.displays = displays;
     this.primaryDisplayId = primaryDisplayId;
+    this.cursorDisplayId = primaryDisplayId;
+  }
+
+  getCursorScreenPoint() {
+    return { x: 0, y: 0 };
+  }
+
+  getDisplayNearestPoint() {
+    return this.displays.find(({ id }) => id === this.cursorDisplayId) ??
+      this.displays.find(({ id }) => id === this.primaryDisplayId);
   }
 
   getAllDisplays() {
@@ -227,7 +237,7 @@ test('自動分工固定由主螢幕顯示 Control，副螢幕顯示訊息', asy
   assert.equal(service.getSnapshot().usingFallback, false);
 });
 
-test('外接電視是 Windows 主螢幕時仍將 Control 放到另一台可操作螢幕', async () => {
+test('外接電視是 Windows 主螢幕時，Control 啟動在滑鼠所在的管理螢幕', async () => {
   const television = createDisplay(1, {
     label: '主螢幕電視',
     internal: false,
@@ -237,6 +247,7 @@ test('外接電視是 Windows 主螢幕時仍將 Control 放到另一台可操�
     internal: true,
   });
   const screen = new FakeScreen([television, operatorDisplay], 1);
+  screen.cursorDisplayId = 2;
   const settingsManager = new FakeSettingsManager({
     selectionMode: 'auto',
     controlDisplayId: null,
@@ -259,4 +270,68 @@ test('外接電視是 Windows 主螢幕時仍將 Control 放到另一台可操�
   assert.equal(service.getTargetDisplay().id, 1);
   assert.equal(service.getControlTargetDisplay().id, 2);
   assert.equal(service.getSnapshot().effectiveControlDisplayId, 2);
+});
+
+test('Control 啟動在滑鼠所在螢幕，不沿用可能已變動的已存螢幕 ID', async () => {
+  const { screen, service } = createHarness();
+  screen.cursorDisplayId = 2;
+  // Saved settings say control=1, message=2, but the cursor is on display 2.
+
+  await service.initialize();
+
+  assert.equal(service.getControlTargetDisplay().id, 2);
+  assert.equal(service.getTargetDisplay().id, 2);
+
+  service.dispose();
+});
+
+test('救援快捷鍵把 Control 移到滑鼠所在螢幕，自動訊息螢幕會避開它', async () => {
+  const television = createDisplay(1, { label: '電視' });
+  const operatorDisplay = createDisplay(2, { label: '管理螢幕' });
+  const screen = new FakeScreen([television, operatorDisplay], 1);
+  const settingsManager = new FakeSettingsManager({
+    selectionMode: 'auto',
+    controlDisplayId: null,
+    defaultDisplayId: null,
+    fullscreen: true,
+    renderResolution: 'auto',
+  });
+  const service = new DisplayTopologyService({
+    screen,
+    settingsManager,
+    hdmiDetector: {
+      async detect() {
+        return { status: 'connected' };
+      },
+    },
+  });
+
+  await service.initialize();
+  assert.equal(service.getControlTargetDisplay().id, 1);
+  assert.equal(service.getTargetDisplay().id, 2);
+
+  screen.cursorDisplayId = 2;
+  assert.equal(service.moveControlToCursorDisplay(), true);
+
+  assert.equal(service.getControlTargetDisplay().id, 2);
+  assert.equal(service.getTargetDisplay().id, 1);
+
+  service.dispose();
+});
+
+test('設定改選其他控制台螢幕時解除滑鼠固定，改依設定擺放', async () => {
+  const { screen, service, settingsManager } = createHarness();
+  screen.cursorDisplayId = 2;
+
+  await service.initialize();
+  assert.equal(service.getControlTargetDisplay().id, 2);
+
+  settingsManager.publish(manualAssignment(1, 2));
+  assert.equal(service.getControlTargetDisplay().id, 2);
+
+  settingsManager.publish(manualAssignment(2, 1));
+  settingsManager.publish(manualAssignment(1, 2));
+  assert.equal(service.getControlTargetDisplay().id, 1);
+
+  service.dispose();
 });

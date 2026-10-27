@@ -434,6 +434,9 @@ class DisplayTopologyService {
     this.controlTargetDisplay = null;
     this.targetDisplay = null;
     this.preference = AUTO_OUTPUT_PREFERENCE;
+    // Runtime pin for the Control window. Saved display IDs can change after a
+    // reboot or HDMI replug, so each launch starts on the display under the cursor.
+    this.controlPinnedDisplayId = null;
     this.signature = null;
     this.listeners = new Set();
     this.initializationPromise = null;
@@ -469,6 +472,7 @@ class DisplayTopologyService {
     }
 
     this.bindSources();
+    this.controlPinnedDisplayId = this.findCursorDisplayId();
     this.commitCurrentTopology({
       hdmiConnectionStatus: HDMI_DETECTING_STATUS,
       initial: true,
@@ -550,11 +554,19 @@ class DisplayTopologyService {
       return;
     }
 
+    const previousControlDisplayId =
+      this.preference.configuredControlDisplayId;
+
     try {
       this.preference = createOutputPreference(snapshot);
     } catch {
       this.logger.warn('[DisplayCore] 忽略無效的輸出螢幕偏好設定。');
       return;
+    }
+
+    // Choosing a different control display in settings releases the runtime pin.
+    if (this.preference.configuredControlDisplayId !== previousControlDisplayId) {
+      this.controlPinnedDisplayId = null;
     }
 
     if (!this.initialized) {
@@ -565,6 +577,36 @@ class DisplayTopologyService {
     this.commitCurrentTopology({
       hdmiConnectionStatus: this.snapshot.hdmiConnectionStatus,
     });
+  }
+
+  findCursorDisplayId() {
+    try {
+      const point = this.screen.getCursorScreenPoint();
+      const display = this.screen.getDisplayNearestPoint(point);
+      return isValidDisplayId(display?.id) ? display.id : null;
+    } catch {
+      this.logger.warn('[DisplayCore] 無法取得滑鼠所在螢幕。');
+      return null;
+    }
+  }
+
+  /** Rescue path: pin the Control window to whichever display the mouse is on. */
+  moveControlToCursorDisplay() {
+    if (this.disposed || !this.initialized) {
+      return false;
+    }
+
+    const displayId = this.findCursorDisplayId();
+
+    if (displayId === null) {
+      return false;
+    }
+
+    this.controlPinnedDisplayId = displayId;
+    this.commitCurrentTopology({
+      hdmiConnectionStatus: this.snapshot.hdmiConnectionStatus,
+    });
+    return true;
   }
 
   scheduleRefresh() {
@@ -628,14 +670,31 @@ class DisplayTopologyService {
         },
       );
 
+      const pinnedControlDisplay = displays.find(
+        ({ id }) => id === this.controlPinnedDisplayId,
+      );
+      let messageDisplay = selected.display.display;
+
+      // An automatic message display must not land on the pinned Control display.
+      if (
+        pinnedControlDisplay &&
+        this.preference.configuredDisplayId === null &&
+        messageDisplay?.id === pinnedControlDisplay.id
+      ) {
+        messageDisplay = selectTargetDisplay(
+          displays.filter(({ id }) => id !== pinnedControlDisplay.id),
+          this.snapshot?.effectiveDisplayId ?? null,
+        ).display ?? messageDisplay;
+      }
+
       candidate = {
         topologyStatus: DISPLAY_TOPOLOGY_STATUSES.READY,
         hdmiConnectionStatus,
         displays,
         preference: this.preference,
-        controlTargetDisplay: selected.control.display,
+        controlTargetDisplay: pinnedControlDisplay ?? selected.control.display,
         controlUsingFallback: selected.control.usingFallback,
-        targetDisplay: selected.display.display,
+        targetDisplay: messageDisplay,
         usingFallback: selected.display.usingFallback,
       };
     } catch {

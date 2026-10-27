@@ -28,8 +28,18 @@ class FakeScreen extends EventEmitter {
     super();
     this.displays = displays;
     this.primaryDisplayId = primaryDisplayId;
+    this.cursorDisplayId = primaryDisplayId;
     this.error = null;
     this.queryCount = 0;
+  }
+
+  getCursorScreenPoint() {
+    return { x: 0, y: 0 };
+  }
+
+  getDisplayNearestPoint() {
+    return this.displays.find(({ id }) => id === this.cursorDisplayId) ??
+      this.displays.find(({ id }) => id === this.primaryDisplayId);
   }
 
   getAllDisplays() {
